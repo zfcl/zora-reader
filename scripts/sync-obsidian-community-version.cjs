@@ -51,7 +51,9 @@ function parseArgs(argv) {
 			args.version = argv[index + 1];
 			index += 1;
 		} else if (token === "--help" || token === "-h") {
-			console.log(`Usage: node scripts/sync-obsidian-community-version.cjs [--version x.y.z] [--dry-run]`);
+			console.log(
+				"Usage: node scripts/sync-obsidian-community-version.cjs [--version x.y.z] [--dry-run]",
+			);
 			process.exit(0);
 		} else {
 			fail(`Unknown argument: ${token}`);
@@ -61,11 +63,16 @@ function parseArgs(argv) {
 }
 
 function readJson(relativePath) {
-	return JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, relativePath), "utf8"));
+	return JSON.parse(
+		fs.readFileSync(path.join(PROJECT_ROOT, relativePath), "utf8"),
+	);
 }
 
 function writeJson(relativePath, value) {
-	fs.writeFileSync(path.join(PROJECT_ROOT, relativePath), `${JSON.stringify(value, null, 2)}\n`);
+	fs.writeFileSync(
+		path.join(PROJECT_ROOT, relativePath),
+		`${JSON.stringify(value, null, 2)}\n`,
+	);
 }
 
 function syncPackageLockVersion(version) {
@@ -103,7 +110,9 @@ function ensureVersionsEntry(version) {
 	if (!Object.prototype.hasOwnProperty.call(versions, version)) {
 		versions[version] = readMinAppVersion();
 		writeJson("versions.json", versions);
-		console.log(`[sync-obsidian-community-version] Added versions.json entry for ${version}`);
+		console.log(
+			`[sync-obsidian-community-version] Added versions.json entry for ${version}`,
+		);
 	}
 	return versionsPath;
 }
@@ -139,7 +148,10 @@ function hasStashNamed(name) {
 function buildRemoteMetadata(targetVersion) {
 	ensureLocalVersionFiles(targetVersion);
 	const manifest = { ...readJson("manifest.json"), version: targetVersion };
-	const versions = { ...readJson("versions.json"), [targetVersion]: readMinAppVersion() };
+	const versions = {
+		...readJson("versions.json"),
+		[targetVersion]: readMinAppVersion(),
+	};
 	return { manifest, versions };
 }
 
@@ -150,17 +162,25 @@ function main() {
 	const previousBranch = getCurrentBranch();
 	const metadata = buildRemoteMetadata(targetVersion);
 
-	console.log(`[sync-obsidian-community-version] Target version: ${targetVersion}`);
+	console.log(
+		`[sync-obsidian-community-version] Target version: ${targetVersion}`,
+	);
 
 	if (args.dryRun) {
-		console.log("[sync-obsidian-community-version] Dry run only. Planned actions:");
+		console.log(
+			"[sync-obsidian-community-version] Dry run only. Planned actions:",
+		);
 		console.log(`  - git fetch ${REMOTE}`);
 		console.log(`  - git stash push -u -m "${stashMessage}"`);
-		console.log(`  - git checkout -B ${SYNC_BRANCH} ${REMOTE}/${DEFAULT_BRANCH}`);
 		console.log(
-			"  - update manifest.json / package.json(version only) / package-lock.json(version only) / versions.json"
+			`  - git checkout -B ${SYNC_BRANCH} ${REMOTE}/${DEFAULT_BRANCH}`,
 		);
-		console.log(`  - git commit + git push ${REMOTE} ${SYNC_BRANCH}:${DEFAULT_BRANCH}`);
+		console.log(
+			"  - update manifest.json / package.json(version only) / package-lock.json(version only) / versions.json",
+		);
+		console.log(
+			`  - git commit + git push ${REMOTE} ${SYNC_BRANCH}:${DEFAULT_BRANCH}`,
+		);
 		console.log(`  - git checkout ${previousBranch} && git stash pop`);
 		return;
 	}
@@ -179,7 +199,12 @@ function main() {
 
 		writeJson("manifest.json", metadata.manifest);
 
-		run("git", ["checkout", `${REMOTE}/${DEFAULT_BRANCH}`, "--", "package.json"]);
+		run("git", [
+			"checkout",
+			`${REMOTE}/${DEFAULT_BRANCH}`,
+			"--",
+			"package.json",
+		]);
 		const packageJson = readJson("package.json");
 		packageJson.version = targetVersion;
 		writeJson("package.json", packageJson);
@@ -189,7 +214,13 @@ function main() {
 		// Keep package-lock root version aligned so remote `npm ci` does not fail after version-only sync.
 		syncPackageLockVersion(targetVersion);
 
-		run("git", ["add", "manifest.json", "package.json", "package-lock.json", "versions.json"]);
+		run("git", [
+			"add",
+			"manifest.json",
+			"package.json",
+			"package-lock.json",
+			"versions.json",
+		]);
 
 		const stagedDiff = runCapture("git", ["diff", "--cached", "--stat"]);
 		console.log(stagedDiff);
@@ -209,8 +240,10 @@ function main() {
 		}
 	}
 
-	const remoteManifestUrl = `https://raw.githubusercontent.com/zhuzhige123/obsidian-weave-reader/${DEFAULT_BRANCH}/manifest.json`;
-	console.log(`[sync-obsidian-community-version] Done. Verify: ${remoteManifestUrl}`);
+	const remoteManifestUrl = `https://raw.githubusercontent.com/HarrySuen626/weave-epub-ai-reader/${DEFAULT_BRANCH}/manifest.json`;
+	console.log(
+		`[sync-obsidian-community-version] Done. Verify: ${remoteManifestUrl}`,
+	);
 }
 
 main();

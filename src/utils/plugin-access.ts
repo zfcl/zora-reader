@@ -1,5 +1,9 @@
 import { getVisibleSplitActionsFromHost } from "../services/ai/ai-action-config";
-import type { EffectiveLicenseState, LicenseInfo, LicenseStore } from "../types/license";
+import type {
+	EffectiveLicenseState,
+	LicenseInfo,
+	LicenseStore,
+} from "../types/license";
 import {
 	cloneLicenseAsInherited,
 	dedupeLicenses,
@@ -81,7 +85,7 @@ export type CompatibleAISelectedTextPanelHost = CompatiblePlugin & {
 	dataStorage: CompatibleAIDataStorage;
 };
 
-export const STANDALONE_PLUGIN_ID = "weave-epub-reader";
+export const STANDALONE_PLUGIN_ID = "weave-epub-ai-reader";
 export const LEGACY_WEAVE_PLUGIN_ID = "weave";
 
 function normalizeOptionalString(value: unknown): string | undefined {
@@ -92,25 +96,34 @@ function normalizeOptionalString(value: unknown): string | undefined {
 	return normalized.length > 0 ? normalized : undefined;
 }
 
-function getPluginById(app: PluginLookupApp | undefined, pluginId: string): CompatiblePlugin | null {
+function getPluginById(
+	app: PluginLookupApp | undefined,
+	pluginId: string,
+): CompatiblePlugin | null {
 	const plugin = app?.plugins?.getPlugin?.(pluginId);
 	return plugin && typeof plugin === "object" ? plugin : null;
 }
 
-export function getStandalonePlugin(app: PluginLookupApp | undefined): CompatiblePlugin | null {
+export function getStandalonePlugin(
+	app: PluginLookupApp | undefined,
+): CompatiblePlugin | null {
 	return getPluginById(app, STANDALONE_PLUGIN_ID);
 }
 
-export function getLegacyWeavePlugin(app: PluginLookupApp | undefined): CompatiblePlugin | null {
+export function getLegacyWeavePlugin(
+	app: PluginLookupApp | undefined,
+): CompatiblePlugin | null {
 	return getPluginById(app, LEGACY_WEAVE_PLUGIN_ID);
 }
 
-export function getCompatiblePlugin(app: PluginLookupApp | undefined): CompatiblePlugin | null {
+export function getCompatiblePlugin(
+	app: PluginLookupApp | undefined,
+): CompatiblePlugin | null {
 	return getStandalonePlugin(app) ?? getLegacyWeavePlugin(app);
 }
 
 function hasAISelectedTextPanelCapability(
-	plugin: CompatiblePlugin | null | undefined
+	plugin: CompatiblePlugin | null | undefined,
 ): plugin is CompatiblePlugin & {
 	settings: CompatiblePluginSettings;
 	dataStorage: CompatibleAIDataStorage;
@@ -118,7 +131,7 @@ function hasAISelectedTextPanelCapability(
 	return Boolean(
 		plugin?.settings &&
 			typeof plugin.dataStorage?.getDecks === "function" &&
-			typeof plugin.dataStorage?.saveCard === "function"
+			typeof plugin.dataStorage?.saveCard === "function",
 	);
 }
 
@@ -127,7 +140,7 @@ function createCompatibleAISelectedTextPanelHost(
 	plugin: CompatiblePlugin & {
 		settings: CompatiblePluginSettings;
 		dataStorage: CompatibleAIDataStorage;
-	}
+	},
 ): CompatibleAISelectedTextPanelHost | null {
 	if (!app) {
 		return null;
@@ -140,7 +153,9 @@ function createCompatibleAISelectedTextPanelHost(
 	}) as CompatibleAISelectedTextPanelHost;
 }
 
-export function getCompatibleWeaveParentFolder(app: PluginLookupApp | undefined): string | undefined {
+export function getCompatibleWeaveParentFolder(
+	app: PluginLookupApp | undefined,
+): string | undefined {
 	const standaloneSettings = getStandalonePlugin(app)?.settings;
 	const legacySettings = getLegacyWeavePlugin(app)?.settings;
 	return (
@@ -150,7 +165,7 @@ export function getCompatibleWeaveParentFolder(app: PluginLookupApp | undefined)
 }
 
 export function getCompatibleWeaveParentFolderFromSettingsOwner(
-	owner: PluginSettingsOwner | undefined
+	owner: PluginSettingsOwner | undefined,
 ): string | undefined {
 	return (
 		normalizeOptionalString(owner?.settings?.weaveParentFolder) ??
@@ -159,7 +174,7 @@ export function getCompatibleWeaveParentFolderFromSettingsOwner(
 }
 
 export function getCompatibleIncrementalReadingSettings(
-	app: PluginLookupApp | undefined
+	app: PluginLookupApp | undefined,
 ): CompatibleIncrementalReadingSettings {
 	const standaloneSettings = getStandalonePlugin(app)?.settings;
 	const legacySettings = getLegacyWeavePlugin(app)?.settings;
@@ -167,7 +182,9 @@ export function getCompatibleIncrementalReadingSettings(
 	const legacyIR = legacySettings?.incrementalReading ?? {};
 	const selectionQuickCreateLastFolder =
 		normalizeOptionalString(standaloneIR.selectionQuickCreateLastFolder) ??
-		normalizeOptionalString(standaloneSettings?.selectionQuickCreateLastFolder) ??
+		normalizeOptionalString(
+			standaloneSettings?.selectionQuickCreateLastFolder,
+		) ??
 		normalizeOptionalString(legacyIR.selectionQuickCreateLastFolder) ??
 		normalizeOptionalString(legacySettings?.selectionQuickCreateLastFolder);
 
@@ -179,33 +196,37 @@ export function getCompatibleIncrementalReadingSettings(
 }
 
 export function getCompatibleSelectionQuickCreateLastFolder(
-	app: PluginLookupApp | undefined
+	app: PluginLookupApp | undefined,
 ): string {
-	return getCompatibleIncrementalReadingSettings(app).selectionQuickCreateLastFolder ?? "";
+	return (
+		getCompatibleIncrementalReadingSettings(app)
+			.selectionQuickCreateLastFolder ?? ""
+	);
 }
 
 export function getCompatibleAISelectedTextPanelHost(
-	app: PluginLookupApp | undefined
+	app: PluginLookupApp | undefined,
 ): CompatibleAISelectedTextPanelHost | null {
 	const standalonePlugin = getStandalonePlugin(app);
 	const legacyPlugin = getLegacyWeavePlugin(app);
 
 	const capablePlugins = [standalonePlugin, legacyPlugin].filter(
-		hasAISelectedTextPanelCapability
+		hasAISelectedTextPanelCapability,
 	);
 	if (capablePlugins.length === 0) {
 		return null;
 	}
 
 	const preferredPlugin =
-		capablePlugins.find((plugin) => getVisibleSplitActionsFromHost(plugin).length > 0) ||
-		capablePlugins[0];
+		capablePlugins.find(
+			(plugin) => getVisibleSplitActionsFromHost(plugin).length > 0,
+		) || capablePlugins[0];
 
 	return createCompatibleAISelectedTextPanelHost(app, preferredPlugin);
 }
 
 export function getCompatibleDataStorage(
-	app: PluginLookupApp | undefined
+	app: PluginLookupApp | undefined,
 ): CompatibleDataStorage | null {
 	const standaloneDataStorage = getStandalonePlugin(app)?.dataStorage;
 	if (standaloneDataStorage?.getAllCards) {
@@ -213,11 +234,13 @@ export function getCompatibleDataStorage(
 	}
 
 	const legacyDataStorage = getLegacyWeavePlugin(app)?.dataStorage;
-	return legacyDataStorage?.getAllCards ? legacyDataStorage : standaloneDataStorage ?? legacyDataStorage ?? null;
+	return legacyDataStorage?.getAllCards
+		? legacyDataStorage
+		: standaloneDataStorage ?? legacyDataStorage ?? null;
 }
 
 export function getCompatibleReadingMaterialManager(
-	app: PluginLookupApp | undefined
+	app: PluginLookupApp | undefined,
 ): CompatibleReadingMaterialManager | null {
 	const standaloneManager = getStandalonePlugin(app)?.readingMaterialManager;
 	if (standaloneManager?.getAllMaterials) {
@@ -225,7 +248,9 @@ export function getCompatibleReadingMaterialManager(
 	}
 
 	const legacyManager = getLegacyWeavePlugin(app)?.readingMaterialManager;
-	return legacyManager?.getAllMaterials ? legacyManager : standaloneManager ?? legacyManager ?? null;
+	return legacyManager?.getAllMaterials
+		? legacyManager
+		: standaloneManager ?? legacyManager ?? null;
 }
 
 function getPluginLocalLicenses(plugin: CompatiblePlugin): LicenseInfo[] {
@@ -233,7 +258,10 @@ function getPluginLocalLicenses(plugin: CompatiblePlugin): LicenseInfo[] {
 		return plugin.getLocalLicenses();
 	}
 
-	return normalizeLicenseStore(plugin.settings?.license, plugin.settings?.licenseState).localLicenses;
+	return normalizeLicenseStore(
+		plugin.settings?.license,
+		plugin.settings?.licenseState,
+	).localLicenses;
 }
 
 function getPluginActiveLicenses(plugin: CompatiblePlugin): LicenseInfo[] {
@@ -245,19 +273,20 @@ function getPluginActiveLicenses(plugin: CompatiblePlugin): LicenseInfo[] {
 }
 
 export function getInheritedLicensesFromLegacyWeave(
-	app: PluginLookupApp | undefined
+	app: PluginLookupApp | undefined,
 ): LicenseInfo[] {
 	const legacyPlugin = getLegacyWeavePlugin(app);
 	if (!legacyPlugin) {
 		return [];
 	}
 
-	const sourcePluginId = String(legacyPlugin.manifest?.id || LEGACY_WEAVE_PLUGIN_ID).trim()
-		|| LEGACY_WEAVE_PLUGIN_ID;
+	const sourcePluginId =
+		String(legacyPlugin.manifest?.id || LEGACY_WEAVE_PLUGIN_ID).trim() ||
+		LEGACY_WEAVE_PLUGIN_ID;
 
 	return dedupeLicenses(
 		getPluginActiveLicenses(legacyPlugin).map((license) =>
-			cloneLicenseAsInherited(license, sourcePluginId)
-		)
+			cloneLicenseAsInherited(license, sourcePluginId),
+		),
 	);
 }

@@ -1,14 +1,17 @@
-import { normalizePath, TFile, type App, type WorkspaceLeaf } from "obsidian";
+import { type App, TFile, type WorkspaceLeaf, normalizePath } from "obsidian";
 import { getEpubStorageService } from "../services/epub";
-import { EPUB_RUNTIME } from "../services/epub/epub-runtime";
 import { isSupportedBookPath } from "../services/epub/book-format";
+import { EPUB_RUNTIME } from "../services/epub/epub-runtime";
 import {
 	epubVaultPathsReferToSameBook,
 	resolveSupportedBookFilePath,
 } from "../services/epub/epub-vault-path";
 import { epubActiveDocumentStore } from "../stores/epub-active-document-store";
+import type {
+	AppWithViewRegistry,
+	ViewRegistryExtension,
+} from "../types/obsidian-extensions";
 import { VIEW_TYPE_EPUB } from "../views/EpubView";
-import type { AppWithViewRegistry, ViewRegistryExtension } from "../types/obsidian-extensions";
 import { focusWorkspaceLeaf } from "./obsidian-workspace-utils";
 import { getLeafLocation } from "./view-location-utils";
 
@@ -17,8 +20,11 @@ function getViewRegistry(app: App): ViewRegistryExtension | null {
 }
 
 function readMapLikeValue<T>(
-	value: Map<string, T> | (Record<string, T> & { get?: (key: string) => T | undefined }) | undefined,
-	key: string
+	value:
+		| Map<string, T>
+		| (Record<string, T> & { get?: (key: string) => T | undefined })
+		| undefined,
+	key: string,
 ): T | null {
 	if (!value || !key) {
 		return null;
@@ -33,8 +39,11 @@ function readMapLikeValue<T>(
 }
 
 function hasMapLikeValue(
-	value: Map<string, unknown> | (Record<string, unknown> & { get?: (key: string) => unknown }) | undefined,
-	key: string
+	value:
+		| Map<string, unknown>
+		| (Record<string, unknown> & { get?: (key: string) => unknown })
+		| undefined,
+	key: string,
 ): boolean {
 	return readMapLikeValue(value, key) != null;
 }
@@ -45,14 +54,20 @@ const KNOWN_EPUB_VIEW_TYPES = Array.from(
 		EPUB_RUNTIME.viewTypes.reader,
 		"weave-epub-reader",
 		"weave-epub-reader-standalone",
-	])
+		"weave-epub-ai-reader",
+	]),
 );
 
-function isCenterLeaf(leaf: WorkspaceLeaf | null | undefined): leaf is WorkspaceLeaf {
+function isCenterLeaf(
+	leaf: WorkspaceLeaf | null | undefined,
+): leaf is WorkspaceLeaf {
 	return !!leaf && getLeafLocation(leaf) === "center";
 }
 
-function readRegisteredViewTypeForExtension(app: App, extension: string): string | null {
+function readRegisteredViewTypeForExtension(
+	app: App,
+	extension: string,
+): string | null {
 	const normalizedExtension = String(extension || "")
 		.trim()
 		.toLowerCase();
@@ -68,7 +83,8 @@ function isRegisteredViewType(app: App, viewType: string): boolean {
 	if (!registry || !viewType) {
 		return false;
 	}
-	const creators = registry.viewByType ?? registry.viewCreators ?? registry.views;
+	const creators =
+		registry.viewByType ?? registry.viewCreators ?? registry.views;
 	return hasMapLikeValue(creators, viewType);
 }
 
@@ -82,7 +98,9 @@ export function getAllOpenEpubLeaves(app: App): WorkspaceLeaf[] {
 	return Array.from(leaves);
 }
 
-export function getOpenEpubFilePath(leaf: WorkspaceLeaf | null | undefined): string {
+export function getOpenEpubFilePath(
+	leaf: WorkspaceLeaf | null | undefined,
+): string {
 	if (!leaf) {
 		return "";
 	}
@@ -92,7 +110,9 @@ export function getOpenEpubFilePath(leaf: WorkspaceLeaf | null | undefined): str
 			getState?: () => Record<string, unknown>;
 		};
 		const fromView =
-			typeof view?.getCurrentFilePath === "function" ? view.getCurrentFilePath() : "";
+			typeof view?.getCurrentFilePath === "function"
+				? view.getCurrentFilePath()
+				: "";
 		if (typeof fromView === "string" && fromView.trim()) {
 			return fromView;
 		}
@@ -108,7 +128,10 @@ export function getOpenEpubFilePath(leaf: WorkspaceLeaf | null | undefined): str
 	}
 }
 
-export function resolveRegisteredEpubViewType(app: App, filePath?: string): string | null {
+export function resolveRegisteredEpubViewType(
+	app: App,
+	filePath?: string,
+): string | null {
 	const extension =
 		String(filePath || "")
 			.split(".")
@@ -125,7 +148,10 @@ export function resolveRegisteredEpubViewType(app: App, filePath?: string): stri
 	return null;
 }
 
-function isExistingEpubPath(app: App, filePath: string | null | undefined): filePath is string {
+function isExistingEpubPath(
+	app: App,
+	filePath: string | null | undefined,
+): filePath is string {
 	if (!filePath) {
 		return false;
 	}
@@ -143,7 +169,10 @@ export function pathsReferToSameOpenBook(left: string, right: string): boolean {
 	return epubVaultPathsReferToSameBook(normalizedLeft, normalizedRight);
 }
 
-export function findOpenEpubLeaf(app: App, filePath?: string): WorkspaceLeaf | null {
+export function findOpenEpubLeaf(
+	app: App,
+	filePath?: string,
+): WorkspaceLeaf | null {
 	const leaves = getAllOpenEpubLeaves(app);
 
 	if (filePath) {
@@ -151,7 +180,9 @@ export function findOpenEpubLeaf(app: App, filePath?: string): WorkspaceLeaf | n
 			resolveSupportedBookFilePath(app, filePath) || normalizePath(filePath);
 		const matchedLeaf = leaves.find((leaf) => {
 			const openPath = getOpenEpubFilePath(leaf);
-			return openPath ? pathsReferToSameOpenBook(openPath, canonicalPath) : false;
+			return openPath
+				? pathsReferToSameOpenBook(openPath, canonicalPath)
+				: false;
 		});
 		return matchedLeaf ?? null;
 	}
@@ -159,7 +190,10 @@ export function findOpenEpubLeaf(app: App, filePath?: string): WorkspaceLeaf | n
 	return leaves.find((leaf) => isCenterLeaf(leaf)) ?? leaves[0] ?? null;
 }
 
-export function getPreferredEpubLeaf(app: App, filePath?: string): WorkspaceLeaf | null {
+export function getPreferredEpubLeaf(
+	app: App,
+	filePath?: string,
+): WorkspaceLeaf | null {
 	const matchedEpubLeaf = findOpenEpubLeaf(app, filePath);
 	if (matchedEpubLeaf) {
 		return matchedEpubLeaf;
@@ -179,7 +213,9 @@ export function getPreferredEpubLeaf(app: App, filePath?: string): WorkspaceLeaf
 		return recentLeaf;
 	}
 
-	const markdownLeaf = app.workspace.getLeavesOfType("markdown").find((leaf) => isCenterLeaf(leaf));
+	const markdownLeaf = app.workspace
+		.getLeavesOfType("markdown")
+		.find((leaf) => isCenterLeaf(leaf));
 	if (markdownLeaf) {
 		return markdownLeaf;
 	}
@@ -195,7 +231,7 @@ export function getPreferredEpubLeaf(app: App, filePath?: string): WorkspaceLeaf
 export async function openEpubInPreferredLeaf(
 	app: App,
 	filePath: string,
-	state: Record<string, unknown> = {}
+	state: Record<string, unknown> = {},
 ): Promise<WorkspaceLeaf | null> {
 	const viewType = resolveRegisteredEpubViewType(app, filePath);
 	if (!viewType) {
@@ -206,7 +242,8 @@ export async function openEpubInPreferredLeaf(
 		return null;
 	}
 
-	const canonicalPath = resolveSupportedBookFilePath(app, filePath) || normalizePath(filePath);
+	const canonicalPath =
+		resolveSupportedBookFilePath(app, filePath) || normalizePath(filePath);
 
 	await leaf.setViewState({
 		type: viewType,
@@ -228,7 +265,7 @@ export async function openBookForSourceNavigation(
 	app: App,
 	filePath: string,
 	state: Record<string, unknown> = {},
-	options: { focus?: boolean } = {}
+	options: { focus?: boolean } = {},
 ): Promise<WorkspaceLeaf | null> {
 	const { focus = true } = options;
 	const viewType = resolveRegisteredEpubViewType(app, filePath);
@@ -236,7 +273,8 @@ export async function openBookForSourceNavigation(
 		return null;
 	}
 
-	const canonicalPath = resolveSupportedBookFilePath(app, filePath) || normalizePath(filePath);
+	const canonicalPath =
+		resolveSupportedBookFilePath(app, filePath) || normalizePath(filePath);
 	const existingLeaf = findOpenEpubLeaf(app, canonicalPath);
 	const leaf = existingLeaf ?? app.workspace.getLeaf("tab");
 
@@ -274,7 +312,9 @@ export async function resolveRecentEpubPath(app: App): Promise<string | null> {
 
 	try {
 		const storageService = getEpubStorageService(app);
-		const recentBook = Object.values(await storageService.loadBooks({ hydrateStates: false }))
+		const recentBook = Object.values(
+			await storageService.loadBooks({ hydrateStates: false }),
+		)
 			.filter((book) => isExistingEpubPath(app, book.filePath))
 			.sort((a, b) => {
 				const timeA = Number.isFinite(a.readingStats?.lastReadTime)

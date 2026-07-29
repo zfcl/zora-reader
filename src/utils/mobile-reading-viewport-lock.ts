@@ -1,26 +1,26 @@
-import { domInstanceOf } from './dom-instance-of';
+import { domInstanceOf } from "./dom-instance-of";
 import {
+	type VisualViewportLayout,
 	bindMobileFloatingViewport,
 	getVisualViewportLayout,
-	type VisualViewportLayout,
-} from './mobile-floating-viewport';
+} from "./mobile-floating-viewport";
 
-export const READING_VIEWPORT_LOCK_CLASS = 'epub-reading-viewport-locked';
+export const READING_VIEWPORT_LOCK_CLASS = "epub-reading-viewport-locked";
 
 const LOCKED_STYLE_KEYS = [
-	'position',
-	'top',
-	'left',
-	'right',
-	'bottom',
-	'width',
-	'height',
-	'maxHeight',
-	'overflow',
-	'boxSizing',
+	"position",
+	"top",
+	"left",
+	"right",
+	"bottom",
+	"width",
+	"height",
+	"maxHeight",
+	"overflow",
+	"boxSizing",
 ] as const;
 
-function stylePropToCss(prop: (typeof LOCKED_STYLE_KEYS)[number]): string {
+function stylePropToCss(prop: typeof LOCKED_STYLE_KEYS[number]): string {
 	return prop.replace(/[A-Z]/g, (match) => `-${match.toLowerCase()}`);
 }
 
@@ -32,7 +32,10 @@ function captureStyleSnapshot(target: HTMLElement): Map<string, string> {
 	return snapshot;
 }
 
-function restoreStyleSnapshot(target: HTMLElement, snapshot: Map<string, string>) {
+function restoreStyleSnapshot(
+	target: HTMLElement,
+	snapshot: Map<string, string>,
+) {
 	for (const prop of LOCKED_STYLE_KEYS) {
 		const cssProp = stylePropToCss(prop);
 		const previous = snapshot.get(prop);
@@ -44,11 +47,14 @@ function restoreStyleSnapshot(target: HTMLElement, snapshot: Map<string, string>
 	}
 }
 
-function applyLayoutToTarget(target: HTMLElement, layout: VisualViewportLayout) {
-	target.style.setProperty('--epub-reading-vp-top', `${layout.offsetTop}px`);
-	target.style.setProperty('--epub-reading-vp-left', `${layout.offsetLeft}px`);
-	target.style.setProperty('--epub-reading-vp-width', `${layout.width}px`);
-	target.style.setProperty('--epub-reading-vp-height', `${layout.height}px`);
+function applyLayoutToTarget(
+	target: HTMLElement,
+	layout: VisualViewportLayout,
+) {
+	target.style.setProperty("--epub-reading-vp-top", `${layout.offsetTop}px`);
+	target.style.setProperty("--epub-reading-vp-left", `${layout.offsetLeft}px`);
+	target.style.setProperty("--epub-reading-vp-width", `${layout.width}px`);
+	target.style.setProperty("--epub-reading-vp-height", `${layout.height}px`);
 }
 
 function stabilizeLayoutViewportScroll() {
@@ -61,19 +67,21 @@ function stabilizeLayoutViewportScroll() {
  * 解析应锁定的阅读器容器：优先 Obsidian leaf 的 view-content，其次插件 shell。
  */
 export function resolveReadingViewportLockTarget(
-	rootEl: HTMLElement | null | undefined
+	rootEl: HTMLElement | null | undefined,
 ): HTMLElement | null {
 	if (!rootEl) {
 		return null;
 	}
 
-	const leafContent = rootEl.closest('.workspace-leaf-content[data-type="weave-epub-reader"]');
-	const viewContent = leafContent?.querySelector(':scope > .view-content');
+	const leafContent = rootEl.closest(
+		'.workspace-leaf-content[data-type="weave-epub-reader"], .workspace-leaf-content[data-type="weave-epub-ai-reader"]',
+	);
+	const viewContent = leafContent?.querySelector(":scope > .view-content");
 	if (domInstanceOf(viewContent, HTMLElement)) {
 		return viewContent;
 	}
 
-	const shell = rootEl.closest('.weave-epub-view-shell');
+	const shell = rootEl.closest(".weave-epub-view-shell");
 	return domInstanceOf(shell, HTMLElement) ? shell : null;
 }
 

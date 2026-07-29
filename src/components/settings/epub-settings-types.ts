@@ -3,16 +3,16 @@ import type {
 	CustomWebTranslationProvider,
 	SelectionTranslationSettings,
 } from "../../config/selection-translation-settings";
-import type { InterfaceLanguagePreference } from "../../utils/i18n";
 import type StandaloneEpubPlugin from "../../main";
+import type { InterfaceLanguagePreference } from "../../utils/i18n";
 
-export type EpubSettingsTabId = "basic" | "license" | "about";
+export type EpubSettingsTabId = "basic" | "ai" | "license" | "about";
 
 export type SettingsCleanupFn = () => void;
 
 export type EpubSettingsTranslateFn = (
 	key: string,
-	params?: Record<string, string | number>
+	params?: Record<string, string | number>,
 ) => string;
 
 export interface EpubBasicSettingsHosts {
@@ -47,21 +47,30 @@ export interface EpubBasicSettingsCallbacks {
 	setContinuousReadingPositionAutoSavePagesInput: (value: string) => void;
 	setAutoSavePagesTextControl: (control: TextComponent | null) => void;
 	updateBookmarkFolder: (folderPath: string) => Promise<void>;
-	updateInterfaceLanguage: (value: InterfaceLanguagePreference) => Promise<void>;
+	updateInterfaceLanguage: (
+		value: InterfaceLanguagePreference,
+	) => Promise<void>;
 	updatePremiumPreview: (enabled: boolean) => Promise<void>;
 	updateBookNotesExportTemplatePath: (templatePath: string) => Promise<void>;
 	updateBookNotesExportTemplateFolder: (folderPath: string) => Promise<void>;
 	openBookNotesExportTemplateModal: () => void;
-	updateContinuousReadingPositionAutoSaveEnabled: (enabled: boolean) => Promise<void>;
-	updateContinuousReadingPositionAutoSavePages: (value: string) => Promise<void>;
-	setBuiltinTranslationProviderEnabled: (providerId: string, enabled: boolean) => Promise<void>;
+	updateContinuousReadingPositionAutoSaveEnabled: (
+		enabled: boolean,
+	) => Promise<void>;
+	updateContinuousReadingPositionAutoSavePages: (
+		value: string,
+	) => Promise<void>;
+	setBuiltinTranslationProviderEnabled: (
+		providerId: string,
+		enabled: boolean,
+	) => Promise<void>;
 	updateCustomTranslationProvider: (
 		index: number,
-		patch: Partial<CustomWebTranslationProvider>
+		patch: Partial<CustomWebTranslationProvider>,
 	) => Promise<void>;
 	updateCustomTranslationProviderDraft: (
 		index: number,
-		patch: Partial<CustomWebTranslationProvider>
+		patch: Partial<CustomWebTranslationProvider>,
 	) => Promise<void>;
 	commitCustomTranslationProviderDrafts: () => Promise<void>;
 	addCustomTranslationProvider: () => Promise<void>;

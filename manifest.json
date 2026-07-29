@@ -1,10 +1,10 @@
 {
-  "id": "weave-epub-reader",
-  "name": "Weave EPUB Reader",
-  "version": "0.6.55",
-  "minAppVersion": "1.8.7",
-  "description": "Multi-format ebook reader for desktop and mobile: bookshelf, highlights, excerpts, and deep links (EPUB and TXT free; more formats with Premium).",
-  "author": "Rabbit (zhuzhige)",
-  "authorUrl": "https://github.com/zhuzhige123",
+  "id": "weave-epub-ai-reader",
+  "name": "Weave EPUB AI Reader",
+  "version": "1.0.0",
+  "minAppVersion": "1.11.4",
+  "description": "Integrated ebook reader with bookshelf, highlights, excerpts, deep links, and a built-in DeepSeek reading assistant.",
+  "author": "HarrySuen626 and Weave contributors",
+  "authorUrl": "https://github.com/HarrySuen626",
   "isDesktopOnly": false
 }

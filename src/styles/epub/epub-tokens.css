@@ -3,7 +3,7 @@
    ======================================== */
 
 .workspace-leaf-content[data-type="weave-epub-reader"] > .view-content,
-.workspace-leaf-content[data-type="weave-epub-reader-standalone"] > .view-content {
+.workspace-leaf-content[data-type="weave-epub-ai-reader"] > .view-content {
 	position: relative;
 	overflow: hidden;
 	height: 100%;
@@ -32,7 +32,8 @@
 
 /* 想法编辑 + 键盘：将阅读 leaf 钉在 visual viewport，避免正文被整体上推并露出空白占位 */
 .weave-epub-view-content.epub-reading-viewport-locked,
-.workspace-leaf-content[data-type="weave-epub-reader"] > .view-content.epub-reading-viewport-locked {
+.workspace-leaf-content[data-type="weave-epub-reader"] > .view-content.epub-reading-viewport-locked,
+.workspace-leaf-content[data-type="weave-epub-ai-reader"] > .view-content.epub-reading-viewport-locked {
 	position: fixed;
 	right: auto;
 	bottom: auto;
@@ -54,7 +55,9 @@ body.is-phone.epub-comment-keyboard-active {
 }
 
 body.is-mobile.epub-comment-keyboard-active .workspace-leaf-content[data-type="weave-epub-reader"],
-body.is-phone.epub-comment-keyboard-active .workspace-leaf-content[data-type="weave-epub-reader"] {
+body.is-phone.epub-comment-keyboard-active .workspace-leaf-content[data-type="weave-epub-reader"],
+body.is-mobile.epub-comment-keyboard-active .workspace-leaf-content[data-type="weave-epub-ai-reader"],
+body.is-phone.epub-comment-keyboard-active .workspace-leaf-content[data-type="weave-epub-ai-reader"] {
 	overflow: hidden;
 }
 

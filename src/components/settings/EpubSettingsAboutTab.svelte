@@ -23,7 +23,7 @@
     },
     {
       label: t("epub.settings.contact.changelog"),
-      href: "https://github.com/zhuzhige123/obsidian-weave-reader",
+      href: "https://github.com/HarrySuen626/weave-epub-ai-reader",
     },
     {
       label: t("epub.settings.contact.community"),

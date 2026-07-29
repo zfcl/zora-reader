@@ -1,12 +1,12 @@
-# Weave EPUB Reader Privacy Notice
+# Weave EPUB AI Reader Privacy Notice
 
-本说明用于概述 Weave EPUB Reader 在当前公开代码范围内涉及的数据处理行为，帮助用户理解本地数据、联网场景与许可证校验相关信息。
+本说明用于概述 Weave EPUB AI Reader 在当前公开代码范围内涉及的数据处理行为，帮助用户理解本地数据、联网场景与许可证校验相关信息。本项目基于 Weave EPUB Reader 0.6.55，并在 Reader 本体内新增 DeepSeek AI Assistant。
 
 ## 1. 适用范围
 
 本说明适用于：
 
-- `weave-epub-reader` 插件本体
+- `weave-epub-ai-reader` 插件本体
 - 当前公开仓库中可见的本地功能
 - 当前公开代码中可见的许可证校验与 AI 接入行为
 
@@ -93,13 +93,17 @@
 
 ## 7. AI 功能说明
 
-如果你启用了 AI 相关功能，插件可能会向你配置的第三方 AI 服务发送请求。
+只有当你在阅读器中选择文字、点击 AI 并主动选择一个动作时，插件才会向你配置的第三方 AI 服务发送请求。
 
 这类请求的具体数据范围取决于：
 
-- 你选择的 AI 服务提供商
-- 你输入、选中或提交给 AI 的内容
-- 你在插件中的 AI 配置
+- 你在 Reader 中选择的文本
+- 对应动作的系统提示词（或自定义助手提示词）
+- 你配置的模型 ID、最大输出 Token 与 HTTPS API Endpoint
+
+默认 Endpoint 为 `https://api.deepseek.com/chat/completions`。请求通过 Obsidian `requestUrl` 发出，并显式包含 `thinking: { type: "disabled" }`。
+
+DeepSeek API Key 使用 Obsidian 1.11.4 起提供的 SecretStorage 保存。插件设置只保留 Secret ID；API Key 不写入插件 `data.json`。插件不包含遥测。
 
 这些第三方服务不受本仓库控制，你应同时审阅相应服务商的隐私政策与使用条款。
 
@@ -128,6 +132,7 @@
 
 如果你对隐私、授权校验或数据处理方式有疑问，可通过以下公开联系方式反馈：
 
-- GitHub: https://github.com/zhuzhige123
+- Fork: https://github.com/HarrySuen626
+- Upstream: https://github.com/zhuzhige123
 
 本说明不是法律意见，也不替代未来可能单独发布的购买说明、服务说明或更正式的隐私政策文本。

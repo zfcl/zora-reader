@@ -27,7 +27,7 @@ jobs:
             const headers = {
               Authorization: `Bearer ${token}`,
               Accept: "application/vnd.github+json",
-              "User-Agent": "weave-epub-reader-fix-release-titles",
+              "User-Agent": "weave-epub-ai-reader-fix-release-titles",
             };
 
             let page = 1;

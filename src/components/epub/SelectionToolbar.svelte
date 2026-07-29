@@ -4,7 +4,6 @@
 	import { onMount, tick, untrack } from 'svelte';
 	import { PREMIUM_FEATURES } from '../../services/premium/PremiumFeatureGuard';
 	import { tr } from '../../utils/i18n';
-	import { isWeaveMainPluginEnabled } from '../../utils/weave-reader-access';
 	import { logger } from '../../utils/logger';
 	import type {
 		EpubBook,
@@ -89,7 +88,6 @@
 		onOpenAIMenu
 	}: Props = $props();
 	let t = $derived($tr);
-	let canUseAiSplit = $derived(isWeaveMainPluginEnabled(app));
 
 	let toolbarEl: HTMLDivElement | undefined = $state(undefined);
 	let isVisible = $state(false);
@@ -888,12 +886,10 @@
 						<span class="action-label">{t('epub.selectionToolbar.readingPoint')}</span>
 					</button>
 				{/if}
-				{#if canUseAiSplit}
-					<button class="clickable-icon action-item ai" onclick={handleOpenAIMenu} title="AI" aria-label="AI">
-						<span class="action-icon" use:icon={'sparkles'}></span>
-						<span class="action-label">AI</span>
-					</button>
-				{/if}
+				<button class="clickable-icon action-item ai" onclick={handleOpenAIMenu} title="AI 助手" aria-label="AI 助手">
+					<span class="action-icon" use:icon={'sparkles'}></span>
+					<span class="action-label">AI</span>
+				</button>
 				<button
 					class="clickable-icon action-item selection-actions-more"
 					onclick={handleOpenMoreMenu}

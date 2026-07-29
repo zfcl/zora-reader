@@ -1,8 +1,16 @@
 {
-  "name": "weave-epub-reader",
+  "name": "weave-epub-ai-reader",
   "private": true,
-  "version": "0.6.55",
-  "description": "Standalone EPUB reader with bookshelf, deep links, and reading state persistence.",
+  "version": "1.0.0",
+  "description": "Integrated ebook reader with a built-in DeepSeek reading assistant.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HarrySuen626/weave-epub-ai-reader.git"
+  },
+  "bugs": {
+    "url": "https://github.com/HarrySuen626/weave-epub-ai-reader/issues"
+  },
+  "homepage": "https://github.com/HarrySuen626/weave-epub-ai-reader#readme",
   "main": "main.js",
   "type": "module",
   "scripts": {
@@ -73,7 +81,7 @@
     "svelte5",
     "typescript"
   ],
-  "author": "Weave Team",
+  "author": "HarrySuen626 and Weave contributors",
   "license": "GPL-3.0-or-later",
   "devDependencies": {
     "@biomejs/biome": "1.3.3",

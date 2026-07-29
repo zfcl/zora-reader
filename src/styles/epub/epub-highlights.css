@@ -244,7 +244,7 @@
 }
 
 .workspace-leaf-content[data-type="weave-epub-reader"] .view-header .view-action.epub-view-action-hidden,
-.workspace-leaf-content[data-type="weave-epub-reader-standalone"] .view-header .view-action.epub-view-action-hidden {
+.workspace-leaf-content[data-type="weave-epub-ai-reader"] .view-header .view-action.epub-view-action-hidden {
 	display: none;
 }
 
@@ -898,7 +898,8 @@
    ======================================== */
 
 /* Hide view header title on mobile to make room for action buttons */
-body.is-mobile .workspace-leaf-content[data-type="weave-epub-reader"] .view-header-title {
+body.is-mobile .workspace-leaf-content[data-type="weave-epub-reader"] .view-header-title,
+body.is-mobile .workspace-leaf-content[data-type="weave-epub-ai-reader"] .view-header-title {
 	display: none;
 }
 
@@ -2189,4 +2190,3 @@ body.is-mobile .epub-selected-text-ai-panel-slot :global(.weave-ai-card-panel .c
 	color: var(--text-normal);
 	background-color: var(--background-modifier-hover);
 }
-

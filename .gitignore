@@ -333,3 +333,9 @@ INSTALLATION.md
 biome.json
 uno.config.ts
 eslint.config.mjs
+
+# Public reproducibility assets for the integrated AI fork
+!docs/
+docs/*
+!docs/REPRODUCTION.zh-CN.md
+!scripts/install-local.ps1

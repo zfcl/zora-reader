@@ -4,6 +4,7 @@
   import type StandaloneEpubPlugin from "../../main";
   import type { EpubSettingsTabId } from "./epub-settings-types";
   import EpubSettingsBasicTab from "./EpubSettingsBasicTab.svelte";
+  import EpubAISettingsTab from "./EpubAISettingsTab.svelte";
   import EpubSettingsAboutTab from "./EpubSettingsAboutTab.svelte";
   import EpubLicenseSettingsPanel from "./EpubLicenseSettingsPanel.svelte";
   import "../../styles/epub/epub-settings-panel.css";
@@ -18,6 +19,7 @@
 
   let tabs = $derived.by<Array<{ id: EpubSettingsTabId; label: string; icon: string }>>(() => [
     { id: "basic", label: t("epub.settings.tabs.basic"), icon: "" },
+    { id: "ai", label: "AI 助手", icon: "" },
     { id: "license", label: t("epub.settings.tabs.license"), icon: "" },
     { id: "about", label: t("epub.settings.tabs.about"), icon: "" },
   ]);
@@ -41,6 +43,10 @@
   <div class="epub-settings-tab-panel" id={`epub-settings-panel-${activeTab}`}>
     {#if activeTab === "basic"}
       <EpubSettingsBasicTab {plugin} />
+    {/if}
+
+    {#if activeTab === "ai"}
+      <EpubAISettingsTab {plugin} />
     {/if}
 
     {#if activeTab === "license"}

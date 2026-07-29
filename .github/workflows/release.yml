@@ -1,14 +1,12 @@
 name: Release Obsidian Plugin
 
-# Closed-source release path: maintainers upload local `dist/` via `gh release create`.
-# Do NOT rebuild on tag push — public `main` only has version index metadata, so a
-# tag-triggered CI build would overwrite the correct local package with stale code.
-# Use workflow_dispatch only when intentionally rebuilding/attesting from a tag.
+# The complete GPL source is public. Releases are rebuilt and attested from an
+# explicit tag through workflow_dispatch after manual Obsidian UI validation.
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to publish or republish (e.g. 0.6.17)"
+        description: "Tag to publish or republish (e.g. 1.0.0)"
         required: true
         type: string
 
@@ -38,7 +36,6 @@ jobs:
         run: node scripts/ci-install-dependencies.cjs
 
       - name: Verify public repo safety
-        if: github.event_name != 'workflow_dispatch'
         run: npm run verify:public-repo
 
       - name: Read release version
@@ -162,7 +159,7 @@ jobs:
               headers: {
                 Authorization: `Bearer ${token}`,
                 Accept: "application/vnd.github+json",
-                "User-Agent": "weave-epub-reader-release-check",
+                "User-Agent": "weave-epub-ai-reader-release-check",
               },
             });
 

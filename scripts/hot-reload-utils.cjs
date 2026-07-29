@@ -83,14 +83,17 @@ function readEnvValueFromDotEnv(key) {
 }
 
 function resolveVaultPath(processEnv = process.env) {
-	return processEnv.OBSIDIAN_VAULT_PATH?.trim() || readEnvValueFromDotEnv("OBSIDIAN_VAULT_PATH");
+	return (
+		processEnv.OBSIDIAN_VAULT_PATH?.trim() ||
+		readEnvValueFromDotEnv("OBSIDIAN_VAULT_PATH")
+	);
 }
 
 function resolveHotReloadPluginId(processEnv = process.env) {
 	return (
 		processEnv.OBSIDIAN_PLUGIN_ID?.trim() ||
 		readEnvValueFromDotEnv("OBSIDIAN_PLUGIN_ID") ||
-		"weave-epub-reader"
+		"weave-epub-ai-reader"
 	);
 }
 
@@ -123,7 +126,7 @@ function listRuntimeFiles(sourceDir, runtimeFiles = DEFAULT_RUNTIME_FILES) {
 function listRuntimeAssetFiles(
 	sourceDir,
 	assetDirs = DEFAULT_RUNTIME_ASSET_DIRS,
-	assetExtensions = DEFAULT_RUNTIME_ASSET_EXTENSIONS
+	assetExtensions = DEFAULT_RUNTIME_ASSET_EXTENSIONS,
 ) {
 	if (!fs.existsSync(sourceDir)) {
 		return [];
@@ -138,7 +141,9 @@ function listRuntimeAssetFiles(
 		}
 
 		for (const entry of fs.readdirSync(absoluteDir, { withFileTypes: true })) {
-			const relativePath = relativeDir ? path.posix.join(relativeDir, entry.name) : entry.name;
+			const relativePath = relativeDir
+				? path.posix.join(relativeDir, entry.name)
+				: entry.name;
 			const normalizedRelativePath = relativePath.replace(/\\/g, "/");
 
 			if (entry.isDirectory()) {
@@ -162,7 +167,7 @@ function listRuntimeAssetFiles(
 async function copyFileAtomicWithRetry(
 	sourceFile,
 	targetFile,
-	{ retries = 24, delayMs = 180 } = {}
+	{ retries = 24, delayMs = 180 } = {},
 ) {
 	if (path.resolve(sourceFile) === path.resolve(targetFile)) {
 		return false;
@@ -170,7 +175,7 @@ async function copyFileAtomicWithRetry(
 
 	const tempFile = path.join(
 		path.dirname(targetFile),
-		`.weave-sync-${process.pid}-${Date.now()}-${path.basename(targetFile)}`
+		`.weave-sync-${process.pid}-${Date.now()}-${path.basename(targetFile)}`,
 	);
 
 	for (let attempt = 0; attempt <= retries; attempt += 1) {
@@ -214,7 +219,7 @@ async function copyFileAtomicWithRetry(
 function pruneManagedRuntimeFiles(
 	targetDir,
 	keepFiles = new Set(),
-	managedFiles = DEFAULT_PRUNABLE_RUNTIME_FILES
+	managedFiles = DEFAULT_PRUNABLE_RUNTIME_FILES,
 ) {
 	if (!fs.existsSync(targetDir)) {
 		return [];
@@ -241,7 +246,7 @@ function pruneManagedRuntimeFiles(
 function pruneManagedRuntimeDirectories(
 	targetDir,
 	keepDirectories = new Set(),
-	managedDirectories = DEFAULT_PRUNABLE_RUNTIME_DIRS
+	managedDirectories = DEFAULT_PRUNABLE_RUNTIME_DIRS,
 ) {
 	if (!fs.existsSync(targetDir)) {
 		return [];
@@ -254,11 +259,17 @@ function pruneManagedRuntimeDirectories(
 			continue;
 		}
 
-		if (!managedDirectories.has(entry.name) || keepDirectories.has(entry.name)) {
+		if (
+			!managedDirectories.has(entry.name) ||
+			keepDirectories.has(entry.name)
+		) {
 			continue;
 		}
 
-		fs.rmSync(path.join(targetDir, entry.name), { recursive: true, force: true });
+		fs.rmSync(path.join(targetDir, entry.name), {
+			recursive: true,
+			force: true,
+		});
 		removed.push(`${entry.name}/`);
 	}
 
@@ -277,11 +288,15 @@ async function syncRuntimeFiles(
 		pruneStaleManagedFiles = false,
 		managedFiles = DEFAULT_PRUNABLE_RUNTIME_FILES,
 		managedDirectories = DEFAULT_PRUNABLE_RUNTIME_DIRS,
-	} = {}
+	} = {},
 ) {
 	const runtimeFilesList = [
 		...listRuntimeFiles(sourceDir, runtimeFiles),
-		...listRuntimeAssetFiles(sourceDir, runtimeAssetDirs, runtimeAssetExtensions),
+		...listRuntimeAssetFiles(
+			sourceDir,
+			runtimeAssetDirs,
+			runtimeAssetExtensions,
+		),
 	].sort((a, b) => a.localeCompare(b));
 	const copied = [];
 
@@ -289,7 +304,7 @@ async function syncRuntimeFiles(
 		const copiedFile = await copyFileAtomicWithRetry(
 			path.join(sourceDir, fileName),
 			path.join(targetDir, fileName),
-			{ retries, delayMs }
+			{ retries, delayMs },
 		);
 
 		if (copiedFile) {
@@ -299,17 +314,21 @@ async function syncRuntimeFiles(
 
 	const removed = pruneStaleManagedFiles
 		? [
-				...pruneManagedRuntimeFiles(targetDir, new Set(runtimeFilesList), managedFiles),
+				...pruneManagedRuntimeFiles(
+					targetDir,
+					new Set(runtimeFilesList),
+					managedFiles,
+				),
 				...pruneManagedRuntimeDirectories(
 					targetDir,
 					new Set(
 						runtimeFilesList
 							.filter((fileName) => fileName.includes("/"))
-							.map((fileName) => fileName.split("/")[0])
+							.map((fileName) => fileName.split("/")[0]),
 					),
-					managedDirectories
+					managedDirectories,
 				),
-			]
+		  ]
 		: [];
 
 	return {

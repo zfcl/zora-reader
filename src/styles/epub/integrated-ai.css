@@ -1,0 +1,56 @@
+.modal:has(.weave-epub-ai-result-modal) {
+	width: min(1100px, calc(100vw - 2rem));
+	max-width: min(1100px, calc(100vw - 2rem));
+	max-height: calc(100vh - 2rem);
+}
+
+.modal:has(.weave-epub-ai-result-modal) .modal-content {
+	max-height: calc(100vh - 4.5rem);
+	overflow-y: auto;
+	overscroll-behavior: contain;
+}
+
+.weave-epub-ai-result-modal {
+	min-width: 0;
+}
+
+.weave-epub-ai-selection-preview {
+	max-height: min(8rem, 20vh);
+	margin-bottom: 1rem;
+	padding: 0.75rem 0.9rem;
+	overflow: auto;
+	border-left: 3px solid var(--interactive-accent);
+	border-radius: var(--radius-s);
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	white-space: pre-wrap;
+}
+
+.weave-epub-ai-status {
+	margin: 0.5rem 0;
+	color: var(--text-muted);
+}
+
+.weave-epub-ai-result {
+	min-height: 8rem;
+	line-height: 1.65;
+	white-space: pre-wrap;
+	user-select: text;
+}
+
+.weave-epub-ai-error {
+	color: var(--text-error);
+}
+
+.weave-epub-ai-modal-buttons {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.6rem;
+	margin-top: 1rem;
+}
+
+.weave-epub-ai-custom-prompt {
+	width: min(42rem, 100%);
+	min-height: 8rem;
+	resize: vertical;
+}
