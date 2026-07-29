@@ -10,7 +10,7 @@
 2. 备份当前 Vault。
 3. 在 `设置 → 第三方插件` 中记录当前启用状态。
 4. 从 GitHub Release 下载并解压
-   `weave-epub-ai-reader-1.0.0.zip` 到：
+   `weave-epub-ai-reader-1.0.1.zip` 到：
 
    ```text
    <Vault>/.obsidian/plugins/
@@ -62,11 +62,11 @@ API Key 必须在每个 Vault 中单独配置，因为它保存在 Obsidian Secr
 ### 1. 获取集成版源码
 
 ```powershell
-git clone --branch 1.0.0 --single-branch https://github.com/HarrySuen626/weave-epub-ai-reader.git
+git clone --branch 1.0.1 --single-branch https://github.com/HarrySuen626/weave-epub-ai-reader.git
 cd weave-epub-ai-reader
 ```
 
-本仓库保留上游 Git 历史。集成版 `1.0.0` 的精确上游基础是：
+本仓库保留上游 Git 历史。集成版 `1.0.1` 的精确上游基础是：
 
 ```text
 536b2ca29a834385231fe49e6cd757fd07eecd1e

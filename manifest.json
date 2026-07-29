@@ -1,10 +1,10 @@
 {
   "id": "weave-epub-ai-reader",
   "name": "Weave EPUB AI Reader",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "minAppVersion": "1.11.4",
-  "description": "Integrated ebook reader with bookshelf, highlights, excerpts, deep links, and a built-in DeepSeek reading assistant.",
-  "author": "HarrySuen626 and Weave contributors",
+  "description": "Read EPUB books with highlights, deep links, and a built-in DeepSeek assistant.",
+  "author": "HarrySuen626",
   "authorUrl": "https://github.com/HarrySuen626",
   "isDesktopOnly": false
 }

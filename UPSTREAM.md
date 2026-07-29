@@ -8,7 +8,7 @@
 | Commit date | 2026-07-27T15:55:29Z |
 | Source tree | `c5fc0c93de9c4c4059d550a07b3dd941012975bf` |
 | License | GPL-3.0-or-later |
-| Integrated fork version | `1.0.0` |
+| Integrated fork version | `1.0.1` |
 
 The fork was created from the exact upstream tag above. The Git history is
 retained so future upstream changes can be audited and merged.
