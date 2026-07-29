@@ -44,7 +44,7 @@ New-Item -ItemType Directory -Path $targetRoot -Force | Out-Null
 
 if (-not $SkipReaderDataMigration) {
 	$legacyReaderRoot = Join-Path $pluginRoot "weave-epub-reader"
-	foreach ($entryName in @("data.json", "state", "cache")) {
+	foreach ($entryName in @("data.json", "state", "cache", "backups")) {
 		$sourcePath = Join-Path $legacyReaderRoot $entryName
 		$destinationPath = Join-Path $targetRoot $entryName
 		if (

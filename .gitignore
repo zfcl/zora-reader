@@ -337,5 +337,7 @@ eslint.config.mjs
 # Public reproducibility assets for the integrated AI fork
 !docs/
 docs/*
-!docs/REPRODUCTION.zh-CN.md
+!docs/user/
+docs/user/*
+!docs/user/REPRODUCTION.zh-CN.md
 !scripts/install-local.ps1

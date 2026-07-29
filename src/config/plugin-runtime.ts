@@ -23,8 +23,11 @@ export const LEGACY_WEAVE_PRODUCT_IDS = new Set<string>([
 	"tuanki-obsidian-plugin",
 ]);
 
+export const LEGACY_EPUB_PRODUCT_IDS = new Set<string>(["weave-epub-reader"]);
+
 export const SUPPORTED_ACTIVATION_PRODUCT_IDS = new Set<string>([
 	...LEGACY_WEAVE_PRODUCT_IDS,
+	...LEGACY_EPUB_PRODUCT_IDS,
 	CURRENT_PLUGIN_ID,
 ]);
 

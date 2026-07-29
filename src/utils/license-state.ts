@@ -1,4 +1,8 @@
-import { CURRENT_PLUGIN_ID, LEGACY_WEAVE_PRODUCT_IDS } from "../config/plugin-runtime";
+import {
+	CURRENT_PLUGIN_ID,
+	LEGACY_EPUB_PRODUCT_IDS,
+	LEGACY_WEAVE_PRODUCT_IDS,
+} from "../config/plugin-runtime";
 import {
 	DEFAULT_LICENSE_INFO,
 	DEFAULT_LICENSE_STORE,
@@ -21,7 +25,7 @@ export const LICENSE_ENTITLEMENTS = {
 	EPUB_PREMIUM: "epub-premium",
 } as const satisfies Record<string, LicenseEntitlement>;
 
-const EPUB_PRODUCT_IDS = new Set<string>([CURRENT_PLUGIN_ID]);
+const EPUB_PRODUCT_IDS = new Set<string>([CURRENT_PLUGIN_ID, ...LEGACY_EPUB_PRODUCT_IDS]);
 
 function dedupeStrings(values: Array<string | null | undefined>): string[] {
 	const seen = new Set<string>();

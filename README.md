@@ -56,7 +56,9 @@ files, build assets, or release archives.
    they are installed. The readers use separate plugin IDs and view types, but
    Obsidian can associate an ebook file extension with only one reader at a
    time.
-2. Download the release ZIP and extract it to:
+2. Download `weave-epub-ai-reader-<version>.zip` from the matching
+   [GitHub Release](https://github.com/HarrySuen626/weave-epub-ai-reader/releases)
+   and extract it to:
 
    ```text
    <Vault>/.obsidian/plugins/weave-epub-ai-reader/
@@ -74,6 +76,11 @@ files, build assets, or release archives.
    **Settings → Weave EPUB AI Reader → AI Assistant**.
 5. Save the DeepSeek API key and choose the model, endpoint, maximum output
    tokens, and optional custom prompt.
+
+The release also contains the three standard Obsidian assets (`main.js`,
+`manifest.json`, and `styles.css`) for Community Plugins and BRAT. Once the
+plugin is accepted into the Obsidian community directory, install and update it
+directly from **Settings → Community plugins**.
 
 ## Privacy and network disclosure
 
@@ -98,8 +105,8 @@ npm run build
 ```
 
 Release assets are generated in `dist/`. A valid release contains
-`main.js`, `manifest.json`, and `styles.css`. Never add an API key or a local
-plugin `data.json` to a release.
+`main.js`, `manifest.json`, `styles.css`, and an optional convenience ZIP.
+Never add an API key or a local plugin `data.json` to a release.
 
 ## Upstream updates
 

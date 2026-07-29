@@ -1,6 +1,6 @@
-# Weave EPUB Reader Support
+# Weave EPUB AI Reader Support
 
-本文件用于说明 Weave EPUB Reader 的公开反馈渠道，以及不同类型问题建议的处理方式。
+本文件说明独立集成版的公开反馈渠道。
 
 ## 适合在 GitHub 反馈的问题
 
@@ -14,9 +14,9 @@
 
 GitHub:
 
-- https://github.com/zhuzhige123/obsidian-weave-reader
+- https://github.com/HarrySuen626/weave-epub-ai-reader/issues
 
-## 激活、许可证与高级版相关问题
+## 上游激活、许可证与高级版相关问题
 
 如果你遇到以下问题：
 
@@ -25,7 +25,11 @@ GitHub:
 - 设备数量或设备迁移问题
 - 高级版权限未正确生效
 
-建议在反馈时尽量提供：
+这些能力来自上游 Weave EPUB Reader。本独立 Fork 不销售、不签发，也不能
+恢复上游许可证。相关问题请先确认是否能在原版 Reader 中复现；如属于上游
+服务，请联系上游项目。
+
+反馈兼容性问题时请尽量提供：
 
 - 插件版本号
 - 使用平台（Windows / macOS / Linux / Android / iOS）
@@ -69,7 +73,7 @@ GitHub:
 - 已升级到最新公开版本
 - 已阅读 [README.md](./README.md)
 - 已阅读 [PRIVACY.md](./PRIVACY.md)
-- 已阅读 [PREMIUM_TERMS.md](./PREMIUM_TERMS.md)
+- 安全问题已阅读 [SECURITY.md](./SECURITY.md)
 
 ## 说明
 

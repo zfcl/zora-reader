@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CURRENT_PLUGIN_VERSION } from "../../config/plugin-runtime";
+import { CURRENT_PLUGIN_ID, CURRENT_PLUGIN_VERSION } from "../../config/plugin-runtime";
 import type { LicenseInfo } from "../../types/license";
 import {
   LICENSED_PRODUCTS,
@@ -44,6 +44,7 @@ describe("license-state dual product rules", () => {
 
   it("maps standalone EPUB product id to EPUB entitlement only", () => {
     expect(mapProductIdToEntitlements("weave-epub-reader")).toEqual(["epub-premium"]);
+    expect(mapProductIdToEntitlements(CURRENT_PLUGIN_ID)).toEqual(["epub-premium"]);
   });
 
   it("allows Weave license to apply to EPUB but not vice versa", () => {

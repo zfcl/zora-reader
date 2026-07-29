@@ -1,49 +1,29 @@
 # Security Policy
 
-## Supported Versions
+## Supported versions
 
-原则上优先关注最新公开版本中的安全问题。
+Security fixes target the latest public release of Weave EPUB AI Reader.
 
-如果你发现的问题只存在于很旧的历史版本，建议仍然先提交说明，我们会再判断是否需要修复或仅建议升级。
+## Reporting a vulnerability
 
-## Reporting a Vulnerability
+Please do not disclose API keys, Vault contents, exploit details, or other
+sensitive information in a public issue.
 
-如果你认为 Weave EPUB Reader 存在安全问题，请不要直接在公开 Issue 中披露完整利用细节。
+Use GitHub's private vulnerability reporting for this repository:
 
-更合适的做法是先通过仓库维护者公开主页提供的联系方式发出简要说明，并至少包含以下内容：
+<https://github.com/HarrySuen626/weave-epub-ai-reader/security/advisories/new>
 
-- 问题类型
-- 影响范围
-- 触发条件
-- 复现步骤
-- 是否涉及敏感数据泄露、权限绕过、激活系统滥用或远程执行风险
+Include the affected version, impact, reproduction steps, and whether the issue
+could expose credentials, selected reading text, local files, or execute remote
+content.
 
-仓库主页：
+Ordinary bugs and feature requests can be reported through
+[GitHub Issues](https://github.com/HarrySuen626/weave-epub-ai-reader/issues).
 
-- https://github.com/zhuzhige123
+## Sensitive information
 
-## Please Do Not Post Publicly
+Never include a complete DeepSeek API key, access token, activation code,
+private Vault sample, or unredacted personal path in an issue or screenshot.
 
-请不要在公开页面直接发布以下内容：
-
-- 完整激活码
-- 私钥、公钥原文之外的私密密钥材料
-- API Key、访问令牌、账号凭证
-- 可直接复用的攻击脚本
-- 含用户私人 Vault 数据的完整样本
-
-## Scope
-
-安全问题通常包括但不限于：
-
-- 凭证、激活码或敏感令牌泄露
-- 许可证校验链路中的明显安全缺陷
-- 远程内容导致的执行风险
-- 本地文件访问边界异常
-- 依赖外部请求时可能导致的严重隐私或安全问题
-
-普通功能 Bug、UI 问题、文档问题通常不属于安全漏洞范围。
-
-## Notes
-
-本文件是仓库公开安全说明，不构成法律保证或固定 SLA。后续如有更正式的安全联系渠道，可再补充更新。
+This policy does not guarantee a fixed response time or service-level
+agreement.

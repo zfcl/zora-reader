@@ -1,5 +1,11 @@
 # Weave EPUB Reader Premium Terms Overview
 
+> **Upstream notice:** This document describes the licensing model inherited
+> from Weave EPUB Reader 0.6.55. Weave EPUB AI Reader is an independent fork:
+> it does not sell, issue, restore, or guarantee upstream licenses. The
+> integrated AI assistant itself has no plugin subscription, although the
+> configured AI provider may charge for API usage.
+
 本文件用于说明 Weave EPUB Reader 的“基础免费 + 高级付费”模式边界，帮助用户理解高级能力、激活机制与开源代码许可之间的关系。
 
 ## 1. 模式概述

@@ -9,7 +9,8 @@
 1. 关闭 Obsidian。
 2. 备份当前 Vault。
 3. 在 `设置 → 第三方插件` 中记录当前启用状态。
-4. 解压 `weave-epub-ai-reader-1.0.0-beta.zip` 到：
+4. 从 GitHub Release 下载并解压
+   `weave-epub-ai-reader-1.0.0.zip` 到：
 
    ```text
    <Vault>/.obsidian/plugins/
@@ -44,7 +45,8 @@ API Key 必须在每个 Vault 中单独配置，因为它保存在 Obsidian Secr
 
 - 备份旧 Reader、旧桥接插件、新 Reader（若已存在）和 `community-plugins.json`；
 - 把 `dist` 中的三个运行文件安装到新插件目录；
-- 默认迁移旧 Reader 的 `data.json`、`state` 和 `cache`，保留阅读设置和本地状态；
+- 默认迁移旧 Reader 的 `data.json`、`state`、`cache` 和 `backups`，保留阅读设置、
+  本地状态与 JSON 恢复备份；
 - 从启用列表移除两个旧插件并加入新插件；
 - 不删除任何旧插件目录；
 - 不读取或迁移旧桥接插件的 API Key。
@@ -57,15 +59,14 @@ API Key 必须在每个 Vault 中单独配置，因为它保存在 Obsidian Secr
 
 ## C. 从源码完整复现
 
-### 1. 固定上游
+### 1. 获取集成版源码
 
 ```powershell
-git clone --branch 0.6.55 --single-branch https://github.com/zhuzhige123/obsidian-weave-reader.git weave-epub-ai-reader
+git clone --branch 1.0.0 --single-branch https://github.com/HarrySuen626/weave-epub-ai-reader.git
 cd weave-epub-ai-reader
-git rev-parse HEAD
 ```
 
-必须得到：
+本仓库保留上游 Git 历史。集成版 `1.0.0` 的精确上游基础是：
 
 ```text
 536b2ca29a834385231fe49e6cd757fd07eecd1e
@@ -164,7 +165,8 @@ rg -n --hidden -g '!node_modules/**' -g '!dist/**' -g '!.git/**' 'sk-[A-Za-z0-9_
 6. 运行 C、D 两节的所有检查。
 7. 版本号必须是 `x.y.z`。
 8. GitHub Release tag 必须与 `manifest.json` 中的版本完全一致。
-9. Release 必须单独上传 `main.js`、`manifest.json`、`styles.css`。
+9. Release 必须单独上传 `main.js`、`manifest.json`、`styles.css`，并可附带
+   便捷安装 ZIP。
 10. 用户界面验证通过后才能合并和发布。
 
 ## F. API Key 保密原则

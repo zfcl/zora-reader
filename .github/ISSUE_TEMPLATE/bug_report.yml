@@ -1,5 +1,5 @@
 name: Bug 报告
-description: 阅读器、摘录、高亮、书架等问题
+description: 阅读器、AI、摘录、高亮、书架等问题
 title: "[Bug] "
 labels: ["bug"]
 body:
@@ -47,12 +47,13 @@ body:
         - label: 书架 / 导入书籍
         - label: 回链 / Canvas / Weave 制卡
         - label: 设置 / 主题 / 语言
+        - label: AI 按钮 / 动作 / 结果窗口
   - type: input
     id: version
     attributes:
-      label: 插件版本（设置 → 社区插件 → Weave EPUB Reader）
-      placeholder: 例如 0.6.28
+      label: 插件版本（设置 → 社区插件 → Weave EPUB AI Reader）
+      placeholder: 例如 1.0.0
   - type: textarea
     id: extra
     attributes:
-      label: 补充信息（截图、书籍格式、是否与 Weave 主插件同时启用等）
+      label: 补充信息（截图、书籍格式、模型名称等；不要粘贴 API Key）

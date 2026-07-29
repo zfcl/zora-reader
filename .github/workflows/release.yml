@@ -107,6 +107,23 @@ jobs:
       - name: Verify bundle has no dynamic script injection
         run: node scripts/verify-no-dynamic-script.cjs dist/main.js
 
+      - name: Package convenience ZIP
+        id: package
+        shell: bash
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          ARCHIVE_NAME="weave-epub-ai-reader-${TAG}.zip"
+          PACKAGE_ROOT="${RUNNER_TEMP}/weave-epub-ai-reader"
+
+          mkdir -p "$PACKAGE_ROOT"
+          cp dist/main.js dist/manifest.json dist/styles.css README.md "$PACKAGE_ROOT/"
+          (
+            cd "$RUNNER_TEMP"
+            zip -qr "${GITHUB_WORKSPACE}/dist/${ARCHIVE_NAME}" weave-epub-ai-reader
+          )
+
+          echo "archive=dist/${ARCHIVE_NAME}" >> "$GITHUB_OUTPUT"
+
       - name: Attest release assets
         uses: actions/attest@v4
         with:
@@ -114,6 +131,7 @@ jobs:
             dist/main.js
             dist/manifest.json
             dist/styles.css
+            ${{ steps.package.outputs.archive }}
 
       - name: Create or update GitHub release
         env:
@@ -126,7 +144,12 @@ jobs:
           if gh release view "$TAG" > /dev/null 2>&1; then
             echo "Updating existing release ${TAG}..."
             gh release delete-asset "$TAG" versions.json -y 2>/dev/null || true
-            gh release upload "$TAG" dist/main.js dist/manifest.json dist/styles.css --clobber
+            gh release upload "$TAG" \
+              dist/main.js \
+              dist/manifest.json \
+              dist/styles.css \
+              "${{ steps.package.outputs.archive }}" \
+              --clobber
             gh release edit "$TAG" --title "$TAG" --notes-file "$NOTES_FILE"
           else
             gh release create "$TAG" \
@@ -134,7 +157,8 @@ jobs:
               --notes-file "$NOTES_FILE" \
               dist/main.js \
               dist/manifest.json \
-              dist/styles.css
+              dist/styles.css \
+              "${{ steps.package.outputs.archive }}"
           fi
 
       - name: Verify remote release metadata
@@ -181,7 +205,12 @@ jobs:
             }
 
             const assetNames = (release.assets ?? []).map((asset) => asset.name).sort();
-            const expectedAssets = ["main.js", "manifest.json", "styles.css"];
+            const expectedAssets = [
+              "main.js",
+              "manifest.json",
+              "styles.css",
+              `weave-epub-ai-reader-${tag}.zip`,
+            ];
             const unexpectedAssets = assetNames.filter((name) => !expectedAssets.includes(name));
             if (unexpectedAssets.length > 0) {
               console.error(`Unexpected release asset(s) for ${tag}: ${unexpectedAssets.join(", ")}`);

@@ -17,6 +17,7 @@ vi.mock('obsidian', () => ({
 }));
 
 import { TFile } from 'obsidian';
+import { CURRENT_PLUGIN_ID } from '../../../config/plugin-runtime';
 import { EpubBacklinkHighlightService } from '../EpubBacklinkHighlightService';
 import { EpubExcerptOfficialApiService } from '../EpubExcerptOfficialApiService';
 
@@ -1224,7 +1225,7 @@ describe('EpubBacklinkHighlightService', () => {
 
 	it('recovers malformed wdeck files from safe json backup when collecting epub highlights', async () => {
 		const wdeckPath = 'weave/memory/deck-files/recoverable_01.wdeck';
-		const backupPath = '.obsidian/plugins/weave-epub-reader/backups/json-recovery/weave__memory__deck-files__recoverable_01.wdeck';
+		const backupPath = `.obsidian/plugins/${CURRENT_PLUGIN_ID}/backups/json-recovery/weave__memory__deck-files__recoverable_01.wdeck`;
 		const { app } = createMockApp({
 			[wdeckPath]: '{"broken": ',
 			[backupPath]: JSON.stringify({

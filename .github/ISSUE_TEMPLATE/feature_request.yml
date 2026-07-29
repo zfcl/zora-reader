@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        大功能请在本机用 Cursor 填写本地 spec（`docs/specs/TEMPLATE-feature.md`，不随公开仓发布）后交给 AI 实现；也可直接在本 Issue 写清验收标准。
+        请说明使用场景与可验证的验收标准。
   - type: textarea
     id: story
     attributes:
