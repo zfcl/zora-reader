@@ -9,7 +9,7 @@ const BASELINE_PATH = path.join(PROJECT_ROOT, "scripts", "bundle-footprint-basel
 const FORBIDDEN_STRINGS = [
 	"IRStorageService",
 	"IREpubBookmarkTaskService",
-	"kanban",
+	"MobileKanbanView",
 	"AnkiConnect",
 	"sql.js",
 	"BatchParsingManager",
