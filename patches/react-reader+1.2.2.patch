@@ -1,0 +1,31 @@
+diff --git a/node_modules/react-reader/lib/EpubView/EpubView.js b/node_modules/react-reader/lib/EpubView/EpubView.js
+index 477f075..9bf9047 100644
+--- a/node_modules/react-reader/lib/EpubView/EpubView.js
++++ b/node_modules/react-reader/lib/EpubView/EpubView.js
+@@ -56,6 +56,7 @@ var EpubView = /*#__PURE__*/function (_Component) {
+       toc: []
+     };
+     _this.viewerRef = /*#__PURE__*/_react.default.createRef();
++    _this.eventDocument = null;
+     _this.location = props.location;
+     _this.book = _this.rendition = _this.prevPage = _this.nextPage = null;
+     return _this;
+@@ -64,7 +65,8 @@ var EpubView = /*#__PURE__*/function (_Component) {
+     key: "componentDidMount",
+     value: function componentDidMount() {
+       this.initBook(true);
+-      document.addEventListener('keyup', this.handleKeyPress, false);
++      this.eventDocument = this.viewerRef.current && this.viewerRef.current.ownerDocument || document;
++      this.eventDocument.addEventListener('keyup', this.handleKeyPress, false);
+     }
+   }, {
+     key: "initBook",
+@@ -96,7 +98,7 @@ var EpubView = /*#__PURE__*/function (_Component) {
+         this.book.destroy();
+       }
+       this.book = this.rendition = this.prevPage = this.nextPage = null;
+-      document.removeEventListener('keyup', this.handleKeyPress, false);
++      (this.eventDocument || document).removeEventListener('keyup', this.handleKeyPress, false);
+     }
+   }, {
+     key: "shouldComponentUpdate",

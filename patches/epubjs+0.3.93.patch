@@ -1,5 +1,5 @@
 diff --git a/node_modules/epubjs/lib/archive.js b/node_modules/epubjs/lib/archive.js
-index 617030f..91b8f1f 100644
+index 617030f..d6be3b3 100644
 --- a/node_modules/epubjs/lib/archive.js
 +++ b/node_modules/epubjs/lib/archive.js
 @@ -13,7 +13,7 @@ var _mime = _interopRequireDefault(require("./utils/mime"));
@@ -12,7 +12,7 @@ index 617030f..91b8f1f 100644
  function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
  
 diff --git a/node_modules/epubjs/lib/contents.js b/node_modules/epubjs/lib/contents.js
-index 8392d87..eec0f7f 100644
+index 8392d87..f9a01d1 100644
 --- a/node_modules/epubjs/lib/contents.js
 +++ b/node_modules/epubjs/lib/contents.js
 @@ -835,40 +835,6 @@ class Contents {
@@ -57,7 +57,7 @@ index 8392d87..eec0f7f 100644
     * Add a class to the contents container
     * @param {string} className
 diff --git a/node_modules/epubjs/lib/rendition.js b/node_modules/epubjs/lib/rendition.js
-index 0dda80c..e47e301 100644
+index 0dda80c..fae08ce 100644
 --- a/node_modules/epubjs/lib/rendition.js
 +++ b/node_modules/epubjs/lib/rendition.js
 @@ -111,9 +111,6 @@ class Rendition {
@@ -70,7 +70,36 @@ index 0dda80c..e47e301 100644
      /**
       * @member {Themes} themes
       * @memberof Rendition
-@@ -1030,23 +1027,6 @@ class Rendition {
+@@ -691,7 +688,10 @@ class Rendition {
+ 
+   reportLocation() {
+     return this.q.enqueue(function reportedLocation() {
+-      requestAnimationFrame(function reportedLocationAfterRAF() {
++      var ownerDocument = this.manager && this.manager.container && this.manager.container.ownerDocument;
++      var ownerWindow = ownerDocument && ownerDocument.defaultView;
++
++      var report = function reportedLocationAfterRAF() {
+         var location = this.manager.currentLocation();
+ 
+         if (location && location.then && typeof location.then === "function") {
+@@ -747,7 +747,15 @@ class Rendition {
+ 
+           this.emit(_constants.EVENTS.RENDITION.RELOCATED, this.location);
+         }
+-      }.bind(this));
++      }.bind(this);
++
++      if (ownerDocument && ownerDocument.hidden === true) {
++        Promise.resolve().then(report);
++      } else if (ownerWindow && typeof ownerWindow.requestAnimationFrame === "function") {
++        ownerWindow.requestAnimationFrame(report);
++      } else {
++        requestAnimationFrame(report);
++      }
+     }.bind(this));
+   }
+   /**
+@@ -1030,23 +1038,6 @@ class Rendition {
      style.setAttribute("href", this.settings.stylesheet);
      doc.getElementsByTagName("head")[0].appendChild(style);
    }
@@ -95,7 +124,7 @@ index 0dda80c..e47e301 100644
     * Hook to handle the document identifier before
     * a Section is serialized
 diff --git a/node_modules/epubjs/lib/store.js b/node_modules/epubjs/lib/store.js
-index e93526e..5e9d4cc 100644
+index e93526e..62d2489 100644
 --- a/node_modules/epubjs/lib/store.js
 +++ b/node_modules/epubjs/lib/store.js
 @@ -15,7 +15,7 @@ var _path = _interopRequireDefault(require("./utils/path"));
@@ -107,6 +136,58 @@ index e93526e..5e9d4cc 100644
  
  function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
  
+diff --git a/node_modules/epubjs/lib/utils/queue.js b/node_modules/epubjs/lib/utils/queue.js
+index 505ad48..38bd583 100644
+--- a/node_modules/epubjs/lib/utils/queue.js
++++ b/node_modules/epubjs/lib/utils/queue.js
+@@ -20,6 +20,38 @@ class Queue {
+     this.running = false;
+     this.paused = false;
+   }
++  /**
++   * Resolve the document that owns the rendition or manager container.
++   * @private
++   */
++
++
++  contextDocument() {
++    var container = this.context && (this.context.container || this.context.manager && this.context.manager.container);
++    return container && container.ownerDocument;
++  }
++  /**
++   * Schedule queue work in the owning window. Electron can report a visible
++   * popout as hidden when its main window is minimized, which suspends RAF;
++   * use a microtask in that state so navigation remains responsive.
++   * @private
++   */
++
++
++  schedule(callback) {
++    var ownerDocument = this.contextDocument();
++    var ownerWindow = ownerDocument && ownerDocument.defaultView;
++
++    if (ownerDocument && ownerDocument.hidden === true) {
++      Promise.resolve().then(callback);
++    } else if (ownerWindow && typeof ownerWindow.requestAnimationFrame === "function") {
++      ownerWindow.requestAnimationFrame(callback);
++    } else if (typeof this.tick === "function") {
++      this.tick.call(typeof window !== "undefined" ? window : null, callback);
++    } else {
++      Promise.resolve().then(callback);
++    }
++  }
+   /**
+    * Add an item to the queue
+    * @return {Promise}
+@@ -125,7 +157,7 @@ class Queue {
+       this.defered = new _core.defer();
+     }
+ 
+-    this.tick.call(window, () => {
++    this.schedule(() => {
+       if (this._q.length) {
+         this.dequeue().then(function () {
+           this.run();
 diff --git a/node_modules/epubjs/src/archive.js b/node_modules/epubjs/src/archive.js
 index 15b3835..83d85fd 100644
 --- a/node_modules/epubjs/src/archive.js
@@ -166,7 +247,7 @@ index 3effe72..0932771 100644
  	 * Add a class to the contents container
  	 * @param {string} className
 diff --git a/node_modules/epubjs/src/rendition.js b/node_modules/epubjs/src/rendition.js
-index 14a21b4..a947b6f 100644
+index 14a21b4..3a748ee 100644
 --- a/node_modules/epubjs/src/rendition.js
 +++ b/node_modules/epubjs/src/rendition.js
 @@ -95,10 +95,6 @@ class Rendition {
@@ -180,7 +261,35 @@ index 14a21b4..a947b6f 100644
  		/**
  		 * @member {Themes} themes
  		 * @memberof Rendition
-@@ -1029,21 +1025,6 @@ class Rendition {
+@@ -688,7 +684,9 @@ class Rendition {
+ 	 */
+ 	reportLocation(){
+ 		return this.q.enqueue(function reportedLocation(){
+-			requestAnimationFrame(function reportedLocationAfterRAF() {
++			var ownerDocument = this.manager && this.manager.container && this.manager.container.ownerDocument;
++			var ownerWindow = ownerDocument && ownerDocument.defaultView;
++			var report = function reportedLocationAfterRAF() {
+ 				var location = this.manager.currentLocation();
+ 				if (location && location.then && typeof location.then === "function") {
+ 					location.then(function(result) {
+@@ -745,7 +743,15 @@ class Rendition {
+ 					 */
+ 					this.emit(EVENTS.RENDITION.RELOCATED, this.location);
+ 				}
+-			}.bind(this));
++			}.bind(this);
++
++			if(ownerDocument && ownerDocument.hidden === true) {
++				Promise.resolve().then(report);
++			} else if(ownerWindow && typeof ownerWindow.requestAnimationFrame === "function") {
++				ownerWindow.requestAnimationFrame(report);
++			} else {
++				requestAnimationFrame(report);
++			}
+ 		}.bind(this));
+ 	}
+ 
+@@ -1029,21 +1035,6 @@ class Rendition {
  		doc.getElementsByTagName("head")[0].appendChild(style);
  	}
  
@@ -215,3 +324,54 @@ index 4775275..415bd5c 100644
  
  /**
   * Handles saving and requesting files from local storage
+diff --git a/node_modules/epubjs/src/utils/queue.js b/node_modules/epubjs/src/utils/queue.js
+index 1f8a18a..a3615f4 100644
+--- a/node_modules/epubjs/src/utils/queue.js
++++ b/node_modules/epubjs/src/utils/queue.js
+@@ -14,6 +14,37 @@ class Queue {
+ 		this.paused = false;
+ 	}
+ 
++	/**
++	 * Resolve the document that owns the rendition or manager container.
++	 * @private
++	 */
++	contextDocument(){
++		var container = this.context && (this.context.container ||
++			(this.context.manager && this.context.manager.container));
++		return container && container.ownerDocument;
++	}
++
++	/**
++	 * Schedule queue work in the owning window. Electron can report a visible
++	 * popout as hidden when its main window is minimized, which suspends RAF;
++	 * use a microtask in that state so navigation remains responsive.
++	 * @private
++	 */
++	schedule(callback){
++		var ownerDocument = this.contextDocument();
++		var ownerWindow = ownerDocument && ownerDocument.defaultView;
++
++		if(ownerDocument && ownerDocument.hidden === true) {
++			Promise.resolve().then(callback);
++		} else if(ownerWindow && typeof ownerWindow.requestAnimationFrame === "function") {
++			ownerWindow.requestAnimationFrame(callback);
++		} else if(typeof this.tick === "function") {
++			this.tick.call(typeof window !== "undefined" ? window : null, callback);
++		} else {
++			Promise.resolve().then(callback);
++		}
++	}
++
+ 	/**
+ 	 * Add an item to the queue
+ 	 * @return {Promise}
+@@ -126,7 +157,7 @@ class Queue {
+ 			this.defered = new defer();
+ 		}
+ 
+-		this.tick.call(window, () => {
++		this.schedule(() => {
+ 
+ 			if(this._q.length) {
+ 

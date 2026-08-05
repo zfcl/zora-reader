@@ -6,7 +6,7 @@
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -p tsconfig.build.json --noEmit -skipLibCheck && node esbuild.config.mjs production",
-		"test": "node --test --experimental-strip-types test/wheelNavigation.test.ts test/paginationLayout.test.ts test/tocNavigation.test.ts test/pageNavigation.test.ts test/readerBackground.test.ts test/publisherStyles.test.ts test/fontSizeAnchor.test.ts test/visibleTextAnchor.test.ts test/releaseSafety.test.ts",
+		"test": "node --test --experimental-strip-types test/wheelNavigation.test.ts test/paginationLayout.test.ts test/tocNavigation.test.ts test/pageNavigation.test.ts test/readerBackground.test.ts test/publisherStyles.test.ts test/fontSizeAnchor.test.ts test/visibleTextAnchor.test.ts test/releaseSafety.test.ts test/readerWindow.test.ts test/keyboardNavigation.test.ts test/epubQueueWindow.test.ts",
 		"postinstall": "patch-package",
 		"version": "node version-bump.mjs && git add manifest.json versions.json"
 	},

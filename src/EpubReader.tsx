@@ -11,6 +11,8 @@ import { getReaderThemeRules, resolveReaderColors, type ReaderBackgroundMode } f
 import { flattenToc, getTocSelection, type TocEntry, type TocItem } from './tocNavigation';
 import { getFirstVisibleTextCfi } from './visibleTextAnchor';
 import { getWheelPageAction } from './wheelNavigation';
+import { getKeyboardPageAction, isEditableTarget } from './keyboardNavigation';
+import { getReaderDocument, getReaderWindow } from './readerWindow';
 
 type RuntimeRendition = Rendition & {
   manager?: unknown;
@@ -54,7 +56,8 @@ export const EpubReader = ({ contents, title, scrolled, mouseWheelPageTurn, read
   }, [setLocation]);
 
   const getReaderColors = useCallback(() => {
-    const rootStyles = getComputedStyle(document.body);
+    const readerDocument = getReaderDocument(readerHostRef.current, document);
+    const rootStyles = getComputedStyle(readerDocument.body);
     return resolveReaderColors(
       readerBackgroundMode,
       readerBackgroundColor,
@@ -70,11 +73,13 @@ export const EpubReader = ({ contents, title, scrolled, mouseWheelPageTurn, read
   }, [getReaderColors]);
 
   useEffect(() => {
+    const readerDocument = getReaderDocument(readerHostRef.current, document);
     const themeObserver = new MutationObserver(() => {
-      setIsDarkMode(document.body.classList.contains('theme-dark'));
+      setIsDarkMode(readerDocument.body.classList.contains('theme-dark'));
       if (renditionRef.current != null) updateTheme(renditionRef.current);
     });
-    themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    setIsDarkMode(readerDocument.body.classList.contains('theme-dark'));
+    themeObserver.observe(readerDocument.body, { attributes: true, attributeFilter: ['class'] });
     return () => themeObserver.disconnect();
   }, [updateTheme]);
 
@@ -100,17 +105,18 @@ export const EpubReader = ({ contents, title, scrolled, mouseWheelPageTurn, read
     if (contentWindow == null || document.documentElement == null || document.head == null) return;
 
     void injectPublisherStyles(document, (href) => contentWindow.fetch(href)).then((injected) => {
-      if (injected) window.requestAnimationFrame(() => resizeRendition());
+      if (injected) getReaderWindow(readerHostRef.current, window).requestAnimationFrame(() => resizeRendition());
     });
   }, [resizeRendition]);
 
   const updateFontSize = useCallback((size: number) => {
     const rendition = renditionRef.current;
     if (rendition == null) return;
+    const readerWindow = getReaderWindow(readerHostRef.current, window);
 
     if (!shouldPreserveFontSizeAnchor(scrolled, rendition.manager != null)) {
       rendition.themes.fontSize(`${size}%`);
-      window.requestAnimationFrame(() => resizeRendition());
+      readerWindow.requestAnimationFrame(() => resizeRendition());
       return;
     }
 
@@ -123,17 +129,19 @@ export const EpubReader = ({ contents, title, scrolled, mouseWheelPageTurn, read
       rendition.currentLocation() as unknown as { start?: { cfi?: string } },
     );
     fontSizeAnchorRef.current = anchor;
-    reflowFontSizeAtAnchor(rendition, size, anchor, resizeRendition, window.requestAnimationFrame);
+    reflowFontSizeAtAnchor(rendition, size, anchor, resizeRendition, readerWindow.requestAnimationFrame.bind(readerWindow));
 
-    if (fontSizeAnchorResetTimerRef.current != null) window.clearTimeout(fontSizeAnchorResetTimerRef.current);
-    fontSizeAnchorResetTimerRef.current = window.setTimeout(() => {
+    if (fontSizeAnchorResetTimerRef.current != null) readerWindow.clearTimeout(fontSizeAnchorResetTimerRef.current);
+    fontSizeAnchorResetTimerRef.current = readerWindow.setTimeout(() => {
       fontSizeAnchorRef.current = null;
       fontSizeAnchorResetTimerRef.current = null;
     }, 250);
   }, [resizeRendition, scrolled]);
 
   useEffect(() => () => {
-    if (fontSizeAnchorResetTimerRef.current != null) window.clearTimeout(fontSizeAnchorResetTimerRef.current);
+    if (fontSizeAnchorResetTimerRef.current != null) {
+      getReaderWindow(readerHostRef.current, window).clearTimeout(fontSizeAnchorResetTimerRef.current);
+    }
   }, []);
 
   useEffect(() => {
@@ -152,7 +160,7 @@ export const EpubReader = ({ contents, title, scrolled, mouseWheelPageTurn, read
   }, [resizeRendition]);
 
   useEffect(() => {
-    const rootDocument = window.document;
+    const rootDocument = getReaderDocument(readerHostRef.current, document);
 
     const applyStylesToFrames = () => {
       rootDocument.querySelectorAll<HTMLIFrameElement>('iframe[id^="epubjs-view-"]').forEach((frame) => {
@@ -198,6 +206,22 @@ export const EpubReader = ({ contents, title, scrolled, mouseWheelPageTurn, read
     if (rendition != null) navigatePage(action === 'next' ? 'next' : 'previous', rendition);
   }, []);
 
+  const handleReaderKeyPress = useCallback((event?: KeyboardEvent) => {
+    if (event == null) return;
+
+    const action = getKeyboardPageAction({
+      key: event.key,
+      isModified: event.ctrlKey || event.metaKey || event.altKey,
+      isEditable: isEditableTarget(event.target),
+    });
+    if (action == null) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    const rendition = renditionRef.current;
+    if (rendition != null) navigatePage(action, rendition);
+  }, []);
+
   const readerColors = getReaderColors();
   const baseReaderStyles = isDarkMode ? darkReaderTheme : lightReaderTheme;
   const readerStyles: IReactReaderStyle = {
@@ -232,6 +256,7 @@ export const EpubReader = ({ contents, title, scrolled, mouseWheelPageTurn, read
           location={location}
           locationChanged={locationChanged}
           tocChanged={tocChanged}
+          handleKeyPress={handleReaderKeyPress}
           swipeable={false}
           url={contents}
           getRendition={(rendition: Rendition) => {
@@ -262,7 +287,7 @@ export const EpubReader = ({ contents, title, scrolled, mouseWheelPageTurn, read
               (rendition.getContents() as unknown as Contents[]).forEach(enhanceContents);
             };
             enhanceRenderedContents();
-            window.requestAnimationFrame(enhanceRenderedContents);
+            getReaderWindow(readerHostRef.current, window).requestAnimationFrame(enhanceRenderedContents);
             updateTheme(rendition);
             updateFontSize(fontSize);
           }}
