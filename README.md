@@ -1,42 +1,59 @@
-# EPUB Reader Plus for Obsidian
+# Zora Reader
 
-EPUB Reader Plus is an EPUB reader plugin for Obsidian with paginated navigation and theme-aware reading. It opens `.epub` files directly in your vault.
+在 Obsidian 内阅读 EPUB、翻译选区，并把值得保留的内容整理成可复习的 Markdown 笔记。
 
-## Highlights
+## 功能
 
-- Single, centered paginated reading view with responsive reflow.
-- Mouse-wheel page turning in paginated mode.
-- Compact table of contents and modern navigation controls.
-- Theme-aware reader background, with an optional custom background color.
-- Publisher EPUB styles are preserved for headings, emphasis, and relative typography.
-- Reading progress is retained by book name; font-size changes anchor the visible text before reflowing.
+- 桌面端选中即翻译；iPhone/iPad 选中后点“翻译”，减少误触和 API 消耗。
+- 单词显示当前语境、所在句翻译和全部能够可靠确认的释义，不设人为数量上限。
+- 短语与段落输出一份忠实、自然的译文。
+- 桌面翻译卡片可拖动并按书记住位置；移动端使用安全区域内的底部面板。
+- 收藏写入普通 Markdown；单词、短语和段落分别保存并嵌入书籍主笔记。
+- 单词默认加入“今日复习”，状态保存在 frontmatter，可随 Vault 同步。
+- EPUB CFI 保存阅读位置和原文定位。
+- 纸张、夜间、高对比三套完整阅读主题。
 
-## Install
+## 安装
 
-After community-plugin review, install **EPUB Reader Plus** from Obsidian's Community plugins browser. For a manual install, download `main.js`, `manifest.json`, and `styles.css` from the matching GitHub Release and copy them to:
+下载同一版本 Release 中的 `main.js`、`manifest.json`、`styles.css`，放入：
 
 ```text
-<vault>/.obsidian/plugins/epub-reader-plus/
+<Vault>/.obsidian/plugins/zora-reader/
 ```
 
-## Migrating from ePub Reader
+重启 Obsidian，在“第三方插件”中启用 **Zora Reader**。不要同时启用其他接管 `.epub` 的阅读器。
 
-This plugin replaces the unmaintained **ePub Reader** plugin. Disable the original plugin before enabling EPUB Reader Plus; both plugins register the `.epub` extension and should not run together.
+## 翻译设置
 
-Your per-book reading position is preserved because both plugins use the book name as the progress key. Reader settings start with the new plugin defaults.
+插件使用 OpenAI 兼容 API。默认地址为 `https://api.deepseek.com`，模型为 `deepseek-v4-flash`。API 密钥通过 Obsidian SecretStorage 选择或创建，密钥不会写入 Markdown、仓库或 `data.json`。每次翻译请求只包含系统规则和当前选区/语境，不保留聊天历史。
 
-## Upstream and attribution
+## 笔记目录
 
-EPUB Reader Plus is independently maintained and is based on [caronchen/obsidian-epub-plugin](https://github.com/caronchen/obsidian-epub-plugin), originally created by caronchen. It retains the upstream MIT License and copyright notice.
+```text
+Books/Notes/<书名>.md
+Books/Highlights/<书名>/Words/<规范词>.md
+Books/Highlights/<书名>/Phrases/<ID>.md
+Books/Highlights/<书名>/Passages/<ID>.md
+```
 
-## Development
+同一本书的同一规范词会合并并追加语境与 CFI；不同书籍互不合并。
+
+## 移动端
+
+插件不使用 Electron、Node 文件 API 或桌面专属模块。首发验收覆盖 iPhone 真机，以及 iPad 常见尺寸、横竖屏和分屏模拟；iPad 实体机尚未实测。
+
+## 网络与隐私
+
+只有用户发起翻译时，选中文字、所在段落、章节名和语言设置会发送到用户配置的 API 服务。插件没有遥测、账户系统或自建中转服务器，书籍文件不会上传。
+
+## 开发
 
 ```bash
 npm install
-npm test
 npm run build
+npm test
 ```
 
-## License
+## 许可与上游
 
-MIT. See [LICENSE](LICENSE).
+MIT。阅读器底座基于 [EPUB Reader Plus](https://github.com/IkariKr/obsidian-epub-reader-plus) 和 [ePub Reader](https://github.com/caronchen/obsidian-epub-plugin)。原始版权与许可见 [LICENSE](LICENSE) 和 [NOTICE.md](NOTICE.md)。

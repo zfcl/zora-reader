@@ -2,17 +2,21 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { getReaderThemeRules, refreshEpubViews, resolveReaderColors } from '../src/readerBackground.ts';
 
-test('theme mode uses Obsidian theme background and text colors', () => {
-  assert.deepEqual(resolveReaderColors('theme', '#123456', '#fbfaf8', '#2d2b29'), {
-    background: '#fbfaf8',
-    text: '#2d2b29',
+test('paper mode is a coherent authored reading palette', () => {
+  assert.deepEqual(resolveReaderColors('paper', '#123456', '#fbfaf8', '#2d2b29'), {
+    background: '#f6f1e7',
+    text: '#262522',
   });
 });
 
-test('custom mode replaces only the reader background color', () => {
-  assert.deepEqual(resolveReaderColors('custom', '#123456', '#fbfaf8', '#2d2b29'), {
-    background: '#123456',
-    text: '#2d2b29',
+test('night and contrast modes use fixed accessible palettes', () => {
+  assert.deepEqual(resolveReaderColors('night', '', '', ''), {
+    background: '#17191d',
+    text: '#e9e7e2',
+  });
+  assert.deepEqual(resolveReaderColors('contrast', '', '', ''), {
+    background: '#ffffff',
+    text: '#111111',
   });
 });
 

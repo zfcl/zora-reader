@@ -1,4 +1,4 @@
-export type ReaderBackgroundMode = 'theme' | 'custom';
+export type ReaderBackgroundMode = 'paper' | 'night' | 'contrast';
 
 export interface ReaderColors {
   background: string;
@@ -21,14 +21,13 @@ export interface ReloadableEpubView<TFile> {
  */
 export function resolveReaderColors(
   mode: ReaderBackgroundMode,
-  customBackground: string,
-  themeBackground: string,
-  themeText: string,
+  _customBackground: string,
+  _themeBackground: string,
+  _themeText: string,
 ): ReaderColors {
-  return {
-    background: mode === 'custom' && customBackground.length > 0 ? customBackground : themeBackground,
-    text: themeText,
-  };
+  if (mode === 'night') return { background: '#17191d', text: '#e9e7e2' };
+  if (mode === 'contrast') return { background: '#ffffff', text: '#111111' };
+  return { background: '#f6f1e7', text: '#262522' };
 }
 
 /**

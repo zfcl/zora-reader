@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    *{box-sizing:border-box} html,body{height:100%;margin:0} body{font-family:Inter,"Segoe UI",sans-serif;background:#2d2f32}
+    .zora-reader-view{height:100vh}.preview-page{height:100%;padding:54px 9% 40px;overflow:hidden;background:var(--zora-paper);color:var(--zora-ink)}
+    .preview-page article{font:19px/1.72 Georgia,serif;max-width:710px;margin:auto}.preview-page h1{font:600 31px/1.25 Georgia,serif;margin:0 0 28px}.preview-page p{margin:0 0 22px}
+    @media(max-width:700px){.preview-page{padding:42px 26px 160px}.preview-page article{font-size:17px}.preview-page h1{font-size:26px}}
+  </style>
+</head>
+<body>
+  <div class="zora-reader-view">
+    <div class="zora-reader-shell theme-paper">
+      <header class="zora-reader-toolbar">
+        <button aria-label="目录"><svg fill="none" height="20" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" width="20"><path d="M5 7h14M5 12h14M5 17h14"/></svg></button>
+        <div class="zora-book-title"><strong>Flowers for Algernon</strong><span>18%</span></div>
+        <label class="zora-font-size"><span>A</span><input type="range" value="112"></label>
+      </header>
+      <main class="zora-reader-main"><div class="zora-reader-host">
+        <div class="preview-page"><article><h1>Progress Report 6</h1><p>Dr. Strauss says I should write down what I think and everything that happens to me from now on. I don't know why but he says its important so they will see if they can use me.</p><p>I hope they use me because Miss Kinnian says maybe they can make me <mark>smart</mark>. I want to be smart.</p></article></div>
+      </div></main>
+      <div class="zora-translation-card" id="card" style="left:calc(100vw - 420px);top:84px">
+        <header class="zora-card-header"><span>词义</span><button>×</button></header>
+        <div class="zora-card-body"><div class="zora-card-source">smart</div><section><h4>当前语境</h4><div class="zora-current-sense"><span>adj.</span>聪明的；理解和学习能力强的</div><p>我希望他们选择我，因为金尼安小姐说，也许他们能让我变聪明。</p></section><section><h4>全部可靠释义</h4><ol class="zora-senses"><li><span>adj.</span><b>聪明的；机敏的</b><small>指人学习、理解或判断迅速</small></li><li><span>adj.</span><b>整洁漂亮的；时髦的</b><small>服装或外观</small></li><li><span>adj.</span><b>智能的</b><small>技术和设备</small></li><li><span>v.</span><b>刺痛；感到痛苦</b><small>身体或情感上的疼痛</small></li></ol></section><div class="zora-note-editor"><textarea placeholder="我的理解（可选）"></textarea><input placeholder="自造句（可选）"><input placeholder="#标签（可选）"><button class="zora-save">♡ 收藏到笔记</button></div></div>
+      </div>
+    </div>
+  </div>
+  <script>if(new URLSearchParams(location.search).has('mobile')||innerWidth<=700){const card=document.querySelector('#card');card.classList.add('is-mobile');card.removeAttribute('style')}</script>
+</body>
+</html>

@@ -1,12 +1,12 @@
 {
-	"name": "obsidian-epub-reader-plus",
-	"version": "1.0.6",
-	"description": "A polished EPUB reader with paginated navigation and theme-aware reading.",
+	"name": "zora-reader",
+	"version": "0.1.0",
+	"description": "Cross-platform EPUB translation and review notes for Obsidian.",
 	"main": "src/main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -p tsconfig.build.json --noEmit -skipLibCheck && node esbuild.config.mjs production",
-		"test": "node --test --experimental-strip-types test/wheelNavigation.test.ts test/paginationLayout.test.ts test/tocNavigation.test.ts test/pageNavigation.test.ts test/readerBackground.test.ts test/publisherStyles.test.ts test/fontSizeAnchor.test.ts test/visibleTextAnchor.test.ts test/releaseSafety.test.ts test/readerWindow.test.ts test/keyboardNavigation.test.ts test/epubQueueWindow.test.ts",
+		"test": "node --test --experimental-strip-types test/*.test.ts",
 		"postinstall": "patch-package",
 		"version": "node version-bump.mjs && git add manifest.json versions.json"
 	},
@@ -15,7 +15,7 @@
 		"obsidian",
 		"obsidian-plugin"
 	],
-	"author": "caronchen",
+	"author": "zfcl",
 	"license": "MIT",
 	"devDependencies": {
 		"@types/node": "^16.11.6",
@@ -23,7 +23,7 @@
 		"@types/react-dom": "^18.0.3",
 		"@typescript-eslint/eslint-plugin": "^5.2.0",
 		"@typescript-eslint/parser": "^5.2.0",
-		"esbuild": "^0.13.12",
+		"esbuild": "^0.28.2",
 		"obsidian": "latest",
 		"patch-package": "^8.0.1",
 		"tslib": "^2.3.1",
@@ -38,6 +38,8 @@
 		"use-local-storage-state": "^17.3.0"
 	},
 	"overrides": {
-		"@xmldom/xmldom": "^0.8.10"
+		"@xmldom/xmldom": "^0.8.10",
+		"brace-expansion": "^1.1.18",
+		"js-yaml": "^4.3.1"
 	}
 }

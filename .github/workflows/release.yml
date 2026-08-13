@@ -44,4 +44,6 @@ jobs:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" main.js manifest.json styles.css --generate-notes
+        run: |
+          zip zora-reader-${GITHUB_REF_NAME}.zip main.js manifest.json styles.css LICENSE NOTICE.md
+          gh release create "${GITHUB_REF_NAME}" main.js manifest.json styles.css zora-reader-${GITHUB_REF_NAME}.zip --title "Zora Reader ${GITHUB_REF_NAME}" --generate-notes

@@ -1,67 +1,111 @@
-.epub-reader-plus-view {
-  height: 100%;
-  overflow: hidden;
+:root {
+  --zora-blue: #1769e0;
+  --zora-paper: #f6f1e7;
+  --zora-ink: #262522;
+  --zora-line: rgba(37, 39, 44, .12);
+  --zora-shadow: 0 24px 70px rgba(25, 28, 34, .18), 0 2px 12px rgba(25, 28, 34, .08);
 }
 
-.epub-icon-button {
-  align-items: center;
-  appearance: none;
-  background: transparent;
-  border: 0;
-  border-radius: 6px;
-  box-shadow: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  display: inline-flex;
-  height: 36px;
-  justify-content: center;
-  margin: 0;
-  outline: none;
-  padding: 0;
-  position: absolute;
-  transition: background-color 120ms ease, color 120ms ease;
-  width: 36px;
+.zora-reader-view { height: 100%; overflow: hidden; }
+.zora-reader-shell { background: var(--zora-paper); color: var(--zora-ink); display: flex; flex-direction: column; height: 100%; min-height: 0; position: relative; }
+.zora-reader-toolbar { align-items: center; background: color-mix(in srgb, var(--zora-paper) 92%, transparent); border-bottom: 1px solid var(--zora-line); display: grid; flex: 0 0 54px; grid-template-columns: 40px minmax(0, 1fr) 160px; padding: 0 max(12px, env(safe-area-inset-right)) 0 max(12px, env(safe-area-inset-left)); z-index: 4; }
+.zora-reader-toolbar button, .zora-toc button, .zora-translation-card button, .zora-review button { appearance: none; border: 0; box-shadow: none; }
+.zora-reader-toolbar > button { align-items: center; background: transparent; border-radius: 8px; color: inherit; display: flex; height: 34px; justify-content: center; width: 34px; }
+.zora-reader-toolbar > button:hover { background: rgba(26, 30, 36, .06); }
+.zora-book-title { align-items: baseline; display: flex; gap: 10px; min-width: 0; padding-left: 8px; }
+.zora-book-title strong { font-family: ui-serif, Georgia, serif; font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zora-book-title span { color: color-mix(in srgb, var(--zora-ink) 48%, transparent); font-size: 11px; font-variant-numeric: tabular-nums; }
+.zora-font-size { align-items: center; display: flex; gap: 10px; justify-self: end; width: 144px; }
+.zora-font-size span { font-family: Georgia, serif; font-size: 13px; }
+.zora-font-size input { accent-color: var(--zora-blue); width: 116px; }
+.zora-reader-main { display: flex; flex: 1 1 0; justify-content: center; min-height: 0; overflow: hidden; }
+.zora-reader-host { height: 100%; overflow: hidden; position: relative; width: 100%; }
+.zora-page-button { align-items: center; background: rgba(255, 255, 255, .72); border: 1px solid rgba(20, 25, 32, .08) !important; border-radius: 50%; color: #30343a; display: flex; height: 38px; justify-content: center; opacity: .45; position: absolute; top: 50%; transform: translateY(-50%); transition: opacity 140ms, background 140ms; width: 38px; z-index: 3; }
+.zora-page-button:hover, .zora-page-button:focus-visible { background: #fff; opacity: 1; }
+.zora-page-button.previous { left: 8px; }
+.zora-page-button.next { right: 8px; }
+.theme-night { --zora-line: rgba(255, 255, 255, .1); }
+.theme-night .zora-page-button { background: rgba(34, 37, 43, .85); border-color: rgba(255,255,255,.12) !important; color: #f2f0eb; }
+
+.zora-toc-scrim { background: rgba(17, 20, 26, .2); inset: 0; position: absolute; z-index: 30; }
+.zora-toc { background: #fbfaf7; box-shadow: 18px 0 60px rgba(20, 23, 30, .16); color: #242629; height: 100%; max-width: 88vw; overflow: auto; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); width: 326px; }
+.zora-toc header { align-items: center; border-bottom: 1px solid #e7e5df; display: flex; justify-content: space-between; padding: 26px 24px 20px; }
+.zora-toc header small { color: #777a80; font-size: 10px; font-weight: 700; letter-spacing: .16em; }
+.zora-toc h2 { font: 600 25px/1.2 ui-serif, Georgia, serif; margin: 4px 0 0; }
+.zora-toc header button { background: transparent; border-radius: 50%; color: #555960; font-size: 25px; height: 36px; width: 36px; }
+.zora-toc nav { padding: 12px 10px 28px; }
+.zora-toc nav button { background: transparent; border-radius: 7px; color: #303238; display: block; font-size: 14px; line-height: 1.45; margin: 1px 0; padding: 9px 14px; text-align: left; width: 100%; }
+.zora-toc nav button:hover { background: #eeece6; }
+
+.zora-translation-card { background: rgba(255, 255, 255, .97); border: 1px solid rgba(29, 34, 42, .11); border-radius: 14px; box-shadow: var(--zora-shadow); color: #24272c; max-height: min(680px, calc(100vh - 32px)); overflow: hidden; position: fixed; width: min(390px, calc(100vw - 24px)); z-index: 50; }
+.zora-card-header { align-items: center; border-bottom: 1px solid #ebe9e5; cursor: grab; display: flex; height: 44px; justify-content: space-between; padding: 0 14px 0 18px; user-select: none; }
+.zora-card-header span { color: #686c73; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.zora-card-header button { background: transparent; border-radius: 50%; color: #777b82; font-size: 21px; height: 30px; width: 30px; }
+.zora-card-body { max-height: calc(min(680px, 100vh - 32px) - 44px); overflow: auto; overscroll-behavior: contain; padding: 18px; }
+.zora-card-source { font: 600 22px/1.3 ui-serif, Georgia, serif; margin-bottom: 16px; overflow-wrap: anywhere; }
+.zora-primary, .zora-save { background: var(--zora-blue); border-radius: 8px; color: #fff; font-weight: 600; min-height: 38px; padding: 0 16px; width: 100%; }
+.zora-card-status { align-items: center; color: #5f646b; display: flex; gap: 10px; padding: 14px 0; }
+.zora-card-status i { animation: zora-spin .8s linear infinite; border: 2px solid #d9dee6; border-radius: 50%; border-top-color: var(--zora-blue); height: 15px; width: 15px; }
+@keyframes zora-spin { to { transform: rotate(360deg); } }
+.zora-card-error { background: #fff2f0; border-radius: 8px; color: #9e332b; font-size: 13px; line-height: 1.5; padding: 12px; }
+.zora-card-error button { background: transparent; color: inherit; float: right; font-weight: 700; }
+.zora-translation-card section { border-top: 1px solid #eeece8; margin-top: 17px; padding-top: 15px; }
+.zora-translation-card h4 { color: #767a81; font-size: 11px; letter-spacing: .1em; margin: 0 0 10px; text-transform: uppercase; }
+.zora-current-sense { font-size: 17px; font-weight: 600; line-height: 1.55; }
+.zora-current-sense span, .zora-senses li > span { color: var(--zora-blue); font-size: 11px; font-weight: 700; margin-right: 8px; }
+.zora-translation-card section p { color: #656970; font-size: 13px; line-height: 1.6; margin: 8px 0 0; }
+.zora-translation-text { font-size: 16px; line-height: 1.7; white-space: pre-wrap; }
+.zora-senses { list-style: none; margin: 0; padding: 0; }
+.zora-senses li { border-top: 1px solid #f1efeb; line-height: 1.45; padding: 9px 0; }
+.zora-senses li:first-child { border: 0; }
+.zora-senses b { font-size: 14px; font-weight: 600; }
+.zora-senses small { color: #777b82; display: block; font-size: 12px; margin: 3px 0 0 0; }
+.zora-note-editor { border-top: 1px solid #e8e6e1; display: grid; gap: 8px; margin-top: 16px; padding-top: 14px; }
+.zora-note-editor textarea, .zora-note-editor input { background: #f7f6f3; border: 1px solid #e1dfda; border-radius: 7px; box-shadow: none; color: #292c31; font: inherit; padding: 9px 10px; resize: vertical; width: 100%; }
+.zora-note-editor textarea { min-height: 58px; }
+.zora-deepen { background: transparent; border: 1px solid #d9dde4 !important; border-radius: 7px; color: #3b63a0; min-height: 35px; }
+.zora-analysis { background: #f3f6fa; border-radius: 7px; color: #484d55; font-size: 13px; line-height: 1.65; padding: 10px; white-space: pre-wrap; }
+.zora-review-toggle { align-items: center; color: #5d6269; display: flex; font-size: 13px; gap: 7px; min-height: 30px; }
+.zora-review-toggle input { width: auto; }
+.zora-save { background: #24272c; margin-top: 2px; }
+.zora-saved { color: #286b47; font-size: 13px; font-weight: 650; padding: 8px 0 2px; }
+.zora-saved button { background: transparent; color: var(--zora-blue); float: right; font-weight: 700; }
+.zora-translation-card.is-mobile { border: 0; border-radius: 18px 18px 0 0; bottom: 0 !important; box-shadow: 0 -20px 65px rgba(22, 26, 33, .23); left: 0 !important; margin: 0 auto; max-height: min(78vh, 720px); max-width: 720px; padding-bottom: env(safe-area-inset-bottom); position: absolute; right: 0 !important; top: auto !important; width: 100%; }
+.zora-translation-card.is-mobile .zora-card-header { cursor: default; height: 48px; }
+.zora-translation-card.is-mobile .zora-card-header::before { background: #d4d5d7; border-radius: 3px; content: ''; height: 4px; left: 50%; position: absolute; top: 7px; transform: translateX(-50%); width: 38px; }
+.zora-translation-card.is-mobile .zora-card-body { max-height: calc(min(78vh, 720px) - 48px - env(safe-area-inset-bottom)); padding-bottom: 16px; }
+
+.zora-review { background: #f7f6f2; color: #27292e; height: 100%; overflow: auto; padding: 28px 18px; }
+.zora-review-eyebrow { color: var(--zora-blue); font-size: 10px; font-weight: 800; letter-spacing: .16em; }
+.zora-review h2 { font: 600 25px/1.2 ui-serif, Georgia, serif; margin: 5px 0 22px; }
+.zora-review-count { color: #8a8d92; font-size: 11px; margin-bottom: 8px; }
+.zora-review-card { background: #fff; border: 1px solid #e5e3de; border-radius: 12px; box-shadow: 0 12px 36px rgba(30, 34, 42, .07); padding: 19px; }
+.zora-review-card h3 { font: 600 22px/1.3 ui-serif, Georgia, serif; margin: 0 0 14px; }
+.zora-review-card blockquote { border-left: 2px solid #ced5e0; color: #666a70; font-size: 13px; margin: 0 0 18px; padding-left: 12px; }
+.zora-review-reveal { width: 100%; }
+.zora-review-answer { border-top: 1px solid #eceae6; font-size: 17px; font-weight: 600; padding: 16px 0; }
+.zora-review-actions { display: grid; gap: 7px; grid-template-columns: repeat(3, 1fr); }
+.zora-review-actions button { background: #eeece7; border-radius: 7px; min-height: 36px; }
+.zora-review-actions button:last-child { background: var(--zora-blue); color: white; }
+.zora-review-complete { color: #73777e; }
+
+.zora-settings { max-width: 760px; }
+.zora-settings > h1 { font: 600 30px/1.2 ui-serif, Georgia, serif; margin-bottom: 4px; }
+.zora-settings-intro { color: var(--text-muted); margin: 0 0 28px; }
+.zora-settings .setting-item-heading { margin-top: 26px; }
+
+@media (max-width: 700px) {
+  .zora-reader-toolbar { grid-template-columns: 38px minmax(0, 1fr) 68px; padding-top: env(safe-area-inset-top); }
+  .zora-font-size { justify-content: end; width: 64px; }
+  .zora-font-size span { display: none; }
+  .zora-font-size input { width: 64px; }
+  .zora-page-button { display: none; }
+  .zora-card-body { padding: 17px 18px; }
+  .zora-card-source { font-size: 20px; }
 }
 
-body .epub-icon-button:hover,
-body .epub-icon-button:focus-visible {
-  background: var(--background-modifier-hover);
-  color: var(--text-normal);
-}
-
-.epub-toc-toggle {
-  left: 10px;
-  top: 10px;
-  z-index: 20;
-}
-
-.epub-toc-close {
-  position: static;
-}
-
-.epub-page-button {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 10;
-}
-
-.epub-page-button--previous {
-  left: 10px;
-}
-
-.epub-page-button--next {
-  right: 10px;
-}
-
-.epub-toc-entry {
-  border-left: 3px solid transparent;
-  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
-}
-
-body .epub-toc-entry:hover,
-body .epub-toc-entry:focus-visible {
-  background: var(--background-modifier-hover);
-  border-left-color: var(--interactive-accent);
-  color: var(--text-normal);
+@media (max-width: 420px) {
+  .zora-reader-toolbar { flex-basis: calc(50px + env(safe-area-inset-top)); }
+  .zora-book-title span { display: none; }
+  .zora-review { padding-left: 14px; padding-right: 14px; }
 }

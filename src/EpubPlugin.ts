@@ -1,65 +1,109 @@
-import { addIcon, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
-import { EpubPluginSettings, EpubSettingTab, DEFAULT_SETTINGS } from './EpubPluginSettings';
-import { EpubView, EPUB_FILE_EXTENSION, ICON_EPUB, VIEW_TYPE_EPUB } from './EpubView';
+import { addIcon, Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
+import { DEFAULT_SETTINGS, EpubPluginSettings, EpubSettingTab } from './EpubPluginSettings';
+import { EPUB_FILE_EXTENSION, EpubView, ICON_EPUB, VIEW_TYPE_EPUB } from './EpubView';
 import { refreshEpubViews } from './readerBackground';
+import { ReviewView, VIEW_TYPE_REVIEW } from './ReviewView';
+import { deepenSelection, translateSelection, type SelectionCapture, type TranslationConfig } from './translation';
+import { saveCapture, type CaptureDraft } from './notes';
 
 export default class EpubPlugin extends Plugin {
-	settings: EpubPluginSettings;
+  settings: EpubPluginSettings = { ...DEFAULT_SETTINGS, bookLocations: {} };
 
-	async onload() {
-		await this.loadSettings();
+  async onload(): Promise<void> {
+    await this.loadSettings();
+    await this.migrateLegacyReader();
 
-		addIcon(ICON_EPUB, `
-			<path
-				fill="currentColor"
-				stroke="currentColor"
-				d="M 90.695312 47.296875 C 90.046875 46.589844 89.136719 46.1875 88.175781 46.1875 C 87.21875 46.1875 86.304688 46.589844 85.660156 47.296875 L 70.535156 63.277344 L 52.855469 81.933594 C 51.558594 83.339844 49.734375 84.144531 47.820312 84.144531 C 45.90625 84.144531 44.078125 83.339844 42.785156 81.933594 L 17.582031 55.292969 C 14.792969 52.292969 14.792969 47.648438 17.582031 44.648438 L 42.785156 18.023438 C 44.078125 16.617188 45.90625 15.816406 47.820312 15.816406 C 49.734375 15.816406 51.558594 16.617188 52.855469 18.023438 L 64.382812 30.207031 L 40.417969 55.5 C 39.730469 56.257812 39.730469 57.410156 40.417969 58.167969 L 42.945312 60.839844 C 43.652344 61.566406 44.761719 61.566406 45.472656 60.839844 L 73.222656 31.566406 C 73.90625 30.808594 73.90625 29.652344 73.222656 28.894531 L 70.691406 26.226562 L 70.511719 26.054688 L 57.886719 12.722656 C 55.28125 9.921875 51.628906 8.332031 47.804688 8.332031 C 43.980469 8.332031 40.332031 9.921875 37.726562 12.722656 L 12.503906 39.347656 C 6.941406 45.222656 6.941406 54.769531 12.503906 60.644531 L 37.703125 87.269531 C 40.308594 90.070312 43.960938 91.664062 47.789062 91.664062 C 51.613281 91.664062 55.265625 90.070312 57.871094 87.269531 L 83.070312 60.644531 L 90.632812 52.679688 C 92.007812 51.171875 92.007812 48.863281 90.632812 47.359375 L 90.695312 47.292969 Z M 90.695312 47.296875"
-			/>
-		`);
+    addIcon(ICON_EPUB, '<path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M4.5 5.5c3-1.2 5.5-.8 7.5 1.1v12c-2-1.9-4.5-2.3-7.5-1.1zm15 0c-3-1.2-5.5-.8-7.5 1.1v12c2-1.9 4.5-2.3 7.5-1.1z"/>');
+    this.registerView(VIEW_TYPE_EPUB, (leaf: WorkspaceLeaf) => new EpubView(leaf, this));
+    this.registerView(VIEW_TYPE_REVIEW, (leaf: WorkspaceLeaf) => new ReviewView(leaf, this));
+    try { this.registerExtensions([EPUB_FILE_EXTENSION], VIEW_TYPE_EPUB); } catch { /* old reader may still be enabled */ }
+    this.addSettingTab(new EpubSettingTab(this.app, this));
+    this.addRibbonIcon('book-open-text', 'Zora Reader 今日复习', () => void this.openReview());
+    this.addCommand({ id: 'open-review', name: '打开今日复习', callback: () => void this.openReview() });
+    this.registerObsidianProtocolHandler('zora-reader', (parameters) => void this.openBookAt(parameters.book, parameters.cfi));
+  }
 
-		this.registerView(VIEW_TYPE_EPUB, (leaf: WorkspaceLeaf) => {
-			return new EpubView(leaf, this.settings);
-		});
+  async translate(capture: SelectionCapture) {
+    return translateSelection(this.translationConfig(), capture);
+  }
 
-		try {
-			this.registerExtensions([EPUB_FILE_EXTENSION], VIEW_TYPE_EPUB);
-		} catch {
-			// Another plugin may already own the extension; keep the reader available through its view type.
-		}
+  async deepen(capture: SelectionCapture): Promise<string> { return deepenSelection(this.translationConfig(), capture); }
 
-		this.addSettingTab(new EpubSettingTab(this.app, this));
-	}
+  async save(book: TFile, capture: SelectionCapture, result: Awaited<ReturnType<EpubPlugin['translate']>>, draft: CaptureDraft) {
+    return saveCapture(this.app, this.settings, book, capture, result, draft);
+  }
 
-	onunload() {
-	}
+  async rememberLocation(bookPath: string, location: string | number): Promise<void> {
+    this.settings.bookLocations[bookPath] = location;
+    await this.saveSettings();
+  }
 
-	async loadSettings() {
-		const storedSettings: unknown = await this.loadData();
-		const savedSettings = isRecord(storedSettings) ? storedSettings : {};
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, savedSettings);
-	}
+  async rememberFontScale(fontScale: number): Promise<void> {
+    this.settings.fontScale = fontScale;
+    await this.saveSettings();
+  }
 
-	async saveSettings() {
-		await this.saveData(this.settings);
-	}
+  async openReview(): Promise<void> {
+    let leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_REVIEW)[0];
+    if (!leaf) {
+      leaf = this.app.workspace.getRightLeaf(false) ?? this.app.workspace.getLeaf(true);
+      await leaf.setViewState({ type: VIEW_TYPE_REVIEW, active: true });
+    }
+    await this.app.workspace.revealLeaf(leaf);
+  }
 
-	/**
-	 * 重载已打开的 EPUB 阅读页，使阅读器设置即时更新。
-	 * Reloads open EPUB reading views so reader settings update immediately.
-	 */
-	async refreshEpubViews(): Promise<void> {
-		const views: Array<{ file: TFile; onLoadFile(file: TFile): Promise<void> }> = [];
-		this.app.workspace.getLeavesOfType(VIEW_TYPE_EPUB).forEach((leaf) => {
-			const epubView = leaf.view as unknown as EpubView;
-			if (epubView instanceof EpubView && epubView.file != null) {
-				views.push({ file: epubView.file, onLoadFile: (file) => epubView.onLoadFile(file) });
-			}
-		});
+  private async openBookAt(bookPath = '', cfi = ''): Promise<void> {
+    const file = this.app.vault.getFileByPath(bookPath);
+    if (!file || file.extension !== EPUB_FILE_EXTENSION || !cfi) return;
+    this.settings.bookLocations[file.path] = cfi;
+    await this.saveSettings();
+    await this.app.workspace.getLeaf(true).openFile(file, { active: true });
+  }
 
-		await refreshEpubViews(views);
-	}
+  async refreshEpubViews(): Promise<void> {
+    const views: Array<{ file: TFile; onLoadFile(file: TFile): Promise<void> }> = [];
+    this.app.workspace.getLeavesOfType(VIEW_TYPE_EPUB).forEach((leaf) => {
+      if (leaf.view instanceof EpubView && leaf.view.file) views.push({ file: leaf.view.file, onLoadFile: (file) => (leaf.view as EpubView).onLoadFile(file) });
+    });
+    await refreshEpubViews(views);
+  }
+
+  async loadSettings(): Promise<void> {
+    const stored: unknown = await this.loadData();
+    const saved = isRecord(stored) ? stored : {};
+    this.settings = { ...DEFAULT_SETTINGS, ...saved, bookLocations: isRecord(saved.bookLocations) ? saved.bookLocations as Record<string, string | number> : {} };
+  }
+
+  async saveSettings(): Promise<void> { await this.saveData(this.settings); }
+
+  private translationConfig(): TranslationConfig {
+    return {
+      apiKey: this.app.secretStorage.getSecret(this.settings.apiSecretId) ?? '',
+      baseUrl: this.settings.apiBaseUrl,
+      model: this.settings.apiModel,
+      sourceLanguage: this.settings.sourceLanguage,
+      targetLanguage: this.settings.targetLanguage,
+    };
+  }
+
+  private async migrateLegacyReader(): Promise<void> {
+    if (this.settings.legacyMigrationDone) return;
+    try {
+      const raw = await this.app.vault.adapter.read(`${this.app.vault.configDir}/plugins/epub-reader-highlighter/data.json`);
+      const legacy: unknown = JSON.parse(raw);
+      if (isRecord(legacy) && isRecord(legacy.books)) {
+        Object.entries(legacy.books).forEach(([path, record]) => {
+          if (isRecord(record) && (typeof record.lastCfi === 'string' || typeof record.lastCfi === 'number')) this.settings.bookLocations[path] = record.lastCfi;
+        });
+      }
+      if (isRecord(legacy) && isRecord(legacy.prefs) && typeof legacy.prefs.fontSize === 'number') {
+        this.settings.fontScale = Math.max(80, Math.min(160, Math.round(legacy.prefs.fontSize * 5.6)));
+      }
+    } catch { /* no legacy plugin data */ }
+    this.settings.legacyMigrationDone = true;
+    await this.saveSettings();
+    new Notice('Zora Reader 已准备好。旧阅读器数据保持不变。', 3500);
+  }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null;
-}
+function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null; }

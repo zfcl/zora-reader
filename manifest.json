@@ -1,10 +1,10 @@
 {
-	"id": "epub-reader-plus",
-	"name": "EPUB Reader Plus",
-	"version": "1.0.6",
+	"id": "zora-reader",
+	"name": "Zora Reader",
+	"version": "0.1.0",
 	"minAppVersion": "1.13.0",
-	"description": "A polished EPUB reader with paginated navigation and theme-aware reading.",
-	"author": "IkariKr",
-	"authorUrl": "https://github.com/IkariKr",
+	"description": "Read EPUB books, translate selections, and keep reviewable notes.",
+	"author": "zfcl",
+	"authorUrl": "https://github.com/zfcl/zora-reader",
 	"isDesktopOnly": false
 }
