@@ -5850,7 +5850,7 @@
 						? handleCopySelectionLink
 						: undefined
 				}
-				onExtractToCard={handleExtractToCard}
+				onExtractToCard={hasCardCreationCapability() ? handleExtractToCard : undefined}
 				onCreateReadingPoint={hasCreateReadingPointCapability() ? handleCreateReadingPoint : undefined}
 				onAutoInsert={hasExcerptNotesCapability() ? handleAutoInsertSelection : undefined}
 				onOpenAIMenu={showSelectedTextAIMenu}
