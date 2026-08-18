@@ -1,3 +1,13 @@
+declare module "wink-lemmatizer" {
+  interface WinkLemmatizer {
+    noun(word: string): string;
+    verb(word: string): string;
+    adjective(word: string): string;
+  }
+  const lemmatize: WinkLemmatizer;
+  export default lemmatize;
+}
+
 /**
  * 确定性英语词形还原（lemmatization）。
  * 用于把 surface form（原文词形）还原为词典原形 lemma：
