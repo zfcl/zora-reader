@@ -5,7 +5,7 @@
  * 多插件授权架构见 docs/LICENSE_MULTI_PLUGIN.md
  */
 
-export type LicensedProduct = "weave" | "weave-epub-reader";
+export type LicensedProduct = "weave" | "weave-epub-reader" | "zora-reader";
 
 export type LicenseEntitlement = "weave-premium" | "epub-premium";
 

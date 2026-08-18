@@ -23,7 +23,6 @@
   let stateVersion = $state(0);
   let excerptSettingsVersion = $state(0);
   let interfaceSettingsHost = $state<HTMLDivElement | null>(null);
-  let premiumPreviewSettingsHost = $state<HTMLDivElement | null>(null);
   let readingSettingsHost = $state<HTMLDivElement | null>(null);
   let selectionTranslationSettingsHost = $state<HTMLDivElement | null>(null);
   let diagnosticsSettingsHost = $state<HTMLDivElement | null>(null);
@@ -71,11 +70,6 @@
     );
   });
 
-  let premiumPreviewEnabled = $derived.by(() => {
-    stateVersion;
-    return plugin.settings?.showPremiumFeaturesPreview === true;
-  });
-
   let interfaceLanguageValue = $derived.by(() => {
     stateVersion;
     return normalizeInterfaceLanguagePreference(plugin.settings?.interfaceLanguage);
@@ -105,7 +99,6 @@
     getTranslate: () => t,
     getBookmarkFolderValue: () => bookmarkFolderValue,
     getInterfaceLanguageValue: () => interfaceLanguageValue,
-    getPremiumPreviewEnabled: () => premiumPreviewEnabled,
     getContinuousReadingPositionAutoSaveEnabled: () => continuousReadingPositionAutoSaveEnabled,
     getContinuousReadingPositionAutoSavePages: () => continuousReadingPositionAutoSavePages,
     getSourceNavigationOpenInNewTab: () => sourceNavigationOpenInNewTab,
@@ -180,7 +173,6 @@
     if (
       !excerptFolderSettingsLoaded
       || !interfaceSettingsHost
-      || !premiumPreviewSettingsHost
       || !readingSettingsHost
       || !selectionTranslationSettingsHost
       || !diagnosticsSettingsHost
@@ -200,14 +192,12 @@
         t,
         hosts: {
           interface: interfaceSettingsHost,
-          premiumPreview: premiumPreviewSettingsHost,
           reading: readingSettingsHost,
           selectionTranslation: selectionTranslationSettingsHost,
           diagnostics: diagnosticsSettingsHost,
         },
         snapshot: {
           interfaceLanguageValue,
-          premiumPreviewEnabled,
           bookmarkFolderValue,
           bookmarkFolderInput,
           bookNotesExportTemplateFolderValue,
@@ -237,7 +227,6 @@
           },
           updateBookmarkFolder: actions.updateBookmarkFolder,
           updateInterfaceLanguage: actions.updateInterfaceLanguage,
-          updatePremiumPreview: actions.updatePremiumPreview,
           updateBookNotesExportTemplatePath: actions.updateBookNotesExportTemplatePath,
           updateBookNotesExportTemplateFolder: actions.updateBookNotesExportTemplateFolder,
           openBookNotesExportTemplateModal: actions.openBookNotesExportTemplateModal,
@@ -267,13 +256,6 @@
       <h3 class="epub-settings-group-title with-accent-bar accent-cyan">{t("epub.settings.groups.interface")}</h3>
     </div>
     <div bind:this={interfaceSettingsHost} class="epub-native-settings-host"></div>
-  </div>
-
-  <div class="epub-settings-group epub-settings-group--panel">
-    <div class="epub-settings-group-header">
-      <h3 class="epub-settings-group-title with-accent-bar accent-purple">{t("epub.settings.groups.premiumPreview")}</h3>
-    </div>
-    <div bind:this={premiumPreviewSettingsHost} class="epub-native-settings-host"></div>
   </div>
 
   <div class="epub-settings-group epub-settings-group--panel">

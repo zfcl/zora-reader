@@ -18,6 +18,7 @@ import {
 export const LICENSED_PRODUCTS = {
 	WEAVE: "weave",
 	EPUB: "weave-epub-reader",
+	ZORA: "zora-reader",
 } as const satisfies Record<string, LicensedProduct>;
 
 export const LICENSE_ENTITLEMENTS = {

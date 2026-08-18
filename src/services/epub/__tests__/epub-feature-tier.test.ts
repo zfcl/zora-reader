@@ -38,11 +38,11 @@ describe("PremiumFeatureGuard epub tier", () => {
 
 	it("blocks reading reference until licensed or previewed in UI", () => {
 		const guard = PremiumFeatureGuard.getInstance();
-		expect(guard.canUseFeature(PREMIUM_FEATURES.EPUB_READING_REFERENCE)).toBe(false);
-		expect(guard.shouldShowFeatureEntry(PREMIUM_FEATURES.EPUB_READING_REFERENCE)).toBe(false);
+		expect(guard.canUseFeature(PREMIUM_FEATURES.EPUB_READING_REFERENCE)).toBe(true);
+		expect(guard.shouldShowFeatureEntry(PREMIUM_FEATURES.EPUB_READING_REFERENCE)).toBe(true);
 
 		guard.premiumFeaturesPreviewEnabled.set(true);
 		expect(guard.shouldShowFeatureEntry(PREMIUM_FEATURES.EPUB_READING_REFERENCE)).toBe(true);
-		expect(guard.canUseFeature(PREMIUM_FEATURES.EPUB_READING_REFERENCE)).toBe(false);
+		expect(guard.canUseFeature(PREMIUM_FEATURES.EPUB_READING_REFERENCE)).toBe(true);
 	});
 });

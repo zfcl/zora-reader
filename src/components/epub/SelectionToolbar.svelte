@@ -5,14 +5,13 @@
 	import { PREMIUM_FEATURES } from '../../services/premium/PremiumFeatureGuard';
 	import { tr } from '../../utils/i18n';
 	import { logger } from '../../utils/logger';
-	import type {
-		EpubBook,
-		EpubHighlightStyle,
-		EpubReaderEngine,
-		ReaderAnchorPoint,
-		ReaderFrame,
-		ReaderViewportRect,
-	} from '../../services/epub';
+import type {
+EpubBook,
+EpubHighlightStyle,
+EpubReaderEngine,
+ReaderFrame,
+} from '../../services/epub';
+import type { ReaderAnchorPoint, ReaderViewportRect } from '../../services/epub/reader-engine-types';
 	import type { ResolvedWebTranslationProvider } from '../../config/selection-translation-settings';
 	import { openObsidianVaultSearch } from '../../services/obsidian/obsidian-vault-search';
 	import { openObsidianWebSearch } from '../../services/obsidian/obsidian-web-search';
@@ -21,7 +20,10 @@
 		openWebTranslationProvider,
 		readSelectionTranslationSettings,
 	} from '../../services/obsidian/obsidian-web-translate';
-	import { extractSelectionContext } from '../../services/obsidian/selection-lookup-routing';
+	import { extractSelectionContext, isDictionaryLookupCandidate } from '../../services/obsidian/selection-lookup-routing';
+	import type { IntegratedAISettings } from '../../config/integrated-ai-settings';
+	import type { ZoraSelectionTranslationInput } from '../../services/ai/zora/zora-translation-service';
+	import SelectionDictionaryPopover from './SelectionDictionaryPopover.svelte';
 	import { showNotification } from '../../utils/notifications';
 	import { domInstanceOf } from '../../utils/dom-instance-of';
 	import {
@@ -64,6 +66,7 @@
 		onExtractToCard?: (text: string, cfiRange: string) => void;
 		onCreateReadingPoint?: (text: string, cfiRange: string) => void;
 		onOpenAIMenu: (event: MouseEvent, text: string, cfiRange: string) => void;
+		translationSettings?: IntegratedAISettings;
 	}
 
 	let {
@@ -85,7 +88,8 @@
 		onAutoInsert,
 		onExtractToCard,
 		onCreateReadingPoint,
-		onOpenAIMenu
+		onOpenAIMenu,
+		translationSettings
 	}: Props = $props();
 	let t = $derived($tr);
 
@@ -106,6 +110,8 @@
 	let activeClearSelection: (() => void) | null = null;
 	let pendingExternalSelectionHideFrame: number | null = null;
 	let activeToolbarMenu: Menu | null = null;
+let lookupSelection: ZoraSelectionTranslationInput & { anchorRect: DOMRect; anchorRects: DOMRect[]; anchorPoint?: ReaderAnchorPoint } | null = $state(null);
+let lookupViewportEl: HTMLElement | null = $state(null);
 
 	const isMobileToolbar = Platform.isMobile || activeDocument.body.classList.contains('is-mobile');
 
@@ -370,7 +376,41 @@
 			onOpenAIMenu(event, selectedText, currentCfiRange);
 		}
 		clearAndHide();
+
 	}
+
+function handleDictionaryLookup() {
+if (!selectedText || !currentCfiRange || !activeFrame || !translationSettings) return;
+const frameWindow = activeFrame.window || activeFrame.frameDocument?.defaultView;
+const frameDocument = frameWindow?.document;
+const liveSelection = frameDocument?.getSelection?.();
+const range = liveSelection && liveSelection.rangeCount > 0 ? liveSelection.getRangeAt(0).cloneRange() : null;
+const viewportEl = getViewportContainer(activeFrame);
+if (!viewportEl) return;
+const geometry = liveSelection ? resolveSelectionGeometry(currentCfiRange, activeFrame, liveSelection) : null;
+if (!geometry) return;
+lookupSelection = {
+text: selectedText,
+cfiRange: currentCfiRange,
+chapter: readerService.getCurrentChapterTitle?.() || '',
+bookPath: book?.filePath || '',
+bookTitle: book?.metadata?.title || '',
+context: extractSelectionContext(iframeDoc, selectedText),
+range,
+anchorRect: geometry.rect,
+anchorRects: geometry.rects,
+anchorPoint: geometry.anchorPoint,
+};
+lookupViewportEl = viewportEl;
+hideToolbar();
+}
+
+function closeDictionaryLookup() {
+lookupSelection = null;
+lookupViewportEl = null;
+clearAndHide();
+}
+
 
 	function handleVaultSearch() {
 		if (!selectedText) return;
@@ -886,6 +926,12 @@
 						<span class="action-label">{t('epub.selectionToolbar.readingPoint')}</span>
 					</button>
 				{/if}
+{#if translationSettings?.enabled !== false}
+<button class="clickable-icon action-item accent" onclick={handleDictionaryLookup} title={isDictionaryLookupCandidate(selectedText) ? '词义' : '翻译'} aria-label={isDictionaryLookupCandidate(selectedText) ? '词义' : '翻译'}>
+<span class="action-icon" use:icon={isDictionaryLookupCandidate(selectedText) ? 'book-open' : 'languages'}></span>
+<span class="action-label">{isDictionaryLookupCandidate(selectedText) ? '词义' : '翻译'}</span>
+</button>
+{/if}
 				<button class="clickable-icon action-item ai" onclick={handleOpenAIMenu} title="AI 助手" aria-label="AI 助手">
 					<span class="action-icon" use:icon={'sparkles'}></span>
 					<span class="action-label">AI</span>
@@ -905,3 +951,16 @@
 
 	<div class="toolbar-arrow"></div>
 </div>
+
+{#if lookupSelection && lookupViewportEl && translationSettings}
+<SelectionDictionaryPopover
+app={app}
+settings={translationSettings}
+selection={lookupSelection}
+anchorRect={lookupSelection.anchorRect}
+anchorRects={lookupSelection.anchorRects}
+anchorPoint={lookupSelection.anchorPoint}
+viewportEl={lookupViewportEl}
+onClose={closeDictionaryLookup}
+/>
+{/if}

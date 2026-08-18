@@ -33,38 +33,38 @@ const isStandalone =
 	typeof __WEAVE_EPUB_STANDALONE__ !== "undefined" && __WEAVE_EPUB_STANDALONE__;
 
 const primaryProtocolName = isStandalone
-	? "weave-epub-ai-reader"
+	? "zora-reader"
 	: "weave-epub";
 const legacyProtocolNames = isStandalone
 	? ["weave-epub-reader", "weave-epub"]
 	: [];
 const bookshelfDataChangedEvent = isStandalone
-	? "WeaveEpubAI:epub-bookshelf-data-changed"
+	? "ZoraReader:epub-bookshelf-data-changed"
 	: "Weave:epub-bookshelf-data-changed";
 const bookshelfRefreshRequestEvent = isStandalone
-	? "WeaveEpubAI:epub-bookshelf-refresh-request"
+	? "ZoraReader:epub-bookshelf-refresh-request"
 	: "Weave:epub-bookshelf-refresh-request";
 const bookshelfDisplaySettingsChangedEvent = isStandalone
-	? "WeaveEpubAI:epub-bookshelf-display-settings-changed"
+	? "ZoraReader:epub-bookshelf-display-settings-changed"
 	: "Weave:epub-bookshelf-display-settings-changed";
 const bookDisplayTitleChangedEvent = isStandalone
-	? "WeaveEpubAI:epub-book-display-title-changed"
+	? "ZoraReader:epub-book-display-title-changed"
 	: "Weave:epub-book-display-title-changed";
 const excerptSettingsChangedEvent = isStandalone
-	? "WeaveEpubAI:epub-excerpt-settings-changed"
+	? "ZoraReader:epub-excerpt-settings-changed"
 	: "Weave:epub-excerpt-settings-changed";
 const highlightSyncRequestedEvent = isStandalone
-	? "WeaveEpubAI:epub-highlight-sync-requested"
+	? "ZoraReader:epub-highlight-sync-requested"
 	: "Weave:epub-highlight-sync-requested";
 
 export const EPUB_RUNTIME: EpubRuntimeConfig = {
-	pluginId: isStandalone ? "weave-epub-ai-reader" : "weave",
-	pluginDirName: isStandalone ? "weave-epub-ai-reader" : "weave",
+	pluginId: isStandalone ? "zora-reader" : "weave",
+	pluginDirName: isStandalone ? "zora-reader" : "weave",
 	viewTypes: {
-		reader: isStandalone ? "weave-epub-ai-reader" : "weave-epub-reader",
-		sidebar: isStandalone ? "weave-epub-ai-sidebar" : "weave-epub-sidebar",
+		reader: isStandalone ? "zora-reader" : "weave-epub-reader",
+		sidebar: isStandalone ? "zora-reader-sidebar" : "weave-epub-sidebar",
 		bookshelfSidebar: isStandalone
-			? "weave-epub-ai-bookshelf-sidebar"
+			? "zora-reader-bookshelf-sidebar"
 			: "weave-epub-bookshelf-sidebar",
 	},
 	protocol: {
@@ -80,18 +80,18 @@ export const EPUB_RUNTIME: EpubRuntimeConfig = {
 		excerptSettingsChanged: excerptSettingsChangedEvent,
 		highlightSyncRequested: highlightSyncRequestedEvent,
 		navigate: isStandalone
-			? "WeaveEpubAI:epub-navigate"
+			? "ZoraReader:epub-navigate"
 			: "Weave:epub-navigate",
 		premiumFeaturePreviewRequest: isStandalone
-			? "WeaveEpubAI:epub-premium-feature-preview-request"
+			? "ZoraReader:epub-premium-feature-preview-request"
 			: "Weave:epub-premium-feature-preview-request",
 		premiumUiStateChanged: isStandalone
-			? "WeaveEpubAI:epub-premium-ui-state-changed"
+			? "ZoraReader:epub-premium-ui-state-changed"
 			: "Weave:epub-premium-ui-state-changed",
 	},
 	globals: {
 		pendingNavigationKey: isStandalone
-			? "__weaveEpubAIPendingNav"
+			? "__zoraReaderPendingNav"
 			: "__weaveEpubPendingNav",
 	},
 };

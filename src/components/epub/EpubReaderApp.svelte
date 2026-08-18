@@ -5854,6 +5854,7 @@
 				onCreateReadingPoint={hasCreateReadingPointCapability() ? handleCreateReadingPoint : undefined}
 				onAutoInsert={hasExcerptNotesCapability() ? handleAutoInsertSelection : undefined}
 				onOpenAIMenu={showSelectedTextAIMenu}
+				translationSettings={resolveEpubHost(app)?.settings?.aiAssistant}
 			/>
 
 			<EpubPremiumFeaturePopover

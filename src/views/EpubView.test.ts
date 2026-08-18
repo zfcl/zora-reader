@@ -188,31 +188,31 @@ describe('EpubView', () => {
 		expect(button.classList.contains('epub-view-action-hidden')).toBe(false);
 	});
 
-	it('hides canvas actions when canvas excerpt premium capability is unavailable', () => {
+	it('shows canvas actions in the personal build', () => {
 		const view = new EpubView({} as any, { app: {} } as any);
 		const applyActionButtonState = vi.spyOn(view as any, 'applyActionButtonState');
 
 		(view as any).actionHandlers = {
-			canUseCanvasExcerpts: () => false,
+			canUseCanvasExcerpts: () => true,
 		};
 		(view as any).canvasModeActive = true;
 		(view as any).updateCanvasBtn();
 
 		expect(applyActionButtonState).toHaveBeenCalledWith((view as any).canvasBtn, expect.objectContaining({
-			visible: false,
+			visible: true,
 		}));
 		expect(applyActionButtonState).toHaveBeenCalledWith((view as any).inlineCanvasBtn, expect.objectContaining({
-			visible: false,
+			visible: true,
 		}));
 	});
 
-	it('shows paragraph mode as a premium preview action when capability is unavailable', () => {
+	it('shows paragraph mode as a normal action in the personal build', () => {
 		const view = new EpubView({} as any, { app: {} } as any);
 		const applyActionButtonState = vi.spyOn(view as any, 'applyActionButtonState');
 
 		(view as any).actionHandlers = {
-			canUseParagraphMode: () => false,
-			isPremiumFeaturePreviewEnabled: () => true,
+			canUseParagraphMode: () => true,
+			isPremiumFeaturePreviewEnabled: () => false,
 		};
 		(view as any).paragraphModeEnabled = true;
 		(view as any).updateParagraphModeBtn();
@@ -220,17 +220,17 @@ describe('EpubView', () => {
 		expect(applyActionButtonState).toHaveBeenCalledWith(
 			(view as any).paragraphModeBtn,
 			expect.objectContaining({
-				active: false,
+				active: true,
 				visible: true,
-				label: expect.stringContaining('🔒'),
+				label: expect.not.stringContaining('🔒'),
 			})
 		);
 		expect(applyActionButtonState).toHaveBeenCalledWith(
 			(view as any).inlineParagraphModeBtn,
 			expect.objectContaining({
-				active: false,
+				active: true,
 				visible: true,
-				label: expect.stringContaining('🔒'),
+				label: expect.not.stringContaining('🔒'),
 			})
 		);
 	});
@@ -269,22 +269,21 @@ describe('EpubView', () => {
 		expect((view as any).scope.getHandlerCount()).toBe(2);
 	});
 
-	it('opens the paragraph mode premium preview instead of toggling when the capability is unavailable', () => {
+	it('toggles paragraph mode in the personal build', () => {
 		const view = new EpubView({} as any, { app: {} } as any);
 		const toggleParagraphMode = vi.fn();
 		const showPremiumFeaturePreview = vi.fn();
 
 		(view as any).actionHandlers = {
-			canUseParagraphMode: () => false,
-			isPremiumFeaturePreviewEnabled: () => true,
+			canUseParagraphMode: () => true,
+			isPremiumFeaturePreviewEnabled: () => false,
 			toggleParagraphMode,
 			showPremiumFeaturePreview,
 		};
 
 		(view as any).toggleParagraphMode();
 
-		expect(showPremiumFeaturePreview).toHaveBeenCalledWith(PREMIUM_FEATURES.EPUB_PARAGRAPH_MODE);
-		expect(toggleParagraphMode).not.toHaveBeenCalled();
-		expect((view as any).paragraphModeEnabled).toBe(false);
+		expect(showPremiumFeaturePreview).not.toHaveBeenCalled();
+		expect(toggleParagraphMode).toHaveBeenCalled();
 	});
 });

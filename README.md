@@ -1,6 +1,8 @@
-# Weave EPUB AI Reader
+# Zora Reader
 
-An integrated Obsidian ebook reader with a built-in DeepSeek reading assistant.
+A personal English EPUB reader for Obsidian. Native reader + AI dictionary/translation + vocabulary.
+
+## Upstream provenance
 
 > This is an independent GPL-3.0-or-later derivative of
 > [Weave EPUB Reader 0.6.55](https://github.com/zhuzhige123/obsidian-weave-reader/tree/0.6.55)
@@ -11,9 +13,7 @@ An integrated Obsidian ebook reader with a built-in DeepSeek reading assistant.
 ## Why this fork exists
 
 The upstream reader includes an AI button in its native selection toolbar, but
-the action is delegated to the separate Weave main plugin. This fork keeps the
-reader's native selected-text pipeline and integrates the AI menu, DeepSeek
-request, settings, and result window directly into one plugin.
+the action is delegated to the separate Weave main plugin. This personal fork keeps the reader native selected-text pipeline, removes the commercial license layer, and integrates the previously tested Zora dictionary/translation engine directly into the native SelectionToolbar popover.
 
 There is no DOM injection, context-menu replacement, runtime patcher, or
 dependency on the Weave main plugin.

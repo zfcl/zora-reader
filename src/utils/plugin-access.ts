@@ -85,7 +85,7 @@ export type CompatibleAISelectedTextPanelHost = CompatiblePlugin & {
 	dataStorage: CompatibleAIDataStorage;
 };
 
-export const STANDALONE_PLUGIN_ID = "weave-epub-ai-reader";
+export const STANDALONE_PLUGIN_ID = "zora-reader";
 export const LEGACY_WEAVE_PLUGIN_ID = "weave";
 
 function normalizeOptionalString(value: unknown): string | undefined {

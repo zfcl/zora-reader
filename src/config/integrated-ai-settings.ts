@@ -10,7 +10,7 @@ export interface IntegratedAISettings {
 }
 
 export const DEFAULT_INTEGRATED_AI_SECRET_ID =
-	"weave-epub-ai-reader-deepseek-api-key";
+	"zora-reader-api-key";
 
 export const DEFAULT_INTEGRATED_AI_SETTINGS: IntegratedAISettings = {
 	enabled: true,

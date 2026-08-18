@@ -180,7 +180,7 @@ describe("EpubBookmarkService", () => {
 				},
 				getFiles: vi.fn(() => [
 					{
-						path: "weave/epub-bookmarks/Demo--epubsrc-legacy.md",
+						path: "Zora Reader/Demo--epubsrc-legacy.md",
 						name: "Demo--epubsrc-legacy.md",
 						extension: "md",
 					},
@@ -197,7 +197,7 @@ describe("EpubBookmarkService", () => {
 		vi.spyOn(service as any, "readBookmarkFileByPath").mockImplementation(
 			async (...args: unknown[]) => {
 				const [filePath] = args as [string];
-			if (filePath !== "weave/epub-bookmarks/Demo--epubsrc-legacy.md") {
+			if (filePath !== "Zora Reader/Demo--epubsrc-legacy.md") {
 				return null;
 			}
 			return {
@@ -227,10 +227,10 @@ describe("EpubBookmarkService", () => {
 					author: "Author",
 				},
 			},
-			"weave/epub-bookmarks/Demo--epubsrc-legacy.md"
+			"Zora Reader/Demo--epubsrc-legacy.md"
 		);
 		const expectedStableKey = "epubsrc-4a9ad58db18a";
-		const expectedPath = "weave/epub-bookmarks/data_Demo.md";
+		const expectedPath = "Zora Reader/data_Demo.md";
 
 		expect(result).toBe(expectedPath);
 		expect(writeBookmarkFile).toHaveBeenCalledWith(
@@ -242,7 +242,7 @@ describe("EpubBookmarkService", () => {
 			})
 		);
 		expect(app.vault.adapter.remove).toHaveBeenCalledWith(
-			"weave/epub-bookmarks/Demo--epubsrc-legacy.md"
+			"Zora Reader/Demo--epubsrc-legacy.md"
 		);
 	});
 
@@ -251,7 +251,7 @@ describe("EpubBookmarkService", () => {
 		const app = {
 			vault: {
 				adapter: {
-					exists: vi.fn(async (path: string) => path === "weave/epub-bookmarks/Demo--legacy.md"),
+					exists: vi.fn(async (path: string) => path === "Zora Reader/Demo--legacy.md"),
 					remove: vi.fn(async () => {
 						const error = new Error("ENOENT: no such file or directory") as Error & { code?: string };
 						error.code = "ENOENT";
@@ -285,12 +285,12 @@ describe("EpubBookmarkService", () => {
 					sourceFingerprint: "fp-demo-123",
 					metadata: { title: "Demo", author: "Author" },
 				},
-				"weave/epub-bookmarks/Demo--legacy.md"
+				"Zora Reader/Demo--legacy.md"
 			)
-		).resolves.toBe("weave/epub-bookmarks/data_Demo.md");
+		).resolves.toBe("Zora Reader/data_Demo.md");
 
 		expect(writeBookmarkFile).toHaveBeenCalled();
-		expect(app.vault.adapter.remove).toHaveBeenCalledWith("weave/epub-bookmarks/Demo--legacy.md");
+		expect(app.vault.adapter.remove).toHaveBeenCalledWith("Zora Reader/Demo--legacy.md");
 	});
 
 	it("writes readingState into bookmark frontmatter with Obsidian warning callout", async () => {
@@ -311,7 +311,7 @@ describe("EpubBookmarkService", () => {
 		} as any;
 		const service = new EpubBookmarkService(app);
 		vi.spyOn(service as any, "ensureCanonicalBookmarkFilePath").mockResolvedValue(
-			"weave/epub-bookmarks/data_Demo.md"
+			"Zora Reader/data_Demo.md"
 		);
 		vi.spyOn(service as any, "readBookmarkFileByPath").mockResolvedValue(null);
 		vi.spyOn(service as any, "writeBookmarkFile").mockImplementation(
@@ -363,7 +363,7 @@ describe("EpubBookmarkService", () => {
 					write: adapterWrite,
 					mkdir: vi.fn(async () => undefined),
 				},
-				getAbstractFileByPath: vi.fn(() => ({ path: "weave/epub-bookmarks/Demo--fp-demo-123.md" })),
+				getAbstractFileByPath: vi.fn(() => ({ path: "Zora Reader/Demo--fp-demo-123.md" })),
 				modify: vi.fn(async () => {
 					const error = new Error("ENOENT: no such file or directory") as Error & { code?: string };
 					error.code = "ENOENT";
@@ -375,7 +375,7 @@ describe("EpubBookmarkService", () => {
 			},
 		} as any;
 		const service = new EpubBookmarkService(app);
-		await (service as any).writeBookmarkFile("weave/epub-bookmarks/Demo--fp-demo-123.md", {
+		await (service as any).writeBookmarkFile("Zora Reader/Demo--fp-demo-123.md", {
 			format: "weave-epub-bookmarks/v1",
 			weave_epub_bookmark_file: true,
 			stableKey: "fp-demo-123",
@@ -387,7 +387,7 @@ describe("EpubBookmarkService", () => {
 		});
 
 		expect(adapterWrite).toHaveBeenCalledWith(
-			"weave/epub-bookmarks/Demo--fp-demo-123.md",
+			"Zora Reader/Demo--fp-demo-123.md",
 			expect.stringContaining("weave_epub_bookmark_file: true")
 		);
 		expect(app.vault.create).not.toHaveBeenCalled();
@@ -403,7 +403,7 @@ describe("EpubBookmarkService", () => {
 				adapter: { exists: vi.fn(async () => false) },
 				getFiles: vi.fn(() => [
 					{
-						path: "weave/epub-bookmarks/史蒂夫•乔布斯传(Steve Jobs_A Biography)--fp-demo-123.md",
+						path: "Zora Reader/史蒂夫•乔布斯传(Steve Jobs_A Biography)--fp-demo-123.md",
 						name: "史蒂夫•乔布斯传(Steve Jobs_A Biography)--fp-demo-123.md",
 						extension: "md",
 						stat: { mtime: 100 },
@@ -429,6 +429,6 @@ describe("EpubBookmarkService", () => {
 				sourceFingerprint: "fp-demo-123",
 				metadata: { title: "史蒂夫•乔布斯传(Steve Jobs:A Biography)" },
 			})
-		).resolves.toBe("weave/epub-bookmarks/史蒂夫•乔布斯传(Steve Jobs_A Biography)--fp-demo-123.md");
+		).resolves.toBe("Zora Reader/史蒂夫•乔布斯传(Steve Jobs_A Biography)--fp-demo-123.md");
 	});
 });

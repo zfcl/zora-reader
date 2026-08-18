@@ -6,7 +6,7 @@ import type {
 import type StandaloneEpubPlugin from "../../main";
 import type { InterfaceLanguagePreference } from "../../utils/i18n";
 
-export type EpubSettingsTabId = "basic" | "ai" | "license" | "about";
+export type EpubSettingsTabId = "basic" | "ai" | "about";
 
 export type SettingsCleanupFn = () => void;
 
@@ -17,7 +17,6 @@ export type EpubSettingsTranslateFn = (
 
 export interface EpubBasicSettingsHosts {
 	interface: HTMLElement;
-	premiumPreview: HTMLElement;
 	reading: HTMLElement;
 	selectionTranslation: HTMLElement;
 	diagnostics: HTMLElement;
@@ -25,7 +24,6 @@ export interface EpubBasicSettingsHosts {
 
 export interface EpubBasicSettingsSnapshot {
 	interfaceLanguageValue: InterfaceLanguagePreference;
-	premiumPreviewEnabled: boolean;
 	bookmarkFolderValue: string;
 	bookmarkFolderInput: string;
 	bookNotesExportTemplateFolderValue: string;
@@ -50,7 +48,6 @@ export interface EpubBasicSettingsCallbacks {
 	updateInterfaceLanguage: (
 		value: InterfaceLanguagePreference,
 	) => Promise<void>;
-	updatePremiumPreview: (enabled: boolean) => Promise<void>;
 	updateBookNotesExportTemplatePath: (templatePath: string) => Promise<void>;
 	updateBookNotesExportTemplateFolder: (folderPath: string) => Promise<void>;
 	openBookNotesExportTemplateModal: () => void;

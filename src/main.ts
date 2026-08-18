@@ -25,6 +25,7 @@ import {
 	runIntegratedAIAction,
 	showIntegratedAIActionMenu,
 } from "./services/ai/integrated-reader-ai";
+import { normalizeVocabularyEntry, type ZoraVocabularyEntry } from "./services/ai/zora/vocabulary";
 import {
 	EPUB_RUNTIME,
 	EpubStorageService,
@@ -121,6 +122,7 @@ interface StandaloneEpubPluginSettings {
 	interfaceLanguage: InterfaceLanguagePreference;
 	selectionTranslation: SelectionTranslationSettings;
 	aiAssistant: IntegratedAISettings;
+	vocabularyEntries: ZoraVocabularyEntry[];
 }
 
 const DEFAULT_STANDALONE_EPUB_SETTINGS: StandaloneEpubPluginSettings = {
@@ -143,6 +145,7 @@ const DEFAULT_STANDALONE_EPUB_SETTINGS: StandaloneEpubPluginSettings = {
 	interfaceLanguage: "auto",
 	selectionTranslation: DEFAULT_SELECTION_TRANSLATION_SETTINGS,
 	aiAssistant: DEFAULT_INTEGRATED_AI_SETTINGS,
+	vocabularyEntries: [],
 };
 
 type PersistedStandaloneEpubPluginSettings = Omit<
@@ -165,7 +168,7 @@ export default class StandaloneEpubPlugin
 	settings: StandaloneEpubPluginSettings = DEFAULT_STANDALONE_EPUB_SETTINGS;
 
 	getLicensedProductId(): LicensedProduct {
-		return LICENSED_PRODUCTS.EPUB;
+		return LICENSED_PRODUCTS.ZORA;
 	}
 
 	getLocalLicenses(): LicenseInfo[] {
@@ -195,6 +198,35 @@ export default class StandaloneEpubPlugin
 	openEpubPremiumSettings(): void {
 		safeOpenSettings(this.app, this.manifest.id);
 	}
+
+async saveVocabularyEntry(
+entry: ZoraVocabularyEntry,
+result?: { contextualMeaning?: string; contextExplanation?: string; sentenceTranslation?: string; commonMeanings?: Array<{ label: string; meaning: string; usage?: string }> }
+): Promise<ZoraVocabularyEntry> {
+const normalized = normalizeVocabularyEntry({
+...entry,
+contextualMeaning: entry.contextualMeaning || result?.contextualMeaning || "",
+contextExplanation: entry.contextExplanation || result?.contextExplanation,
+sentenceTranslation: entry.sentenceTranslation || result?.sentenceTranslation,
+commonMeanings: entry.commonMeanings.length > 0 ? entry.commonMeanings : (result?.commonMeanings || []),
+});
+if (!normalized) throw new Error("无效的生词记录");
+const key = `${normalized.bookPath}\u0000${normalized.cfiRange}`;
+const next = this.settings.vocabularyEntries.filter((item) => `${item.bookPath}\u0000${item.cfiRange}` !== key);
+next.unshift(normalized);
+this.settings.vocabularyEntries = next.slice(0, 5000);
+await this.saveSettings();
+return normalized;
+}
+
+getVocabularyEntries(): ZoraVocabularyEntry[] {
+return [...this.settings.vocabularyEntries];
+}
+
+async openVocabularyList(): Promise<void> {
+const { ZoraVocabularyModal } = await import("./components/epub/ZoraVocabularyModal");
+new ZoraVocabularyModal(this.app, this).open();
+}
 
 	/** 兼容宿主可通过当前插件实例调用 */
 	openDataManagementModal(): void {
@@ -399,6 +431,9 @@ export default class StandaloneEpubPlugin
 					: localUiMemory.selectionQuickCreateLastFolder ||
 					  this.settings.selectionQuickCreateLastFolder,
 			);
+		this.settings.vocabularyEntries = Array.isArray(this.settings.vocabularyEntries)
+			? this.settings.vocabularyEntries.map((entry) => normalizeVocabularyEntry(entry)).filter((entry): entry is ZoraVocabularyEntry => entry !== null)
+			: [];
 		this.settings.epubMarkdownExportLastFolder = this.normalizeRememberedFolder(
 			hasLocalUiMemory
 				? localUiMemory.epubMarkdownExportLastFolder
@@ -618,7 +653,6 @@ export default class StandaloneEpubPlugin
 		await this.loadSettings();
 		await vaultStorage.initialize(this.app);
 		initI18n(this.settings.interfaceLanguage);
-		licenseManager.initializeCloud(this.app);
 		registerEpubHost(this.app, this);
 		configureNavigationHub(this.app, {
 			getSourceNavigationOpenInNewTab: () =>
@@ -692,6 +726,13 @@ export default class StandaloneEpubPlugin
 			name: i18n.t("views.epubBookshelfSidebar.title"),
 			callback: () => {
 				void this.openEpubBookshelf();
+			},
+		});
+		this.addCommand({
+			id: "open-vocabulary",
+			name: "打开生词本",
+			callback: () => {
+				void this.openVocabularyList();
 			},
 		});
 		this.addCommand({

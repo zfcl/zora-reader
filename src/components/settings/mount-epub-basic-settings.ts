@@ -35,7 +35,6 @@ const INTERFACE_LANGUAGE_OPTIONS: Array<{
 
 function clearHosts(hosts: EpubBasicSettingsMountOptions["hosts"]): void {
 	hosts.interface.replaceChildren();
-	hosts.premiumPreview.replaceChildren();
 	hosts.reading.replaceChildren();
 	hosts.selectionTranslation.replaceChildren();
 	hosts.diagnostics.replaceChildren();
@@ -177,17 +176,6 @@ export function mountEpubBasicSettings(options: EpubBasicSettingsMountOptions): 
 			dropdown.setValue(snapshot.interfaceLanguageValue);
 			dropdown.onChange(async (value) => {
 				await callbacks.updateInterfaceLanguage(value as InterfaceLanguagePreference);
-			});
-		});
-
-	new Setting(hosts.premiumPreview)
-		.setName(t("epub.settings.basic.showPremiumPreview"))
-		.setDesc(t("epub.settings.basic.showPremiumPreviewDesc"))
-		.setClass("epub-premium-preview-toggle-setting")
-		.addToggle((toggle) => {
-			toggle.setValue(snapshot.premiumPreviewEnabled);
-			toggle.onChange(async (value) => {
-				await callbacks.updatePremiumPreview(value);
 			});
 		});
 

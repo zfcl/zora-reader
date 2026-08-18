@@ -1,0 +1,41 @@
+.zora-lookup-popover { position: absolute; z-index: calc(var(--epub-z-popover,20) + 1); width: min(360px, calc(100vw - 24px)); max-width: calc(100vw - 24px); max-height: min(560px, calc(100vh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom))); border-radius: 14px; padding: 0; display: flex; flex-direction: column; color: var(--epub-text, var(--text-normal)); overflow: hidden; }
+.zora-lookup-popover.docked { top: auto !important; bottom: calc(12px + env(safe-area-inset-bottom)); left: 50% !important; transform: translateX(-50%); }
+.zora-lookup-header { flex: 0 0 40px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px 0 14px; border-bottom: 1px solid var(--epub-border); color: var(--epub-text-muted); font-size: 12px; font-weight: 700; letter-spacing: .04em; }
+.zora-lookup-header button { background: transparent; border: none; color: var(--epub-text-muted); width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.zora-lookup-header button:hover { background: var(--epub-bg-hover, rgba(127,127,127,.12)); color: var(--epub-text); }
+.zora-lookup-body { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 14px; line-height: 1.55; overflow-wrap: anywhere; }
+.zora-lookup-loading, .zora-lookup-error { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; color: var(--epub-text-muted); font-size: 13px; }
+.zora-lookup-target { font-size: 16px; font-weight: 700; color: var(--epub-text); }
+.zora-lookup-error { color: var(--text-error); }
+.zora-lookup-word-head { margin-bottom: 12px; }
+.zora-lookup-display { font-size: 22px; font-weight: 750; letter-spacing: .01em; }
+.zora-lookup-phonetic { color: var(--epub-text-muted); font-size: 14px; margin-top: 2px; }
+.zora-lookup-surface { color: var(--epub-text-muted); font-size: 12px; margin-top: 2px; }
+.zora-lookup-section { margin-top: 14px; }
+.zora-lookup-section h4 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--epub-text-faint, var(--text-faint)); font-weight: 700; display: flex; align-items: baseline; gap: 8px; }
+.zora-lookup-section .zora-pos { color: var(--epub-accent); background: color-mix(in srgb, var(--epub-accent) 12%, transparent); border-radius: 999px; padding: 2px 8px; font-size: 10px; text-transform: none; letter-spacing: .02em; }
+.zora-lookup-meaning { margin: 0; font-size: 16px; font-weight: 650; }
+.zora-lookup-explanation { margin: 6px 0 0; color: var(--epub-text-muted); font-size: 13px; }
+.zora-lookup-source { color: var(--epub-text); font-size: 15px; font-style: italic; }
+.zora-lookup-translation { margin: 0; font-size: 15px; line-height: 1.7; }
+.zora-lookup-senses { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.zora-lookup-senses li { display: grid; grid-template-columns: 20px 1fr; column-gap: 8px; align-items: baseline; }
+.zora-sense-index { color: var(--epub-text-faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+.zora-sense-label { display: inline-block; color: var(--epub-accent); background: color-mix(in srgb, var(--epub-accent) 10%, transparent); border-radius: 5px; padding: 1px 6px; font-size: 11px; margin-right: 6px; vertical-align: 1px; }
+.zora-sense-meaning { font-size: 13px; }
+.zora-sense-usage { grid-column: 2; color: var(--epub-text-faint); font-size: 12px; margin-top: -4px; }
+.zora-lookup-footer { flex: 0 0 44px; display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 0 10px max(6px, env(safe-area-inset-bottom)); border-top: 1px solid var(--epub-border); }
+.zora-lookup-footer button { border: 1px solid var(--epub-border); background: transparent; color: var(--epub-text); border-radius: 8px; padding: 5px 14px; font-size: 13px; cursor: pointer; }
+.zora-lookup-footer button:hover { background: var(--epub-bg-hover, rgba(127,127,127,.12)); }
+.zora-lookup-footer .zora-lookup-primary { border-color: var(--epub-accent); background: var(--epub-accent); color: var(--text-on-accent); }
+.zora-lookup-vocab-error { color: var(--text-error); font-size: 12px; padding: 0 10px 8px; }
+.zora-vocabulary-modal .zora-vocabulary-list { display: flex; flex-direction: column; gap: 12px; padding: 4px 0 12px; }
+.zora-vocabulary-row { border: 1px solid var(--background-modifier-border); border-radius: 10px; padding: 10px 12px; }
+.zora-vocabulary-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.zora-vocabulary-phonetic { color: var(--text-muted); font-size: 12px; }
+.zora-vocabulary-muted { color: var(--text-muted); font-size: 11px; }
+.zora-vocabulary-meaning { font-weight: 600; margin-top: 4px; }
+.zora-vocabulary-sentence { font-style: italic; margin-top: 4px; }
+.zora-vocabulary-actions { margin-top: 8px; display: flex; gap: 8px; }
+.zora-vocabulary-actions button { display: inline-flex; align-items: center; gap: 5px; }
+.zora-vocabulary-actions button svg { width: 14px; height: 14px; }

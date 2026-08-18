@@ -1,8 +1,8 @@
 {
-  "name": "weave-epub-ai-reader",
+  "name": "zora-reader",
   "private": true,
-  "version": "1.0.1",
-  "description": "Read EPUB books with highlights, deep links, and a built-in DeepSeek assistant.",
+  "version": "0.2.0",
+  "description": "Personal English EPUB reader with native AI dictionary and translation.",
   "repository": {
     "type": "git",
     "url": "https://github.com/HarrySuen626/weave-epub-ai-reader.git"
@@ -133,6 +133,7 @@
     "foliate-js": "1.0.1",
     "jszip": "3.10.1",
     "nunjucks": "3.2.4",
-    "pako": "^2.1.0"
+    "pako": "^2.1.0",
+    "wink-lemmatizer": "^3.0.4"
   }
 }
