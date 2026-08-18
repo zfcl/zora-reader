@@ -751,6 +751,9 @@ clearAndHide();
 			selectedText = text;
 			currentCfiRange = resolvedCfiRange;
 			activeClearSelection = null;
+			// 新选区立即替换旧词义 Popover，避免旧请求晚返回覆盖新选区。
+			lookupSelection = null;
+			lookupViewportEl = null;
 
 			const geometry = resolveSelectionGeometry(resolvedCfiRange, frame, selection);
 			if (!geometry) {
