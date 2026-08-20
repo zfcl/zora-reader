@@ -1,6 +1,7 @@
 import { App, PluginSettingTab } from "obsidian";
 import { mount, unmount, type Component as SvelteComponent } from "svelte";
 import type StandaloneEpubPlugin from "../../main";
+import EpubSettingsPanel from "./EpubSettingsPanel.svelte";
 
 export class EpubSettingsTab extends PluginSettingTab {
 	plugin: StandaloneEpubPlugin;
@@ -16,14 +17,14 @@ export class EpubSettingsTab extends PluginSettingTab {
 			{
 				type: "render" as const,
 				render: (containerEl: HTMLElement) => {
-					void this.renderPanelInto(containerEl);
+					this.renderPanelInto(containerEl);
 				},
 			},
 		];
 	}
 
 	display(): void {
-		void this.renderPanelInto(this.containerEl);
+		this.renderPanelInto(this.containerEl);
 	}
 
 	hide(): void {
@@ -39,17 +40,20 @@ export class EpubSettingsTab extends PluginSettingTab {
 		this.svelteRoot = null;
 	}
 
-	private async renderPanelInto(containerEl: HTMLElement): Promise<void> {
+	private renderPanelInto(containerEl: HTMLElement): void {
 		this.unmountPanel();
 
 		containerEl.empty();
 
-		const { default: Component } = await import("./EpubSettingsPanel.svelte");
-		this.svelteRoot = mount(Component as SvelteComponent, {
-			target: containerEl,
-			props: {
-				plugin: this.plugin,
-			},
-		});
+		try {
+			this.svelteRoot = mount(EpubSettingsPanel as SvelteComponent, {
+				target: containerEl,
+				props: {
+					plugin: this.plugin,
+				},
+			});
+		} catch (error) {
+			console.error("[ZoraReader] Failed to mount settings panel:", error);
+		}
 	}
 }

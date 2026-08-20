@@ -3,6 +3,7 @@ import type { App } from "obsidian";
 export interface IntegratedAISettings {
 	enabled: boolean;
 	apiKeySecretId: string;
+	apiKeyFallback?: string;
 	endpoint: string;
 	model: string;
 	maxTokens: number;
@@ -30,7 +31,7 @@ interface SecretStorageLike {
 
 function getSecretStorage(app: App): SecretStorageLike | null {
 	const candidate = app as App & { secretStorage?: SecretStorageLike };
-	return candidate.secretStorage ?? null;
+	return candidate?.secretStorage ?? null;
 }
 
 export function normalizeIntegratedAISettings(
@@ -47,6 +48,8 @@ export function normalizeIntegratedAISettings(
 		apiKeySecretId:
 			String(raw.apiKeySecretId || "").trim() ||
 			DEFAULT_INTEGRATED_AI_SECRET_ID,
+		apiKeyFallback:
+			typeof raw.apiKeyFallback === "string" ? raw.apiKeyFallback : undefined,
 		endpoint:
 			String(raw.endpoint || "").trim() ||
 			DEFAULT_INTEGRATED_AI_SETTINGS.endpoint,
@@ -69,9 +72,11 @@ export function readIntegratedAIApiKey(
 	app: App,
 	settings: IntegratedAISettings,
 ): string {
-	return (
-		getSecretStorage(app)?.getSecret(settings.apiKeySecretId)?.trim() ?? ""
-	);
+	const secretValue = getSecretStorage(app)?.getSecret(settings.apiKeySecretId)?.trim();
+	if (secretValue) {
+		return secretValue;
+	}
+	return settings.apiKeyFallback?.trim() ?? "";
 }
 
 export async function writeIntegratedAIApiKey(
@@ -79,11 +84,14 @@ export async function writeIntegratedAIApiKey(
 	settings: IntegratedAISettings,
 	apiKey: string,
 ): Promise<boolean> {
+	const trimmedKey = apiKey.trim();
 	const storage = getSecretStorage(app);
-	if (!storage) {
-		return false;
+	if (storage) {
+		await storage.setSecret(settings.apiKeySecretId, trimmedKey);
+		settings.apiKeyFallback = "";
+		return true;
 	}
-	await storage.setSecret(settings.apiKeySecretId, apiKey.trim());
+	settings.apiKeyFallback = trimmedKey;
 	return true;
 }
 
@@ -92,13 +100,13 @@ export async function clearIntegratedAIApiKey(
 	settings: IntegratedAISettings,
 ): Promise<boolean> {
 	const storage = getSecretStorage(app);
-	if (!storage) {
-		return false;
+	if (storage) {
+		if (storage.deleteSecret) {
+			await storage.deleteSecret(settings.apiKeySecretId);
+		} else {
+			await storage.setSecret(settings.apiKeySecretId, "");
+		}
 	}
-	if (storage.deleteSecret) {
-		await storage.deleteSecret(settings.apiKeySecretId);
-	} else {
-		await storage.setSecret(settings.apiKeySecretId, "");
-	}
+	settings.apiKeyFallback = "";
 	return true;
 }

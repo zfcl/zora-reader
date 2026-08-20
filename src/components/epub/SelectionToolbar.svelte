@@ -12,18 +12,13 @@ EpubReaderEngine,
 ReaderFrame,
 } from '../../services/epub';
 import type { ReaderAnchorPoint, ReaderViewportRect } from '../../services/epub/reader-engine-types';
-	import type { ResolvedWebTranslationProvider } from '../../config/selection-translation-settings';
 	import { openObsidianVaultSearch } from '../../services/obsidian/obsidian-vault-search';
-	import { openObsidianWebSearch } from '../../services/obsidian/obsidian-web-search';
-	import {
-		listActiveTranslationProviders,
-		openWebTranslationProvider,
-		readSelectionTranslationSettings,
-	} from '../../services/obsidian/obsidian-web-translate';
 	import { extractSelectionContext, isDictionaryLookupCandidate } from '../../services/obsidian/selection-lookup-routing';
 	import type { IntegratedAISettings } from '../../config/integrated-ai-settings';
 	import type { ZoraSelectionTranslationInput } from '../../services/ai/zora/zora-translation-service';
 	import SelectionDictionaryPopover from './SelectionDictionaryPopover.svelte';
+	import SelectionGrammarPopover from './SelectionGrammarPopover.svelte';
+	import SelectionNotePopover from './SelectionNotePopover.svelte';
 	import { showNotification } from '../../utils/notifications';
 	import { domInstanceOf } from '../../utils/dom-instance-of';
 	import {
@@ -56,16 +51,16 @@ import type { ReaderAnchorPoint, ReaderViewportRect } from '../../services/epub/
 		boundsEl?: HTMLElement | null;
 		mobileDockBottomOffset?: number;
 		externalSelection?: ExternalSelectionState | null;
+		onHighlight?: (text: string, cfiRange: string, color: string, style?: EpubHighlightStyle) => void | Promise<void>;
 		onInsertToNote?: (text: string, cfiRange: string, color?: string, style?: EpubHighlightStyle) => void;
 		onCopySelectionLink?: (
 			action: 'protocolMarkdown' | 'vaultWikilink' | 'obsidianUri' | 'plainText',
 			text: string,
 			cfiRange: string
 		) => void | Promise<void>;
-		onAutoInsert?: (text: string, cfiRange: string, color?: string, style?: EpubHighlightStyle) => void;
-		onExtractToCard?: (text: string, cfiRange: string) => void;
 		onCreateReadingPoint?: (text: string, cfiRange: string) => void;
-		onOpenAIMenu: (event: MouseEvent, text: string, cfiRange: string) => void;
+		onOpenAIMenu?: (event: MouseEvent, text: string, cfiRange: string) => void;
+		onRunAIAction?: (actionId: string, text: string, cfiRange: string) => void;
 		translationSettings?: IntegratedAISettings;
 	}
 
@@ -83,12 +78,14 @@ import type { ReaderAnchorPoint, ReaderViewportRect } from '../../services/epub/
 		boundsEl = null,
 		mobileDockBottomOffset = 0,
 		externalSelection = null,
+		onHighlight,
 		onInsertToNote,
 		onCopySelectionLink,
 		onAutoInsert,
 		onExtractToCard,
 		onCreateReadingPoint,
 		onOpenAIMenu,
+		onRunAIAction,
 		translationSettings
 	}: Props = $props();
 	let t = $derived($tr);
@@ -112,6 +109,7 @@ import type { ReaderAnchorPoint, ReaderViewportRect } from '../../services/epub/
 	let activeToolbarMenu: Menu | null = null;
 let lookupSelection: ZoraSelectionTranslationInput & { anchorRect: DOMRect; anchorRects: DOMRect[]; anchorPoint?: ReaderAnchorPoint } | null = $state(null);
 let lookupViewportEl: HTMLElement | null = $state(null);
+let activePopoverType = $state<'dict' | 'grammar' | 'note' | null>(null);
 
 	const isMobileToolbar = Platform.isMobile || activeDocument.body.classList.contains('is-mobile');
 
@@ -297,22 +295,12 @@ let lookupViewportEl: HTMLElement | null = $state(null);
 	}
 
 	async function handleHighlight(color: string, style?: EpubHighlightStyle) {
-		if (!canUseExcerptNotes) {
-			if (showPremiumFeaturePreviewEnabled) {
-				handlePremiumExcerptFeaturePreview();
-				return;
-			}
-			clearAndHide();
-			return;
-		}
-		if (style && !canUseStyledExcerpts) {
-			if (showPremiumFeaturePreviewEnabled) {
-				handlePremiumStyledExcerptFeaturePreview();
-				return;
-			}
-			clearAndHide();
-			return;
-		}
+		logger.logHighlightDebugToFile('ENTER: SelectionToolbar.handleHighlight', {
+			bookId: book?.id,
+			cfiRange: currentCfiRange,
+			color,
+			style
+		});
 		if (!book || !selectedText || !currentCfiRange) {
 			clearAndHide();
 			return;
@@ -320,16 +308,21 @@ let lookupViewportEl: HTMLElement | null = $state(null);
 
 		try {
 			const highlight = { cfiRange: currentCfiRange, color, style, text: selectedText };
-			if (autoInsert || canvasMode) {
-				readerService.addHighlight(highlight);
-			} else {
-				readerService.addTemporaryHighlight(highlight, 2000);
-			}
+			readerService.addHighlight(highlight);
 		} catch (e) {
 			logger.warn('[SelectionToolbar] Failed to apply highlight:', e);
 		}
 
-		onAutoInsert?.(selectedText, currentCfiRange, color, style);
+		try {
+			await onHighlight?.(selectedText, currentCfiRange, color, style);
+			logger.logHighlightDebugToFile('SUCCESS: SelectionToolbar.handleHighlight -> onHighlight completed', { cfiRange: currentCfiRange });
+		} catch (err: any) {
+			logger.logHighlightDebugToFile('ERROR: SelectionToolbar.handleHighlight -> onHighlight failed', { error: err?.message || err });
+		}
+
+		if (autoInsert) {
+			onAutoInsert?.(selectedText, currentCfiRange, color, style);
+		}
 		clearAndHide();
 	}
 
@@ -371,46 +364,74 @@ let lookupViewportEl: HTMLElement | null = $state(null);
 		clearAndHide();
 	}
 
-	function handleOpenAIMenu(event: MouseEvent) {
-		if (selectedText && currentCfiRange) {
-			onOpenAIMenu(event, selectedText, currentCfiRange);
+	function handleRunAIAction(actionId: string) {
+		if (!selectedText || !currentCfiRange) return;
+		if (onRunAIAction) {
+			onRunAIAction(actionId, selectedText, currentCfiRange);
 		}
 		clearAndHide();
-
 	}
 
-function handleDictionaryLookup() {
-if (!selectedText || !currentCfiRange || !activeFrame || !translationSettings) return;
-const frameWindow = activeFrame.window || activeFrame.frameDocument?.defaultView;
-const frameDocument = frameWindow?.document;
-const liveSelection = frameDocument?.getSelection?.();
-const range = liveSelection && liveSelection.rangeCount > 0 ? liveSelection.getRangeAt(0).cloneRange() : null;
-const viewportEl = getViewportContainer(activeFrame);
-if (!viewportEl) return;
-const geometry = liveSelection ? resolveSelectionGeometry(currentCfiRange, activeFrame, liveSelection) : null;
-if (!geometry) return;
-lookupSelection = {
-text: selectedText,
-cfiRange: currentCfiRange,
-chapter: readerService.getCurrentChapterTitle?.() || '',
-bookPath: book?.filePath || '',
-bookTitle: book?.metadata?.title || '',
-context: extractSelectionContext(iframeDoc, selectedText),
-range,
-anchorRect: geometry.rect,
-anchorRects: geometry.rects,
-anchorPoint: geometry.anchorPoint,
-};
-lookupViewportEl = viewportEl;
-hideToolbar();
-}
+	function prepareLookupSelection() {
+		if (!selectedText || !currentCfiRange || !activeFrame) return null;
+		const frameWindow = activeFrame.window || activeFrame.frameDocument?.defaultView;
+		const frameDocument = frameWindow?.document;
+		const liveSelection = frameDocument?.getSelection?.();
+		const range = liveSelection && liveSelection.rangeCount > 0 ? liveSelection.getRangeAt(0).cloneRange() : null;
+		const viewportEl = getViewportContainer(activeFrame);
+		if (!viewportEl) return null;
+		const geometry = liveSelection ? resolveSelectionGeometry(currentCfiRange, activeFrame, liveSelection) : null;
+		if (!geometry) return null;
+		return {
+			selection: {
+				text: selectedText,
+				cfiRange: currentCfiRange,
+				chapter: readerService.getCurrentChapterTitle?.() || '',
+				bookPath: book?.filePath || '',
+				bookTitle: book?.metadata?.title || '',
+				context: extractSelectionContext(iframeDoc, selectedText),
+				range,
+				anchorRect: geometry.rect,
+				anchorRects: geometry.rects,
+				anchorPoint: geometry.anchorPoint,
+			},
+			viewportEl,
+		};
+	}
 
-function closeDictionaryLookup() {
-lookupSelection = null;
-lookupViewportEl = null;
-clearAndHide();
-}
+	function handleDictionaryLookup() {
+		const prepared = prepareLookupSelection();
+		if (!prepared || !translationSettings) return;
+		lookupSelection = prepared.selection;
+		lookupViewportEl = prepared.viewportEl;
+		activePopoverType = 'dict';
+		hideToolbar();
+	}
 
+	function handleGrammarLookup() {
+		const prepared = prepareLookupSelection();
+		if (!prepared || !translationSettings) return;
+		lookupSelection = prepared.selection;
+		lookupViewportEl = prepared.viewportEl;
+		activePopoverType = 'grammar';
+		hideToolbar();
+	}
+
+	function handleNoteLookup() {
+		const prepared = prepareLookupSelection();
+		if (!prepared) return;
+		lookupSelection = prepared.selection;
+		lookupViewportEl = prepared.viewportEl;
+		activePopoverType = 'note';
+		hideToolbar();
+	}
+
+	function closePopover() {
+		lookupSelection = null;
+		lookupViewportEl = null;
+		activePopoverType = null;
+		clearAndHide();
+	}
 
 	function handleVaultSearch() {
 		if (!selectedText) return;
@@ -418,81 +439,6 @@ clearAndHide();
 			showNotification(t('epub.selectionToolbar.vaultSearchUnavailable'), 'warning');
 		}
 		clearAndHide();
-	}
-
-	async function runWebSearch(): Promise<void> {
-		if (!selectedText.trim()) {
-			return;
-		}
-		const opened = await openObsidianWebSearch(app, selectedText);
-		if (!opened) {
-			showNotification(t('epub.selectionToolbar.webSearchUnavailable'), 'warning');
-		}
-	}
-
-	function resolveBuiltinTranslationLabel(
-		provider: { nameKey: string }
-	): string {
-		return t(`epub.translationProviders.${provider.nameKey}`);
-	}
-
-	function listTranslationProviders(): ResolvedWebTranslationProvider[] {
-		return listActiveTranslationProviders({
-			app,
-			resolveBuiltinLabel: resolveBuiltinTranslationLabel,
-		});
-	}
-
-	async function openLookupProvider(
-		provider: ResolvedWebTranslationProvider,
-		query: string
-	): Promise<boolean> {
-		const settings = readSelectionTranslationSettings(app);
-		const context = extractSelectionContext(iframeDoc, query);
-		return openWebTranslationProvider(app, provider, query, {
-			context,
-			settings,
-			resolveBuiltinLabel: resolveBuiltinTranslationLabel,
-		});
-	}
-
-	function addLookupProviderMenuItems(
-		menu: Menu,
-		providers: ResolvedWebTranslationProvider[],
-		query: string,
-		unavailableLabel: string,
-		openFailedLabel: string
-	): void {
-		if (providers.length === 0) {
-			menu.addItem((subItem) => {
-				subItem.setTitle(unavailableLabel);
-				subItem.setIcon('info');
-				subItem.setDisabled(true);
-			});
-			return;
-		}
-
-		for (const provider of providers) {
-			menu.addItem((subItem) => {
-				subItem.setTitle(provider.label);
-				subItem.setIcon(provider.icon);
-				subItem.onClick(async () => {
-					const opened = await openLookupProvider(provider, query);
-					if (!opened) {
-						showNotification(openFailedLabel, 'warning');
-					}
-					clearAndHide();
-				});
-			});
-		}
-	}
-
-	function resolveSelectionToolbarSubmenu(item: unknown, fallbackMenu: Menu): Menu {
-		const candidate = item as { setSubmenu?: () => Menu };
-		if (typeof candidate.setSubmenu === 'function') {
-			return candidate.setSubmenu();
-		}
-		return fallbackMenu;
 	}
 
 	function handleOpenMoreMenu(event: MouseEvent) {
@@ -503,34 +449,10 @@ clearAndHide();
 		}
 
 		dismissActiveToolbarMenu();
-		const translationProviders = listTranslationProviders();
 		const menu = new Menu();
 		activeToolbarMenu = menu;
 
-		menu.addItem((item) => {
-			item.setTitle(t('epub.selectionToolbar.webSearch'));
-			item.setIcon('globe');
-			item.onClick(async () => {
-				await runWebSearch();
-				clearAndHide();
-			});
-		});
-
-		menu.addItem((item) => {
-			item.setTitle(t('epub.selectionToolbar.translate'));
-			item.setIcon('languages');
-			const translateMenu = resolveSelectionToolbarSubmenu(item, menu);
-			addLookupProviderMenuItems(
-				translateMenu,
-				translationProviders,
-				text,
-				t('epub.selectionToolbar.translateUnavailable'),
-				t('epub.selectionToolbar.translateOpenFailed')
-			);
-		});
-
 		if (onCopySelectionLink && (canUseExcerptNotes || canPreviewLockedExcerptFeature())) {
-			menu.addSeparator();
 			menu.addItem((item) => {
 				item.setTitle(t('epub.selectionToolbar.copyMdLink'));
 				item.setIcon('link');
@@ -892,7 +814,12 @@ clearAndHide();
 								<span class="action-icon style-icon strikethrough-style-icon" use:icon={'strikethrough'}></span>
 							</button>
 							<button class="clickable-icon action-item icon-only style-action-item" onclick={() => handleHighlight('yellow', 'wavy')} title={t('epub.selectionToolbar.wavy')} aria-label={t('epub.selectionToolbar.wavy')}>
-								<span class="action-icon style-icon wavy-style-icon" use:icon={'pen-tool'}></span>
+								<span class="action-icon style-icon wavy-style-icon">
+									<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon">
+										<path d="M6 4v6a6 6 0 0 0 12 0V4" />
+										<path d="M4 20c1.5-1 3-1 4.5 0s3 1 4.5 0 3-1 4.5 0 3 1 4.5 0" />
+									</svg>
+								</span>
 							</button>
 						</div>
 					</div>
@@ -912,33 +839,25 @@ clearAndHide();
 					<span class="action-label">{t('epub.selectionToolbar.vaultSearch')}</span>
 				</button>
 
-				{#if onExtractToCard && (canUseExcerptNotes || canPreviewLockedExcerptFeature())}
-					<div class="row-divider"></div>
-				{/if}
-
-				{#if onExtractToCard}
-					<button class="clickable-icon action-item accent" onclick={handleExtractToCard} title={t('epub.selectionToolbar.createCardTitle')} aria-label={t('epub.selectionToolbar.createCardTitle')}>
-						<span class="action-icon" use:icon={'scissors'}></span>
-						<span class="action-label">{t('epub.selectionToolbar.createCard')}</span>
+				{#if translationSettings?.enabled !== false}
+					<button class="clickable-icon action-item accent" onclick={handleDictionaryLookup} title={isDictionaryLookupCandidate(selectedText) ? '词义' : '翻译'} aria-label={isDictionaryLookupCandidate(selectedText) ? '词义' : '翻译'}>
+						<span class="action-icon" use:icon={isDictionaryLookupCandidate(selectedText) ? 'book-open' : 'languages'}></span>
+						<span class="action-label">{isDictionaryLookupCandidate(selectedText) ? '词义' : '翻译'}</span>
 					</button>
 				{/if}
 
-				{#if onCreateReadingPoint}
-					<button class="clickable-icon action-item accent" onclick={handleCreateReadingPoint} title={t('epub.selectionToolbar.readingPointTitle')} aria-label={t('epub.selectionToolbar.readingPointTitle')}>
-						<span class="action-icon" use:icon={'book-plus'}></span>
-						<span class="action-label">{t('epub.selectionToolbar.readingPoint')}</span>
+				{#if translationSettings?.enabled !== false}
+					<button class="clickable-icon action-item ai" onclick={handleGrammarLookup} title="英语语法解析" aria-label="语法">
+						<span class="action-icon" use:icon={'braces'}></span>
+						<span class="action-label">语法</span>
 					</button>
 				{/if}
-{#if translationSettings?.enabled !== false}
-<button class="clickable-icon action-item accent" onclick={handleDictionaryLookup} title={isDictionaryLookupCandidate(selectedText) ? '词义' : '翻译'} aria-label={isDictionaryLookupCandidate(selectedText) ? '词义' : '翻译'}>
-<span class="action-icon" use:icon={isDictionaryLookupCandidate(selectedText) ? 'book-open' : 'languages'}></span>
-<span class="action-label">{isDictionaryLookupCandidate(selectedText) ? '词义' : '翻译'}</span>
-</button>
-{/if}
-				<button class="clickable-icon action-item ai" onclick={handleOpenAIMenu} title="AI 助手" aria-label="AI 助手">
-					<span class="action-icon" use:icon={'sparkles'}></span>
-					<span class="action-label">AI</span>
+
+				<button class="clickable-icon action-item note-action" onclick={handleNoteLookup} title="添加笔记" aria-label="笔记">
+					<span class="action-icon" use:icon={'pen-tool'}></span>
+					<span class="action-label">笔记</span>
 				</button>
+
 				<button
 					class="clickable-icon action-item selection-actions-more"
 					onclick={handleOpenMoreMenu}
@@ -955,15 +874,38 @@ clearAndHide();
 	<div class="toolbar-arrow"></div>
 </div>
 
-{#if lookupSelection && lookupViewportEl && translationSettings}
-<SelectionDictionaryPopover
-app={app}
-settings={translationSettings}
-selection={lookupSelection}
-anchorRect={lookupSelection.anchorRect}
-anchorRects={lookupSelection.anchorRects}
-anchorPoint={lookupSelection.anchorPoint}
-viewportEl={lookupViewportEl}
-onClose={closeDictionaryLookup}
-/>
+{#if lookupSelection && lookupViewportEl}
+	{#if activePopoverType === 'dict' && translationSettings}
+		<SelectionDictionaryPopover
+			{app}
+			settings={translationSettings}
+			selection={lookupSelection}
+			anchorRect={lookupSelection.anchorRect}
+			anchorRects={lookupSelection.anchorRects}
+			anchorPoint={lookupSelection.anchorPoint}
+			viewportEl={lookupViewportEl}
+			onClose={closePopover}
+		/>
+	{:else if activePopoverType === 'grammar' && translationSettings}
+		<SelectionGrammarPopover
+			{app}
+			settings={translationSettings}
+			selection={lookupSelection}
+			anchorRect={lookupSelection.anchorRect}
+			anchorRects={lookupSelection.anchorRects}
+			anchorPoint={lookupSelection.anchorPoint}
+			viewportEl={lookupViewportEl}
+			onClose={closePopover}
+		/>
+	{:else if activePopoverType === 'note'}
+		<SelectionNotePopover
+			{app}
+			selection={lookupSelection}
+			anchorRect={lookupSelection.anchorRect}
+			anchorRects={lookupSelection.anchorRects}
+			anchorPoint={lookupSelection.anchorPoint}
+			viewportEl={lookupViewportEl}
+			onClose={closePopover}
+		/>
+	{/if}
 {/if}

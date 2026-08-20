@@ -55,6 +55,8 @@ export interface EpubStoredBookDescriptor {
 	metadata: BookMetadata;
 }
 
+import type { DirectHighlight } from "./types";
+
 export interface EpubReaderLocalBookRecord {
 	descriptor?: EpubStoredBookDescriptor;
 	state?: Pick<EpubBook, "currentPosition" | "readingStats">;
@@ -62,6 +64,7 @@ export interface EpubReaderLocalBookRecord {
 	readingReferencePoint?: EpubReadingReferencePoint | null;
 	concealedTexts?: ConcealedText[];
 	tocChapterMarks?: EpubTocChapterMarkMap;
+	directHighlights?: DirectHighlight[];
 }
 
 export interface CanvasExcerptAnchorRecord {

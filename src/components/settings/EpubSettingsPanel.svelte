@@ -1,41 +1,53 @@
 <script lang="ts">
-  import TabNavigation from "../ui/TabNavigation.svelte";
-  import { tr } from "../../utils/i18n";
   import type StandaloneEpubPlugin from "../../main";
   import type { EpubSettingsTabId } from "./epub-settings-types";
   import EpubSettingsBasicTab from "./EpubSettingsBasicTab.svelte";
   import EpubAISettingsTab from "./EpubAISettingsTab.svelte";
   import EpubSettingsAboutTab from "./EpubSettingsAboutTab.svelte";
   import "../../styles/epub/epub-settings-panel.css";
+  import { logZoraSettings } from "../../utils/zora-debug-logger";
 
   interface Props {
     plugin: StandaloneEpubPlugin;
   }
 
   let { plugin }: Props = $props();
-  let t = $derived($tr);
   let activeTab = $state<EpubSettingsTabId>("basic");
 
-  let tabs = $derived.by<Array<{ id: EpubSettingsTabId; label: string; icon: string }>>(() => [
-    { id: "basic", label: t("epub.settings.tabs.basic"), icon: "" },
-    { id: "ai", label: "AI 助手", icon: "" },
-    { id: "about", label: t("epub.settings.tabs.about"), icon: "" },
-  ]);
+  logZoraSettings("EpubSettingsPanel script evaluated", { activeTab });
+
+  const tabs: Array<{ id: EpubSettingsTabId; label: string }> = [
+    { id: "basic", label: "基础" },
+    { id: "ai", label: "AI 助手" },
+    { id: "about", label: "关于" },
+  ];
 
   function switchTab(tabId: EpubSettingsTabId): void {
+    logZoraSettings("EpubSettingsPanel switchTab called", { from: activeTab, to: tabId });
     activeTab = tabId;
   }
+
+  $effect(() => {
+    logZoraSettings("EpubSettingsPanel $effect running", { activeTab });
+  });
 </script>
 
 <div class="epub-settings-root">
   <div class="epub-settings-tabs">
-    <TabNavigation
-      tabs={tabs}
-      activeTab={activeTab}
-      onTabChange={(tabId) => switchTab(tabId as EpubSettingsTabId)}
-      useObsidianIcons={false}
-      variant="plain"
-    />
+    <div class="tab-navigation tab-navigation--plain" role="tablist" tabindex="0">
+      {#each tabs as tab}
+        <button
+          class="tab-button"
+          class:active={activeTab === tab.id}
+          role="tab"
+          aria-selected={activeTab === tab.id}
+          tabindex={activeTab === tab.id ? 0 : -1}
+          onclick={() => switchTab(tab.id)}
+        >
+          <span class="tab-label">{tab.label}</span>
+        </button>
+      {/each}
+    </div>
   </div>
 
   <div class="epub-settings-tab-panel" id={`epub-settings-panel-${activeTab}`}>

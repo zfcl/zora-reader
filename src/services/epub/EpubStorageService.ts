@@ -27,9 +27,11 @@ import {
 import { normalizeCanvasExcerptAnchorsMap } from "./canvas-excerpt-anchor";
 import { EpubBookmarkService, type EpubBookmarkReadingState } from "./EpubBookmarkService";
 import { normalizeReadingPaceStats } from "./reading-pace";
+import { EpubLinkService } from "./EpubLinkService";
 import type {
 	BookMetadata,
 	ConcealedText,
+	DirectHighlight,
 	EpubBook,
 	EpubLastOpenBookmark,
 	EpubParagraphModeReadingPosition,
@@ -881,41 +883,25 @@ export class EpubStorageService {
 	}
 
 	private async writeUnifiedLocalReaderData(data: EpubReaderLocalDataFile): Promise<void> {
-		await this.ensureUnifiedLocalDataDirectory();
-		const normalizedData = this.normalizeLocalReaderData({
-			...data,
-			version: 1,
-			updatedAt: Date.now(),
+		logger.logHighlightDebugToFile('ENTER: EpubStorageService.writeUnifiedLocalReaderData', {
+			booksCount: Object.keys(data.books).length
 		});
-		const adapter = this.app.vault.adapter as typeof this.app.vault.adapter & {
-			rename?: (oldPath: string, newPath: string) => Promise<void>;
-		};
-		const targetPath = this.getUnifiedLocalDataPath();
-		const tempPath = `${targetPath}.tmp`;
-		const serialized = JSON.stringify(normalizedData);
-
-		if (typeof adapter.rename === "function") {
-			await adapter.write(tempPath, serialized);
-			try {
-				await adapter.rename(tempPath, targetPath);
-			} catch (error) {
-				if (!this.isDestinationFileAlreadyExistsError(error)) {
-					throw error;
-				}
-				// Some adapters reject overwrite-on-rename; safely fall back to direct write.
-				await adapter.write(targetPath, serialized);
-				if (typeof adapter.remove === "function") {
-					try {
-						await adapter.remove(tempPath);
-					} catch {
-						// noop
-					}
-				}
-			}
-		} else {
-			await adapter.write(targetPath, serialized);
+		try {
+			await this.ensureUnifiedLocalDataDirectory();
+			const normalizedData = this.normalizeLocalReaderData({
+				...data,
+				version: 1,
+				updatedAt: Date.now(),
+			});
+			const targetPath = this.getUnifiedLocalDataPath();
+			const serialized = JSON.stringify(normalizedData);
+			await this.app.vault.adapter.write(targetPath, serialized);
+			this.setCachedUnifiedLocalReaderData(normalizedData);
+			logger.logHighlightDebugToFile('SUCCESS: EpubStorageService.writeUnifiedLocalReaderData completed', { targetPath });
+		} catch (err: any) {
+			logger.logHighlightDebugToFile('ERROR: EpubStorageService.writeUnifiedLocalReaderData failed', { error: err?.message || err });
+			throw err;
 		}
-		this.setCachedUnifiedLocalReaderData(normalizedData);
 	}
 
 	private isDestinationFileAlreadyExistsError(error: unknown): boolean {
@@ -1240,6 +1226,12 @@ export class EpubStorageService {
 			(existing.concealedTexts || []).length >= (incoming.concealedTexts || []).length
 				? existing.concealedTexts || incoming.concealedTexts
 				: incoming.concealedTexts;
+		const preferredDirectHighlights =
+			(existing.directHighlights || []).length >= (incoming.directHighlights || []).length
+				? existing.directHighlights || incoming.directHighlights
+				: incoming.directHighlights;
+		const preferredTocChapterMarks =
+			existing.tocChapterMarks || incoming.tocChapterMarks;
 
 		return {
 			descriptor: incoming.descriptor || existing.descriptor,
@@ -1248,6 +1240,8 @@ export class EpubStorageService {
 			readingReferencePoint:
 				existing.readingReferencePoint || incoming.readingReferencePoint,
 			concealedTexts: preferredConcealedTexts,
+			tocChapterMarks: preferredTocChapterMarks,
+			directHighlights: preferredDirectHighlights,
 		};
 	}
 
@@ -3911,6 +3905,83 @@ export class EpubStorageService {
 		const concealedTexts = await this.loadConcealedTexts(bookId);
 		const filtered = concealedTexts.filter((item) => item.cfiRange !== cfiRange);
 		await this.saveConcealedTexts(bookId, filtered);
+	}
+
+	async loadDirectHighlights(bookId: string): Promise<DirectHighlight[]> {
+		bookId = await this.resolveCanonicalBookId(bookId);
+		const unifiedData = await this.readUnifiedLocalReaderData();
+		const bookRecord = unifiedData.books?.[bookId];
+		if (bookRecord && Array.isArray(bookRecord.directHighlights)) {
+			return [...bookRecord.directHighlights];
+		}
+		return [];
+	}
+
+	async saveDirectHighlights(bookId: string, directHighlights: DirectHighlight[]): Promise<void> {
+		bookId = await this.resolveCanonicalBookId(bookId);
+		await this.updateUnifiedLocalReaderData((localData) => {
+			localData.books = localData.books || {};
+			const current = localData.books[bookId] || {};
+			localData.books[bookId] = {
+				...current,
+				directHighlights: [...directHighlights],
+			};
+		});
+	}
+
+	async addDirectHighlight(bookId: string, highlight: DirectHighlight): Promise<void> {
+		logger.logHighlightDebugToFile('ENTER: EpubStorageService.addDirectHighlight', {
+			bookId,
+			cfiRange: highlight.cfiRange,
+			color: highlight.color,
+			style: highlight.style
+		});
+		try {
+			const list = await this.loadDirectHighlights(bookId);
+			const normCfi = EpubLinkService.normalizeCfi(highlight.cfiRange);
+			const existingIndex = list.findIndex(
+				(item) => EpubLinkService.normalizeCfi(item.cfiRange) === normCfi
+			);
+			if (existingIndex >= 0) {
+				list[existingIndex] = { ...highlight };
+			} else {
+				list.push({ ...highlight });
+			}
+			await this.saveDirectHighlights(bookId, list);
+			logger.logHighlightDebugToFile('SUCCESS: EpubStorageService.addDirectHighlight completed', {
+				bookId,
+				directHighlightsCount: list.length
+			});
+		} catch (err: any) {
+			logger.logHighlightDebugToFile('ERROR: EpubStorageService.addDirectHighlight failed', { error: err?.message || err });
+			throw err;
+		}
+	}
+
+	async deleteDirectHighlightByCfi(bookId: string, cfiRange: string): Promise<void> {
+		const list = await this.loadDirectHighlights(bookId);
+		const normCfi = EpubLinkService.normalizeCfi(cfiRange);
+		const filtered = list.filter(
+			(item) => EpubLinkService.normalizeCfi(item.cfiRange) !== normCfi
+		);
+		await this.saveDirectHighlights(bookId, filtered);
+	}
+
+	async updateDirectHighlight(
+		bookId: string,
+		cfiRange: string,
+		updates: { color?: string; style?: EpubHighlightStyle }
+	): Promise<void> {
+		const list = await this.loadDirectHighlights(bookId);
+		const normCfi = EpubLinkService.normalizeCfi(cfiRange);
+		const item = list.find(
+			(i) => EpubLinkService.normalizeCfi(i.cfiRange) === normCfi
+		);
+		if (item) {
+			if (updates.color) item.color = updates.color;
+			if (updates.style !== undefined) item.style = updates.style;
+			await this.saveDirectHighlights(bookId, list);
+		}
 	}
 
 	private normalizeConcealedTextMode(mode?: string): ConcealedText["mode"] {

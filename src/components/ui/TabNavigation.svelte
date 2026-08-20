@@ -2,6 +2,7 @@
   import EnhancedIcon from './EnhancedIcon.svelte';
   import ObsidianIcon from './ObsidianIcon.svelte';
   import type { TabDefinition } from '../../types/view-card-modal-types';
+  import { logZoraSettings } from '../../utils/zora-debug-logger';
 
   interface Props {
     tabs: TabDefinition[];
@@ -23,6 +24,14 @@
 
   // 检测是否为图标模式（所有标签都没有label）
   let isIconOnly = $derived(tabs.every(tab => !tab.label));
+
+  $effect(() => {
+    logZoraSettings("5 TabNavigation rendered", {
+      tabsCount: tabs?.length,
+      activeTab,
+      labels: tabs?.map(t => t.label),
+    });
+  });
 
   // 键盘导航
   function handleKeyDown(event: KeyboardEvent) {

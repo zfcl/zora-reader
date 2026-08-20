@@ -1,6 +1,6 @@
 <script lang="ts">
   import { CURRENT_PLUGIN_DISPLAY_VERSION, CURRENT_PLUGIN_NAME } from "../../config/plugin-runtime";
-  import { tr } from "../../utils/i18n";
+  import { t } from "../../utils/i18n";
   import type StandaloneEpubPlugin from "../../main";
 
   interface Props {
@@ -8,7 +8,6 @@
   }
 
   let { plugin }: Props = $props();
-  let t = $derived($tr);
 
   const supportedFormats = ["EPUB", "MOBI", "AZW3", "FB2", "FBZ", "TXT", "CBZ"];
 

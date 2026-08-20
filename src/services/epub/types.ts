@@ -29,7 +29,7 @@ export interface BookMetadata {
 	chapterCount: number;
 }
 
-export type EpubHighlightStyle = "underline" | "strikethrough" | "wavy";
+export type EpubHighlightStyle = "underline" | "strikethrough" | "wavy" | "reading-note";
 
 export type EpubStrikethroughDisplayMode = "strikethrough" | "conceal";
 
@@ -75,6 +75,17 @@ export interface EpubParagraphModeReadingPosition extends ReadingPosition {
 	paragraphIndex: number;
 	paragraphTextPreview?: string;
 	savedAt: number;
+}
+
+export interface DirectHighlight {
+	id?: string;
+	cfiRange: string;
+	color: string;
+	style?: EpubHighlightStyle;
+	text: string;
+	chapterIndex?: number;
+	chapterTitle?: string;
+	createdTime?: number;
 }
 
 export interface Highlight {

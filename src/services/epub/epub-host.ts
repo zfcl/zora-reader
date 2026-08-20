@@ -212,7 +212,9 @@ type PluginHostApp = App & {
 
 function getRuntimePluginHost(app: App): EpubHostCapabilities | null {
 	const runtime = getEpubRuntime();
-	const pluginUnknown: unknown = (app as PluginHostApp).plugins.getPlugin(runtime.pluginId);
+	const pluginUnknown: unknown =
+		(app as any)?.plugins?.getPlugin?.(runtime.pluginId) ??
+		(app as any)?.plugins?.plugins?.[runtime.pluginId];
 	if (!pluginUnknown || typeof pluginUnknown !== "object") {
 		return null;
 	}

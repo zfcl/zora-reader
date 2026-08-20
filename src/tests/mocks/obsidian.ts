@@ -256,19 +256,134 @@ export class Modal {
 // Mock Setting class
 export class Setting {
   settingEl: HTMLElement;
+  infoEl: HTMLElement;
+  nameEl: HTMLElement;
+  descEl: HTMLElement;
+  controlEl: HTMLElement;
 
   constructor(containerEl: HTMLElement) {
     this.settingEl = document.createElement('div');
+    this.settingEl.className = 'setting-item';
+    this.infoEl = document.createElement('div');
+    this.infoEl.className = 'setting-item-info';
+    this.nameEl = document.createElement('div');
+    this.nameEl.className = 'setting-item-name';
+    this.descEl = document.createElement('div');
+    this.descEl.className = 'setting-item-description';
+    this.infoEl.appendChild(this.nameEl);
+    this.infoEl.appendChild(this.descEl);
+    this.controlEl = document.createElement('div');
+    this.controlEl.className = 'setting-item-control';
+    this.settingEl.appendChild(this.infoEl);
+    this.settingEl.appendChild(this.controlEl);
     containerEl.appendChild(this.settingEl);
   }
 
-  setName = vi.fn().mockReturnThis();
-  setDesc = vi.fn().mockReturnThis();
-  addText = vi.fn().mockReturnThis();
-  addTextArea = vi.fn().mockReturnThis();
-  addToggle = vi.fn().mockReturnThis();
-  addDropdown = vi.fn().mockReturnThis();
-  addButton = vi.fn().mockReturnThis();
+  setName(name: string) {
+    this.nameEl.textContent = name;
+    return this;
+  }
+  setDesc(desc: string) {
+    this.descEl.textContent = desc;
+    return this;
+  }
+  addText(cb?: (text: any) => void) {
+    const input = document.createElement('input');
+    this.controlEl.appendChild(input);
+    if (cb) {
+      cb({
+        inputEl: input,
+        setPlaceholder: vi.fn().mockReturnThis(),
+        setValue: vi.fn().mockReturnThis(),
+        onChange: vi.fn().mockReturnThis(),
+        setDisabled: vi.fn().mockReturnThis(),
+      });
+    }
+    return this;
+  }
+  addSearch(cb?: (search: any) => void) {
+    const input = document.createElement('input');
+    input.type = 'search';
+    this.controlEl.appendChild(input);
+    if (cb) {
+      cb({
+        inputEl: input,
+        setPlaceholder: vi.fn().mockReturnThis(),
+        setValue: vi.fn().mockReturnThis(),
+        onChange: vi.fn().mockReturnThis(),
+        setDisabled: vi.fn().mockReturnThis(),
+      });
+    }
+    return this;
+  }
+  addTextArea(cb?: (text: any) => void) {
+    const textarea = document.createElement('textarea');
+    this.controlEl.appendChild(textarea);
+    if (cb) {
+      cb({
+        inputEl: textarea,
+        setPlaceholder: vi.fn().mockReturnThis(),
+        setValue: vi.fn().mockReturnThis(),
+        onChange: vi.fn().mockReturnThis(),
+        setDisabled: vi.fn().mockReturnThis(),
+      });
+    }
+    return this;
+  }
+  addToggle(cb?: (toggle: any) => void) {
+    const toggleEl = document.createElement('input');
+    toggleEl.type = 'checkbox';
+    this.controlEl.appendChild(toggleEl);
+    if (cb) {
+      cb({
+        setValue: vi.fn().mockReturnThis(),
+        onChange: vi.fn().mockReturnThis(),
+        setDisabled: vi.fn().mockReturnThis(),
+      });
+    }
+    return this;
+  }
+  addDropdown(cb?: (dropdown: any) => void) {
+    const select = document.createElement('select');
+    this.controlEl.appendChild(select);
+    if (cb) {
+      cb({
+        selectEl: select,
+        addOption: vi.fn().mockReturnThis(),
+        setValue: vi.fn().mockReturnThis(),
+        onChange: vi.fn().mockReturnThis(),
+        setDisabled: vi.fn().mockReturnThis(),
+      });
+    }
+    return this;
+  }
+  addButton(cb?: (btn: any) => void) {
+    const button = document.createElement('button');
+    this.controlEl.appendChild(button);
+    if (cb) {
+      cb({
+        buttonEl: button,
+        setButtonText: vi.fn().mockReturnThis(),
+        setCta: vi.fn().mockReturnThis(),
+        setDisabled: vi.fn().mockReturnThis(),
+        onClick: vi.fn().mockReturnThis(),
+      });
+    }
+    return this;
+  }
+  addExtraButton(cb?: (btn: any) => void) {
+    const button = document.createElement('div');
+    this.controlEl.appendChild(button);
+    if (cb) {
+      cb({
+        setIcon: vi.fn().mockReturnThis(),
+        setTooltip: vi.fn().mockReturnThis(),
+        setDisabled: vi.fn().mockReturnThis(),
+        onClick: vi.fn().mockReturnThis(),
+      });
+    }
+    return this;
+  }
   addSlider = vi.fn().mockReturnThis();
   setClass = vi.fn().mockReturnThis();
   setTooltip = vi.fn().mockReturnThis();
@@ -287,8 +402,8 @@ export class PluginSettingTab {
     this.containerEl = document.createElement('div');
   }
 
-  display = vi.fn();
-  hide = vi.fn();
+  display(): void {}
+  hide(): void {}
 }
 
 // Mock FileSystemAdapter class

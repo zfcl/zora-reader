@@ -9,9 +9,9 @@
   import { EPUB_RUNTIME, normalizeEpubBookmarkFolderPath } from "../../services/epub";
   import type { CustomWebTranslationProvider } from "../../config/selection-translation-settings";
   import { normalizeInterfaceLanguagePreference, tr } from "../../utils/i18n";
-  import type StandaloneEpubPlugin from "../../main";
   import { createEpubBasicSettingsActions } from "./epub-basic-settings-actions";
   import { mountEpubBasicSettings } from "./mount-epub-basic-settings";
+  import { logZoraSettings } from "../../utils/zora-debug-logger";
 
   interface Props {
     plugin: StandaloneEpubPlugin;
@@ -19,6 +19,8 @@
 
   let { plugin }: Props = $props();
   let t = $derived($tr);
+
+  logZoraSettings("6 EpubSettingsBasicTab script init");
 
   let stateVersion = $state(0);
   let excerptSettingsVersion = $state(0);
@@ -147,8 +149,13 @@
 
   onMount(() => {
     void (async () => {
-      await actions.refreshBookNotesExportTemplateFolder();
-      excerptFolderSettingsLoaded = true;
+      try {
+        await actions.refreshBookNotesExportTemplateFolder();
+      } catch (e) {
+        console.warn("[ZoraReader] Failed to refresh export template folder:", e);
+      } finally {
+        excerptFolderSettingsLoaded = true;
+      }
     })();
     const handleExcerptSettingsChanged = () => {
       void actions.refreshBookNotesExportTemplateFolder();
@@ -171,8 +178,7 @@
 
   $effect(() => {
     if (
-      !excerptFolderSettingsLoaded
-      || !interfaceSettingsHost
+      !interfaceSettingsHost
       || !readingSettingsHost
       || !selectionTranslationSettingsHost
       || !diagnosticsSettingsHost
@@ -180,70 +186,85 @@
       return;
     }
 
+    stateVersion;
     excerptSettingsVersion;
-    t;
     selectionTranslationCustomProviderCount;
+    t;
+    logZoraSettings("7 basic tab $effect mounting settings", {
+      hasInterfaceHost: Boolean(interfaceSettingsHost),
+      hasReadingHost: Boolean(readingSettingsHost),
+      stateVersion,
+      customProviderCount: selectionTranslationCustomProviderCount,
+    });
 
     let dispose: (() => void) | undefined;
 
     untrack(() => {
-      dispose = mountEpubBasicSettings({
-        plugin,
-        t,
-        hosts: {
-          interface: interfaceSettingsHost,
-          reading: readingSettingsHost,
-          selectionTranslation: selectionTranslationSettingsHost,
-          diagnostics: diagnosticsSettingsHost,
-        },
-        snapshot: {
-          interfaceLanguageValue,
-          bookmarkFolderValue,
-          bookmarkFolderInput,
-          bookNotesExportTemplateFolderValue,
-          bookNotesExportTemplateFolderInput,
-          bookNotesExportDefaultTemplatePath,
-          continuousReadingPositionAutoSaveEnabled,
-          continuousReadingPositionAutoSavePages,
-          continuousReadingPositionAutoSavePagesInput,
-          sourceNavigationOpenInNewTab,
-          debugModeEnabled,
-          selectionTranslationSettings,
-          customTranslationProviderDrafts,
-        },
-        callbacks: {
-          save,
-          setBookmarkFolderInput: (value) => {
-            bookmarkFolderInput = value;
+      try {
+        dispose = mountEpubBasicSettings({
+          plugin,
+          t,
+          hosts: {
+            interface: interfaceSettingsHost,
+            reading: readingSettingsHost,
+            selectionTranslation: selectionTranslationSettingsHost,
+            diagnostics: diagnosticsSettingsHost,
           },
-          setBookNotesExportTemplateFolderInput: (value) => {
-            bookNotesExportTemplateFolderInput = value;
+          snapshot: {
+            interfaceLanguageValue,
+            bookmarkFolderValue,
+            bookmarkFolderInput,
+            bookNotesExportTemplateFolderValue,
+            bookNotesExportTemplateFolderInput,
+            bookNotesExportDefaultTemplatePath,
+            continuousReadingPositionAutoSaveEnabled,
+            continuousReadingPositionAutoSavePages,
+            continuousReadingPositionAutoSavePagesInput,
+            sourceNavigationOpenInNewTab,
+            debugModeEnabled,
+            selectionTranslationSettings,
+            customTranslationProviderDrafts,
           },
-          setContinuousReadingPositionAutoSavePagesInput: (value) => {
-            continuousReadingPositionAutoSavePagesInput = value;
+          callbacks: {
+            save,
+            setBookmarkFolderInput: (value) => {
+              bookmarkFolderInput = value;
+            },
+            setBookNotesExportTemplateFolderInput: (value) => {
+              bookNotesExportTemplateFolderInput = value;
+            },
+            setContinuousReadingPositionAutoSavePagesInput: (value) => {
+              continuousReadingPositionAutoSavePagesInput = value;
+            },
+            setAutoSavePagesTextControl: (control) => {
+              autoSavePagesTextControl = control;
+            },
+            updateBookmarkFolder: actions.updateBookmarkFolder,
+            updateInterfaceLanguage: actions.updateInterfaceLanguage,
+            updateBookNotesExportTemplatePath: actions.updateBookNotesExportTemplatePath,
+            updateBookNotesExportTemplateFolder: actions.updateBookNotesExportTemplateFolder,
+            openBookNotesExportTemplateModal: actions.openBookNotesExportTemplateModal,
+            updateContinuousReadingPositionAutoSaveEnabled:
+              actions.updateContinuousReadingPositionAutoSaveEnabled,
+            updateContinuousReadingPositionAutoSavePages:
+              actions.updateContinuousReadingPositionAutoSavePages,
+            setBuiltinTranslationProviderEnabled: actions.setBuiltinTranslationProviderEnabled,
+            updateCustomTranslationProvider: actions.updateCustomTranslationProvider,
+            updateCustomTranslationProviderDraft,
+            commitCustomTranslationProviderDrafts: actions.commitCustomTranslationProviderDrafts,
+            addCustomTranslationProvider: actions.addCustomTranslationProvider,
+            removeCustomTranslationProvider: actions.removeCustomTranslationProvider,
+            updateSourceNavigationOpenInNewTab: actions.updateSourceNavigationOpenInNewTab,
+            updateDebugMode: actions.updateDebugMode,
           },
-          setAutoSavePagesTextControl: (control) => {
-            autoSavePagesTextControl = control;
-          },
-          updateBookmarkFolder: actions.updateBookmarkFolder,
-          updateInterfaceLanguage: actions.updateInterfaceLanguage,
-          updateBookNotesExportTemplatePath: actions.updateBookNotesExportTemplatePath,
-          updateBookNotesExportTemplateFolder: actions.updateBookNotesExportTemplateFolder,
-          openBookNotesExportTemplateModal: actions.openBookNotesExportTemplateModal,
-          updateContinuousReadingPositionAutoSaveEnabled:
-            actions.updateContinuousReadingPositionAutoSaveEnabled,
-          updateContinuousReadingPositionAutoSavePages:
-            actions.updateContinuousReadingPositionAutoSavePages,
-          setBuiltinTranslationProviderEnabled: actions.setBuiltinTranslationProviderEnabled,
-          updateCustomTranslationProvider: actions.updateCustomTranslationProvider,
-          updateCustomTranslationProviderDraft,
-          commitCustomTranslationProviderDrafts: actions.commitCustomTranslationProviderDrafts,
-          addCustomTranslationProvider: actions.addCustomTranslationProvider,
-          removeCustomTranslationProvider: actions.removeCustomTranslationProvider,
-          updateSourceNavigationOpenInNewTab: actions.updateSourceNavigationOpenInNewTab,
-          updateDebugMode: actions.updateDebugMode,
-        },
-      });
+        });
+        logZoraSettings("8 mountEpubBasicSettings finished successfully");
+      } catch (err: any) {
+        logZoraSettings("ERROR in mountEpubBasicSettings", {
+          message: err?.message,
+          stack: err?.stack,
+        });
+      }
     });
 
     return () => dispose?.();

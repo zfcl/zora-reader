@@ -40,6 +40,34 @@ function clearHosts(hosts: EpubBasicSettingsMountOptions["hosts"]): void {
 	hosts.diagnostics.replaceChildren();
 }
 
+function createSafeDiv(parent: HTMLElement, options?: { cls?: string; text?: string }): HTMLElement {
+	if (typeof (parent as any).createDiv === "function") {
+		return (parent as any).createDiv(options);
+	}
+	const el = document.createElement("div");
+	if (options?.cls) el.className = options.cls;
+	if (options?.text) el.textContent = options.text;
+	parent.appendChild(el);
+	return el;
+}
+
+function createSafeEl<K extends keyof HTMLElementTagNameMap>(
+	parent: HTMLElement,
+	tag: K,
+	options?: { cls?: string; text?: string; type?: string; placeholder?: string }
+): HTMLElementTagNameMap[K] {
+	if (typeof (parent as any).createEl === "function") {
+		return (parent as any).createEl(tag, options);
+	}
+	const el = document.createElement(tag);
+	if (options?.cls) el.className = options.cls;
+	if (options?.text) el.textContent = options.text;
+	if (options?.type && "type" in el) (el as any).type = options.type;
+	if (options?.placeholder && "placeholder" in el) (el as any).placeholder = options.placeholder;
+	parent.appendChild(el);
+	return el;
+}
+
 function renderCustomTranslationProvidersPanel(
 	options: EpubBasicSettingsMountOptions,
 	cleanupFns: SettingsCleanupFn[]
@@ -47,28 +75,28 @@ function renderCustomTranslationProvidersPanel(
 	const { hosts, snapshot, callbacks, t } = options;
 	const host = hosts.selectionTranslation;
 
-	const panel = host.createDiv({ cls: "epub-custom-translation-panel" });
-	const intro = panel.createDiv({ cls: "epub-custom-translation-panel__intro" });
-	intro.createDiv({
+	const panel = createSafeDiv(host, { cls: "epub-custom-translation-panel" });
+	const intro = createSafeDiv(panel, { cls: "epub-custom-translation-panel__intro" });
+	createSafeDiv(intro, {
 		cls: "epub-custom-translation-panel__title",
 		text: t("epub.settings.basic.customTranslationProviders"),
 	});
-	intro.createDiv({
+	createSafeDiv(intro, {
 		cls: "epub-custom-translation-panel__hint",
 		text: t("epub.settings.basic.customTranslationUrlHint"),
 	});
 
-	const rowsHost = panel.createDiv({ cls: "epub-custom-translation-panel__rows" });
+	const rowsHost = createSafeDiv(panel, { cls: "epub-custom-translation-panel__rows" });
 	snapshot.customTranslationProviderDrafts.forEach((customProvider, index) => {
-		const row = rowsHost.createDiv({ cls: "epub-custom-translation-panel__row" });
-		const fields = row.createDiv({ cls: "epub-custom-translation-panel__fields" });
+		const row = createSafeDiv(rowsHost, { cls: "epub-custom-translation-panel__row" });
+		const fields = createSafeDiv(row, { cls: "epub-custom-translation-panel__fields" });
 
-		const nameField = fields.createDiv({ cls: "epub-custom-translation-panel__field" });
-		nameField.createDiv({
+		const nameField = createSafeDiv(fields, { cls: "epub-custom-translation-panel__field" });
+		createSafeDiv(nameField, {
 			cls: "epub-custom-translation-panel__field-label",
 			text: t("epub.settings.basic.customTranslationName"),
 		});
-		const nameInput = nameField.createEl("input", {
+		const nameInput = createSafeEl(nameField, "input", {
 			cls: "epub-custom-translation-panel__input",
 			type: "text",
 			placeholder: t("epub.settings.basic.customTranslationNamePlaceholder"),
@@ -95,12 +123,12 @@ function renderCustomTranslationProvidersPanel(
 		cleanupFns.push(() => nameInput.removeEventListener("blur", handleNameCommit));
 		cleanupFns.push(() => nameInput.removeEventListener("keydown", handleNameKeydown));
 
-		const urlField = fields.createDiv({ cls: "epub-custom-translation-panel__field" });
-		urlField.createDiv({
+		const urlField = createSafeDiv(fields, { cls: "epub-custom-translation-panel__field" });
+		createSafeDiv(urlField, {
 			cls: "epub-custom-translation-panel__field-label",
 			text: t("epub.settings.basic.customTranslationUrl"),
 		});
-		const urlInput = urlField.createEl("input", {
+		const urlInput = createSafeEl(urlField, "input", {
 			cls: "epub-custom-translation-panel__input",
 			type: "text",
 			placeholder: "https://example.com/search?q={query}",
@@ -127,15 +155,32 @@ function renderCustomTranslationProvidersPanel(
 		cleanupFns.push(() => urlInput.removeEventListener("blur", handleUrlCommit));
 		cleanupFns.push(() => urlInput.removeEventListener("keydown", handleUrlKeydown));
 
-		const actions = row.createDiv({ cls: "epub-custom-translation-panel__actions" });
-		const toggleHost = actions.createDiv({ cls: "epub-custom-translation-panel__toggle" });
-		const toggle = new ToggleComponent(toggleHost);
-		toggle.setValue(customProvider.enabled);
-		toggle.onChange(async (value) => {
-			await callbacks.updateCustomTranslationProvider(index, { enabled: value });
-		});
+		const actions = createSafeDiv(row, { cls: "epub-custom-translation-panel__actions" });
+		const toggleHost = createSafeDiv(actions, { cls: "epub-custom-translation-panel__toggle" });
+		let toggleCreated = false;
+		if (typeof ToggleComponent === "function") {
+			try {
+				const toggle = new ToggleComponent(toggleHost);
+				toggle.setValue(customProvider.enabled);
+				toggle.onChange(async (value) => {
+					await callbacks.updateCustomTranslationProvider(index, { enabled: value });
+				});
+				toggleCreated = true;
+			} catch {
+				toggleCreated = false;
+			}
+		}
+		if (!toggleCreated) {
+			const checkbox = document.createElement("input");
+			checkbox.type = "checkbox";
+			checkbox.checked = customProvider.enabled;
+			checkbox.addEventListener("change", async () => {
+				await callbacks.updateCustomTranslationProvider(index, { enabled: checkbox.checked });
+			});
+			toggleHost.appendChild(checkbox);
+		}
 
-		const removeButton = actions.createEl("button", {
+		const removeButton = createSafeEl(actions, "button", {
 			cls: "epub-custom-translation-panel__remove",
 			text: t("epub.settings.basic.removeCustomTranslationProvider"),
 		});
@@ -146,8 +191,8 @@ function renderCustomTranslationProvidersPanel(
 		cleanupFns.push(() => removeButton.removeEventListener("click", handleRemove));
 	});
 
-	const footer = panel.createDiv({ cls: "epub-custom-translation-panel__footer" });
-	const addButton = footer.createEl("button", {
+	const footer = createSafeDiv(panel, { cls: "epub-custom-translation-panel__footer" });
+	const addButton = createSafeEl(footer, "button", {
 		cls: "mod-cta epub-custom-translation-panel__add",
 		text: t("epub.settings.basic.addCustomTranslationProvider"),
 	});
@@ -226,7 +271,13 @@ export function mountEpubBasicSettings(options: EpubBasicSettingsMountOptions): 
 				snapshot.bookNotesExportTemplateFolderValue
 			);
 
-			dropdown.selectEl.empty();
+			if (typeof (dropdown.selectEl as any)?.empty === "function") {
+				(dropdown.selectEl as any).empty();
+			} else if (typeof dropdown.selectEl?.replaceChildren === "function") {
+				dropdown.selectEl.replaceChildren();
+			} else if (dropdown.selectEl) {
+				dropdown.selectEl.innerHTML = "";
+			}
 			const selectedPath = String(snapshot.bookNotesExportDefaultTemplatePath || "").trim();
 			const optionPaths = new Set<string>();
 

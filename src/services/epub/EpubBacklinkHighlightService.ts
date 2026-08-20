@@ -3183,9 +3183,7 @@ logger.debug("[EpubBacklinkHighlightService] deleteHighlightFromCardData failed:
 				continue;
 			}
 			if (this.isSameExcerptTarget(resolvedLink, normalizedTargetCfi, excerptId)) {
-				let result = content.replace(callout.fullMatch, "");
-				result = result.replace(/\n{3,}/g, "\n\n");
-				result = result.replace(/^\n+/, "");
+				let result = content.replace(callout.linkMarkup, "");
 				return result;
 			}
 		}
@@ -3826,9 +3824,7 @@ logger.debug("[EpubBacklinkHighlightService] deleteHighlightFromCardData failed:
 				continue;
 			}
 			if (this.isSameExcerptTarget(resolvedLink, normalizedTargetCfi, excerptId)) {
-				result = result.replace(callout.fullMatch, "");
-				result = result.replace(/\n{3,}/g, "\n\n");
-				result = result.replace(/^\n+/, "");
+				result = result.replace(callout.linkMarkup, "");
 				break;
 			}
 		}
@@ -4182,7 +4178,7 @@ logger.debug("[EpubBacklinkHighlightService] deleteHighlightFromCardData failed:
 
 		for (let i = 0; i < lines.length; i++) {
 			const header = lines[i];
-			const headerMatch = header.match(/^> \[!EPUB(?:\|([^\]]+))?\]\s*(.*)$/);
+			const headerMatch = header.match(/^> \[!EPUB(?:\|([^\]]+))?\][-+]?\s*(.*)$/);
 			if (!headerMatch) continue;
 
 			const rest = headerMatch[2] || "";

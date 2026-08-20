@@ -330,7 +330,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private currentLetterSpacing = 0;
 	private currentPageMargin = 48;
 	private currentWidthMode: EpubWidthMode = "standard";
-	private currentStrikethroughPresentation: EpubStrikethroughDisplayMode = "conceal";
+	private currentStrikethroughPresentation: EpubStrikethroughDisplayMode = "strikethrough";
 	private currentLayoutMode: EpubLayoutMode = "paginated";
 	private currentFlowMode: EpubFlowMode = "paginated";
 	private currentFootnoteClickAction: EpubFootnoteClickAction = "preview";

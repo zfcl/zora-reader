@@ -818,26 +818,13 @@ describe("FoliateReaderService", () => {
 		}
 	});
 
-	it("switches strikethrough excerpt rendering between concealment and visible strike mode", async () => {
+	it("renders strikethrough as visible text strike and conceal presentation as conceal", async () => {
 		const service = new FoliateReaderService(createMockApp(await createSampleEpubBuffer()) as any) as any;
 		try {
 			expect(
 				shouldRenderAnnotationAsConceal(
 					{
-						cfiRange: "readium:hidden",
-						presentation: "highlight",
-						style: "strikethrough",
-					},
-					service.currentStrikethroughPresentation
-				)
-			).toBe(true);
-
-			await service.applyReaderAppearance({ strikethroughPresentation: "strikethrough" });
-
-			expect(
-				shouldRenderAnnotationAsConceal(
-					{
-						cfiRange: "readium:hidden",
+						cfiRange: "readium:strike",
 						presentation: "highlight",
 						style: "strikethrough",
 					},

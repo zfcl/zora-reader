@@ -165,11 +165,13 @@ export function canUseEpubParagraphMode(app: App): boolean {
 }
 
 export function canUseEpubExcerptNotes(app: App): boolean {
-	return canUseEpubPremiumFeature(app, PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
+	void app;
+	return true;
 }
 
 export function canUseEpubStyledExcerpts(app: App): boolean {
-	return canUseEpubPremiumFeature(app, PREMIUM_FEATURES.EPUB_STYLED_EXCERPTS);
+	void app;
+	return true;
 }
 
 export function canUseEpubSourceLocation(app: App): boolean {

@@ -597,9 +597,7 @@
 			if (isStaleRender(renderToken)) {
 				return;
 			}
-			if (!canUseExcerptNotes) {
-				await readerService.applyHighlights([]);
-			} else if (allHighlights.length > 0) {
+			if (allHighlights.length > 0) {
 				await readerService.applyHighlights(allHighlights);
 			} else {
 				scheduleHighlightRetry();
@@ -644,7 +642,6 @@
 	}
 
 	async function collectAllHighlights(): Promise<ReaderHighlight[]> {
-		if (!canUseExcerptNotes) return [];
 		if (!book) return [];
 		try {
 			const allHighlights = await annotationService.collectAllHighlights(book.id, filePath, backlinkService);
@@ -721,7 +718,8 @@
 		detachRelocatedHandler = readerService.onRelocated(async (position) => {
 			const paginationInfo = await readerService.getPaginationInfo();
 			const skipPersist = shouldSkipReadingProgressPersistOnRelocate?.() === true;
-			if (!skipPersist) {
+			if (!skipPersist && position?.cfi) {
+				await persistReadingProgress(position);
 				await syncReadingPositionPersistence(position, paginationInfo);
 			}
 			notifyProgressChange(canUseReadingProgress ? position.percent : 0);

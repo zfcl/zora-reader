@@ -9,9 +9,10 @@ import {
 import { PremiumFeatureGuard, PREMIUM_FEATURES } from "../../premium/PremiumFeatureGuard";
 
 describe("epub-feature-tier", () => {
-	it("treats excerpt notes and reading progress as core", () => {
+	it("treats excerpt notes, reading progress, and styled excerpts as core", () => {
 		expect(isEpubCoreFeature(EPUB_FEATURE_IDS.EXCERPT_NOTES)).toBe(true);
 		expect(isEpubCoreFeature(EPUB_FEATURE_IDS.READING_PROGRESS)).toBe(true);
+		expect(isEpubCoreFeature(EPUB_FEATURE_IDS.STYLED_EXCERPTS)).toBe(true);
 		expect(isEpubCoreFeature(EPUB_FEATURE_IDS.READING_REFERENCE)).toBe(false);
 	});
 

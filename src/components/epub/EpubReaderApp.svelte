@@ -2077,6 +2077,10 @@
 		return host;
 	}
 
+	function hasCardCreationCapability(): boolean {
+		return Boolean(getEpubActionHost()?.openCreateCardModal);
+	}
+
 	function hasCreateReadingPointCapability(): boolean {
 		return Boolean(getEpubActionHost()?.openIRReadingPointFromExternalSelection);
 	}
@@ -3296,14 +3300,33 @@
 		void reloadHighlights({ invalidateCache: true });
 	}
 
-	function handleInsertToNote(
+	async function handleInsertToNote(
 		text: string,
 		cfiRange: string,
 		color?: string,
 		style?: EpubHighlightStyle
 	) {
-		outputNote(text, cfiRange, color, style);
+		if (!hasExcerptNotesCapability()) {
+			return;
+		}
+		if (book?.metadata?.title && book?.path) {
+			const { appendBookReadingNote } = await import('../../services/ai/zora/zora-study-note-service');
+			const { path: newNotePath, blockId } = await appendBookReadingNote(app, {
+				note: '',
+				selectedText: text,
+				bookPath: book.path,
+				bookTitle: book.metadata.title,
+				cfiRange: cfiRange,
+				chapterIndex: readerService.getCurrentChapterIndex()
+			});
+			new Notice('已创建读书笔记');
+			await app.workspace.openLinkText(newNotePath + '#^' + blockId, newNotePath, false);
+			void reloadHighlights();
+		} else {
+			new Notice(t('epub.reader.bookNotReady'));
+		}
 	}
+
 
 	async function handleExtractToCard(
 		text: string,
@@ -3332,6 +3355,21 @@
 		);
 	}
 
+	function handleRunIntegratedAIAction(actionId: string, text: string, cfiRange: string) {
+		const host = resolveEpubHost(app);
+		if (!host?.openSelectedTextAIPanelFromEpub) {
+			new Notice(t('epub.commands.aiSplitUnavailable'));
+			return;
+		}
+
+		void host.openSelectedTextAIPanelFromEpub({
+			filePath,
+			selectedText: text,
+			actionId,
+			sourceLink: buildReadingPointSourceLink(text, cfiRange),
+		});
+	}
+
 	function showSelectedTextAIMenu(event: MouseEvent, text: string, cfiRange: string) {
 		const host = resolveEpubHost(app);
 		if (!host?.openSelectedTextAISplitMenu || !host.openSelectedTextAIPanelFromEpub) {
@@ -3343,12 +3381,7 @@
 			event,
 			selectedText: text,
 			onSelectAction: (actionId: string) => {
-				void host.openSelectedTextAIPanelFromEpub?.({
-					filePath,
-					selectedText: text,
-					actionId,
-					sourceLink: buildReadingPointSourceLink(text, cfiRange),
-				});
+				handleRunIntegratedAIAction(actionId, text, cfiRange);
 			},
 		});
 	}
@@ -3974,7 +4007,38 @@
 		);
 	}
 
-        function handleAutoInsertSelection(
+	async function handleApplyDirectHighlight(
+		text: string,
+		cfiRange: string,
+		color?: string,
+		style?: EpubHighlightStyle
+	) {
+		logger.logHighlightDebugToFile('ENTER: EpubReaderApp.handleApplyDirectHighlight', {
+			bookId: book?.id,
+			cfiRange,
+			color,
+			style
+		});
+		if (book?.id) {
+			try {
+				await annotationService.createDirectHighlight(book.id, {
+					cfiRange,
+					color: color || 'yellow',
+					style,
+					text,
+					chapterIndex: readerService.getCurrentChapterIndex(),
+					chapterTitle: resolveExcerptChapterTitle(),
+					createdTime: Date.now(),
+				});
+				logger.logHighlightDebugToFile('SUCCESS: EpubReaderApp.handleApplyDirectHighlight -> createDirectHighlight completed', { bookId: book.id });
+				void reloadHighlights({ incremental: true });
+			} catch (err: any) {
+				logger.logHighlightDebugToFile('ERROR: EpubReaderApp.handleApplyDirectHighlight -> createDirectHighlight failed', { error: err?.message || err });
+			}
+		}
+	}
+
+	async function handleAutoInsertSelection(
 		text: string,
 		cfiRange: string,
 		color?: string,
@@ -4417,9 +4481,6 @@
 		options?: { quiet?: boolean }
 	): Promise<boolean> {
 		const quiet = options?.quiet === true;
-		if (!hasExcerptNotesCapability()) {
-			return false;
-		}
 		if (info.presentation === 'conceal') {
 			readerService.removeHighlight(info.cfiRange);
 			if (!book) {
@@ -4436,12 +4497,17 @@
 			void reloadHighlights();
 			return true;
 		}
+		if (book?.id) {
+			await annotationService.deleteDirectHighlightByCfi(book.id, info.cfiRange);
+		}
 		const source = await resolveHighlightSource(info);
 		if (!source?.sourceFile) {
-			if (!quiet) {
-				new Notice(t('epub.reader.highlightSourcePending'));
-			}
+			readerService.removeHighlight(info.cfiRange);
+			highlightToolbarInfo = null;
 			void reloadHighlights();
+			return true;
+		}
+		if (!hasExcerptNotesCapability()) {
 			return false;
 		}
 		const mutationCfiRange = resolveHighlightMutationCfi(info, source);
@@ -4794,7 +4860,25 @@
 		}
 		const source = await resolveHighlightSource(info);
 		if (!source?.sourceFile) {
-			new Notice(t('epub.reader.relatedNoteMissing'));
+			// No existing note, create reading note
+			if (book?.metadata?.title && book?.path) {
+				// We need to import appendBookReadingNote dynamically or normally
+				const { appendBookReadingNote } = await import('../../services/ai/zora/zora-study-note-service');
+				const { path: newNotePath, blockId } = await appendBookReadingNote(app, {
+					note: '',
+					selectedText: info.text,
+					bookPath: book.path,
+					bookTitle: book.metadata.title,
+					cfiRange: info.cfiRange,
+					chapterIndex: readerService.getCurrentChapterIndex()
+				});
+				new Notice('已创建读书笔记');
+				await app.workspace.openLinkText(`${newNotePath}#^${blockId}`, newNotePath, false);
+				highlightToolbarInfo = null;
+				void reloadHighlights();
+			} else {
+				new Notice(t('epub.reader.bookNotReady'));
+			}
 			return;
 		}
 
@@ -4832,7 +4916,11 @@
 			return;
 		}
 
-		await navigateToMarkdownCallout(sourceFile, encodedCfi, info.cfiRange, info.text, info.createdTime);
+		if (source.excerptId) {
+			await app.workspace.openLinkText(sourceFile + '#^' + source.excerptId, sourceFile, false);
+		} else {
+			await navigateToMarkdownCallout(sourceFile, encodedCfi, info.cfiRange, info.text, info.createdTime);
+		}
 		highlightToolbarInfo = null;
 	}
 
@@ -4981,19 +5069,6 @@
 
 	async function reloadHighlights(options?: HighlightReloadOptions) {
 		if (!book || componentDisposed) return;
-		if (!hasExcerptNotesCapability()) {
-			trackedHighlightSourceFiles = new Set<string>();
-			pendingLoadedHighlights = [];
-			highlightReloading = false;
-			highlightToolbarInfo = null;
-			closeCommentEditor();
-			if (readerReady) {
-				await readerService.applyHighlights([]);
-			}
-			annotationRevision += 1;
-			epubActiveDocumentStore.setSharedState({ annotationRevision });
-			return;
-		}
 		const incremental = options?.incremental === true;
 		const invalidateCache = options?.invalidateCache === true;
 		const reloadToken = ++highlightReloadToken;
@@ -5852,7 +5927,9 @@
 				}
 				onExtractToCard={hasCardCreationCapability() ? handleExtractToCard : undefined}
 				onCreateReadingPoint={hasCreateReadingPointCapability() ? handleCreateReadingPoint : undefined}
+				onHighlight={handleApplyDirectHighlight}
 				onAutoInsert={hasExcerptNotesCapability() ? handleAutoInsertSelection : undefined}
+				onRunAIAction={handleRunIntegratedAIAction}
 				onOpenAIMenu={showSelectedTextAIMenu}
 				translationSettings={resolveEpubHost(app)?.settings?.aiAssistant}
 			/>

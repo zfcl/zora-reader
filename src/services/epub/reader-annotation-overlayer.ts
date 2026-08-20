@@ -177,13 +177,16 @@ export class ReaderAnnotationOverlayRenderer {
 			if (rect.width <= 0 || rect.height <= 0) {
 				continue;
 			}
+			if (style === "reading-note") {
+				continue;
+			}
 			if (style === "underline") {
 				group.appendChild(createStraightLineOverlay(rect, strokeColor, rect.top + rect.height - 1.5));
 				continue;
 			}
 			if (style === "strikethrough") {
 				group.appendChild(
-					createStraightLineOverlay(rect, strokeColor, rect.top + rect.height * 0.58)
+					createStraightLineOverlay(rect, strokeColor, rect.top + rect.height * 0.5)
 				);
 				continue;
 			}

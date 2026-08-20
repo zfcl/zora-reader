@@ -18,20 +18,6 @@ export interface IntegratedAIAction {
 
 export const INTEGRATED_AI_ACTIONS: readonly IntegratedAIAction[] = [
 	{
-		id: "academic-concept",
-		name: "学术概念解析",
-		icon: "book-open",
-		prompt:
-			"你是一名博学的学术专家与百科全书式伴读助手。请对选中的专业概念、名词术语、理论假说或人物事件进行深度解析：\n1. 【核心定义】：用简练通俗的语言解释其核心定义与学术定位。\n2. 【专业脉络】：详述其历史背景、关联理论、核心学派或演进过程。\n3. 【价值意义】：说明该名词在其专业领域的价值或现实意义。\n请返回不超过400字的纯文本，不要使用 Markdown 格式。",
-	},
-	{
-		id: "english-translation",
-		name: "英语句子翻译",
-		icon: "languages",
-		prompt:
-			"你是一名精通双语的资深翻译家与语言专家。请对选中的英文文本执行以下任务：\n1. 【精准翻译】：将该段英文翻译为流畅、自然、契合中文表达习惯的译文（信达雅）。\n2. 【核心词汇】：提取句中的重点生词、词组，并附带音标及简明中文释义。\n3. 【难点剖析】：如果句子结构复杂，请简要分析其主干句型、从句或特殊语法现象。\n请返回纯文本，不要使用 Markdown 格式。",
-	},
-	{
 		id: "english-grammar",
 		name: "英语语法解析",
 		icon: "braces",
@@ -40,7 +26,7 @@ export const INTEGRATED_AI_ACTIONS: readonly IntegratedAIAction[] = [
 	},
 	{
 		id: "context-appreciation",
-		name: "通用语境赏析",
+		name: "语境赏析",
 		icon: "sparkles",
 		prompt:
 			"你是一名博闻强识的阅读向导与文学评论家。请对选中的书籍文字执行以下分析：\n1. 【语境解析】：结合书籍的上下文，深度解读这段文字在情节、逻辑或论点中的承载与承接作用。\n2. 【文学赏析】：剖析其中蕴含的修辞手法、文学隐喻、人物心理、时代背景或叙事艺术。\n3. 【思考延伸】：提出一个与此相关的启发性思考或关联知识点。\n请返回纯文本，不要使用 Markdown 格式。",
@@ -141,7 +127,7 @@ class IntegratedAIResultModal extends Modal {
 export function showIntegratedAIActionMenu(options: {
 	event: MouseEvent | KeyboardEvent;
 	onSelectAction: (actionId: string) => void;
-	openSettings: () => void;
+	openSettings?: () => void;
 }): void {
 	const menu = new Menu();
 	for (const action of INTEGRATED_AI_ACTIONS) {
@@ -153,12 +139,6 @@ export function showIntegratedAIActionMenu(options: {
 			});
 		});
 	}
-	menu.addSeparator();
-	menu.addItem((item) => {
-		item.setTitle("AI 助手设置");
-		item.setIcon("settings");
-		item.onClick(options.openSettings);
-	});
 
 	if (domInstanceOf(options.event, MouseEvent)) {
 		menu.showAtMouseEvent(options.event);

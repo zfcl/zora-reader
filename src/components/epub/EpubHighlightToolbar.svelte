@@ -273,6 +273,30 @@
 					</div>
 				</div>
 			</div>
+		{:else if info.sourceLocators?.length || info.style === 'reading-note'}
+			<div class="highlight-main-row">
+				<div class="highlight-actions-shell">
+					<div class="toolbar-row actions-row highlight-actions-row">
+						<button class="clickable-icon action-item backlink-action" onclick={() => handleBacklinkAction(info)} title="打开笔记">
+							<span class="action-icon" use:icon={'external-link'}></span>
+							<span class="action-label">打开笔记</span>
+						</button>
+						<button class="clickable-icon action-item backlink-action" onclick={() => handleBacklinkAction(info)} title="编辑笔记">
+							<span class="action-icon" use:icon={'edit'}></span>
+							<span class="action-label">编辑笔记</span>
+						</button>
+						<button class="clickable-icon action-item copy-action" onclick={() => onCopyText(info)} title={t('epub.highlightToolbar.copyTitle')}>
+							<span class="action-icon" use:icon={'clipboard-copy'}></span>
+							<span class="action-label">{t('epub.highlightToolbar.copy')}</span>
+						</button>
+						<div class="row-divider"></div>
+						<button class="clickable-icon action-item delete delete-action" onclick={() => onDelete(info)} title="删除笔记">
+							<span class="action-icon" use:icon={'trash-2'}></span>
+							<span class="action-label">删除笔记</span>
+						</button>
+					</div>
+				</div>
+			</div>
 		{:else}
 			<div class="highlight-main-row">
 				<div class="highlight-top-row">
@@ -299,7 +323,12 @@
 								<span class="action-icon style-icon strikethrough-style-icon" use:icon={'strikethrough'}></span>
 							</button>
 							<button class="clickable-icon action-item icon-only style-action-item" class:accent={info.style === 'wavy'} onclick={() => handleStyleToggle(info, 'wavy')} title={t('epub.highlightToolbar.wavy')} aria-label={t('epub.highlightToolbar.wavy')}>
-								<span class="action-icon style-icon wavy-style-icon" use:icon={'pen-tool'}></span>
+								<span class="action-icon style-icon wavy-style-icon">
+									<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon">
+										<path d="M6 4v6a6 6 0 0 0 12 0V4" />
+										<path d="M4 20c1.5-1 3-1 4.5 0s3 1 4.5 0 3-1 4.5 0" />
+									</svg>
+								</span>
 							</button>
 						</div>
 					</div>
@@ -311,19 +340,9 @@
 							<span class="action-icon highlight-style-icon" use:icon={'highlighter'}></span>
 							<span class="action-label">{t('epub.highlightToolbar.highlight')}</span>
 						</button>
-						<button class="clickable-icon action-item comment-action" class:accent={Boolean(info.hasCommentDivider)} onclick={() => onEditComment(info)} title={t('epub.highlightToolbar.commentTitle')} aria-label={t('epub.highlightToolbar.commentTitle')}>
-							<span class="action-icon" use:icon={'message-square'}></span>
-							<span class="action-label">{t('epub.highlightToolbar.comment')}</span>
-						</button>
-						{#if canUseSourceLocation || showPremiumFeaturePreviewEnabled}
-							<button class="clickable-icon action-item backlink-action" onclick={() => handleBacklinkAction(info)} title={t('epub.highlightToolbar.noteTitle')}>
-								<span class="action-icon" use:icon={'external-link'}></span>
-								<span class="action-label">{t('epub.highlightToolbar.note')}</span>
-							</button>
-						{/if}
-						<button class="clickable-icon action-item accent extract-action" onclick={() => onExtractToCard(info)} title={t('epub.highlightToolbar.createCardTitle')} aria-label={t('epub.highlightToolbar.createCardTitle')}>
-							<span class="action-icon" use:icon={'scissors'}></span>
-							<span class="action-label">{t('epub.highlightToolbar.createCard')}</span>
+						<button class="clickable-icon action-item backlink-action" onclick={() => handleBacklinkAction(info)} title={info.sourceLocators?.length ? '已有笔记' : '读书笔记'}>
+							<span class="action-icon" use:icon={'external-link'}></span>
+							<span class="action-label">{info.sourceLocators?.length ? '已有笔记' : '读书笔记'}</span>
 						</button>
 						<button class="clickable-icon action-item copy-action" onclick={() => onCopyText(info)} title={t('epub.highlightToolbar.copyTitle')}>
 							<span class="action-icon" use:icon={'clipboard-copy'}></span>

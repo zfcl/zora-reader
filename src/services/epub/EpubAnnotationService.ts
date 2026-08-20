@@ -7,6 +7,7 @@ import type { EpubStorageService } from "./EpubStorageService";
 import type { HighlightSourceLocator, ReaderHighlight } from "./reader-engine-types";
 import { resolveDisplayProgress } from "./book-progress";
 import type { ConcealedText, HighlightColor } from "./types";
+import { logger } from "../../utils/logger";
 
 export class EpubAnnotationService {
 	private storageService: EpubStorageService;
@@ -57,6 +58,51 @@ export class EpubAnnotationService {
 
 		await this.storageService.addConcealedText(bookId, concealedText);
 		return concealedText;
+	}
+
+	async createDirectHighlight(
+		bookId: string,
+		highlight: {
+			cfiRange: string;
+			color: string;
+			style?: EpubHighlightStyle;
+			text: string;
+			chapterIndex?: number;
+			chapterTitle?: string;
+			createdTime?: number;
+		}
+	): Promise<void> {
+		logger.logHighlightDebugToFile('ENTER: EpubAnnotationService.createDirectHighlight', { bookId, cfiRange: highlight.cfiRange, color: highlight.color, style: highlight.style });
+		try {
+			await this.storageService.addDirectHighlight(bookId, {
+				cfiRange: highlight.cfiRange,
+				color: highlight.color,
+				style: highlight.style,
+				text: highlight.text,
+				chapterIndex: highlight.chapterIndex,
+				chapterTitle: highlight.chapterTitle,
+				createdTime: highlight.createdTime || Date.now(),
+			});
+			logger.logHighlightDebugToFile('SUCCESS: EpubAnnotationService.createDirectHighlight completed', { bookId });
+			this.invalidateCollectedHighlightsCache(bookId);
+		} catch (err: any) {
+			logger.logHighlightDebugToFile('ERROR: EpubAnnotationService.createDirectHighlight failed', { error: err?.message || err });
+			throw err;
+		}
+	}
+
+	async deleteDirectHighlightByCfi(bookId: string, cfiRange: string): Promise<void> {
+		await this.storageService.deleteDirectHighlightByCfi(bookId, cfiRange);
+		this.invalidateCollectedHighlightsCache(bookId);
+	}
+
+	async updateDirectHighlight(
+		bookId: string,
+		cfiRange: string,
+		updates: { color?: string; style?: EpubHighlightStyle }
+	): Promise<void> {
+		await this.storageService.updateDirectHighlight(bookId, cfiRange, updates);
+		this.invalidateCollectedHighlightsCache(bookId);
 	}
 
 	async deleteConcealedTextByCfi(bookId: string, cfiRange: string): Promise<void> {
@@ -396,6 +442,26 @@ export class EpubAnnotationService {
 						excerptId: primaryLocator?.excerptId || bh.excerptId,
 						sourceLocators: incomingLocators,
 						createdTime: bh.createdTime,
+						presentation: "highlight",
+					});
+				}
+			}
+
+			const directHighlights =
+				typeof this.storageService.loadDirectHighlights === "function"
+					? await this.storageService.loadDirectHighlights(bookId)
+					: [];
+			for (const dh of directHighlights) {
+				const identity = getReaderHighlightIdentityKey(dh);
+				if (!allHighlightsByKey.has(identity)) {
+					allHighlightsByKey.set(identity, {
+						cfiRange: dh.cfiRange,
+						color: dh.color as HighlightColor,
+						style: dh.style,
+						text: dh.text,
+						chapterIndex: dh.chapterIndex,
+						chapterTitle: dh.chapterTitle,
+						createdTime: dh.createdTime,
 						presentation: "highlight",
 					});
 				}

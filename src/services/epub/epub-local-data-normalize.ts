@@ -37,6 +37,7 @@ import { normalizeReadingPaceStats } from "./reading-pace";
 import type {
 	BookMetadata,
 	ConcealedText,
+	DirectHighlight,
 	EpubBook,
 	EpubLastOpenBookmark,
 	EpubReadingReferencePoint,
@@ -331,6 +332,25 @@ export function normalizeConcealedTexts(concealedTexts: unknown): ConcealedText[
 		}));
 }
 
+export function normalizeDirectHighlights(value: unknown): DirectHighlight[] {
+	if (!Array.isArray(value)) {
+		return [];
+	}
+	return value
+		.filter((item): item is DirectHighlight => Boolean(item && typeof item === "object" && item.cfiRange))
+		.map((item) => ({
+			id: typeof item.id === "string" ? item.id : undefined,
+			cfiRange: String(item.cfiRange || "").trim(),
+			color: String(item.color || "yellow").trim(),
+			style: item.style === "underline" || item.style === "strikethrough" || item.style === "wavy" ? item.style : undefined,
+			text: String(item.text || ""),
+			chapterIndex: typeof item.chapterIndex === "number" ? item.chapterIndex : undefined,
+			chapterTitle: typeof item.chapterTitle === "string" ? item.chapterTitle : undefined,
+			createdTime: typeof item.createdTime === "number" ? item.createdTime : Date.now(),
+		}))
+		.filter((item) => Boolean(item.cfiRange));
+}
+
 export function normalizeLocalBookRecord(value: unknown): EpubReaderLocalBookRecord {
 	if (!value || typeof value !== "object") {
 		return {};
@@ -357,6 +377,9 @@ export function normalizeLocalBookRecord(value: unknown): EpubReaderLocalBookRec
 	}
 	if (Object.prototype.hasOwnProperty.call(record, "tocChapterMarks")) {
 		normalized.tocChapterMarks = normalizeTocChapterMarkMap(record.tocChapterMarks);
+	}
+	if (Object.prototype.hasOwnProperty.call(record, "directHighlights")) {
+		normalized.directHighlights = normalizeDirectHighlights(record.directHighlights);
 	}
 	return normalized;
 }
@@ -511,7 +534,8 @@ export function hasRetainedLocalBookData(record: EpubReaderLocalBookRecord): boo
 			Object.prototype.hasOwnProperty.call(record, "lastOpenBookmark") ||
 			Object.prototype.hasOwnProperty.call(record, "readingReferencePoint") ||
 			Object.prototype.hasOwnProperty.call(record, "concealedTexts") ||
-			(record.tocChapterMarks && Object.keys(record.tocChapterMarks).length > 0)
+			(record.tocChapterMarks && Object.keys(record.tocChapterMarks).length > 0) ||
+			(record.directHighlights && record.directHighlights.length > 0)
 	);
 }
 

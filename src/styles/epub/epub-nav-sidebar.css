@@ -1166,7 +1166,23 @@ body.is-mobile .epub-highlight-toolbar:not(.mobile-docked) {
 	box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.22), 0 6px 16px rgba(0, 0, 0, 0.18);
 }
 
-.epub-selection-toolbar .action-item,
+.epub-selection-toolbar .action-item {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 2px;
+	padding: 2px 6px;
+	border: none;
+	background: transparent;
+	color: var(--epub-text-faint);
+	cursor: pointer;
+	border-radius: 8px;
+	transition: background 0.12s, color 0.12s;
+	min-width: 36px;
+	min-height: 36px;
+}
+
 .epub-highlight-toolbar .action-item {
 	display: flex;
 	flex-direction: column;
