@@ -426,6 +426,18 @@ let activePopoverType = $state<'dict' | 'grammar' | 'note' | null>(null);
 		hideToolbar();
 	}
 
+	function handleNoteSaved(info: { cfiRange: string; blockId: string; text: string; filePath: string }) {
+		readerService?.addHighlight?.({
+			cfiRange: info.cfiRange,
+			color: 'purple',
+			style: 'reading-note',
+			text: info.text,
+			excerptId: info.blockId,
+			sourceFile: info.filePath,
+			presentation: 'highlight',
+		});
+	}
+
 	function closePopover() {
 		lookupSelection = null;
 		lookupViewportEl = null;
@@ -805,24 +817,24 @@ let activePopoverType = $state<'dict' | 'grammar' | 'note' | null>(null);
 					<button class="color-btn green" onclick={() => handleHighlight('green')} aria-label={t('epub.selectionToolbar.highlightGreen')} title={t('epub.selectionToolbar.highlightGreen')}><span class="color-btn-core"></span></button>
 				</div>
 
-					<div class="selection-style-shell">
-						<div class="toolbar-row selection-style-row">
-							<button class="clickable-icon action-item icon-only style-action-item" onclick={() => handleHighlight('yellow', 'underline')} title={t('epub.selectionToolbar.underline')} aria-label={t('epub.selectionToolbar.underline')}>
-								<span class="action-icon style-icon underline-style-icon" use:icon={'underline'}></span>
-							</button>
-							<button class="clickable-icon action-item icon-only style-action-item" onclick={() => handleHighlight('yellow', 'strikethrough')} title={t('epub.selectionToolbar.strikethrough')} aria-label={t('epub.selectionToolbar.strikethrough')}>
-								<span class="action-icon style-icon strikethrough-style-icon" use:icon={'strikethrough'}></span>
-							</button>
-							<button class="clickable-icon action-item icon-only style-action-item" onclick={() => handleHighlight('yellow', 'wavy')} title={t('epub.selectionToolbar.wavy')} aria-label={t('epub.selectionToolbar.wavy')}>
-								<span class="action-icon style-icon wavy-style-icon">
-									<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon">
-										<path d="M6 4v6a6 6 0 0 0 12 0V4" />
-										<path d="M4 20c1.5-1 3-1 4.5 0s3 1 4.5 0 3-1 4.5 0 3 1 4.5 0" />
-									</svg>
-								</span>
-							</button>
-						</div>
-					</div>
+				<div class="row-divider"></div>
+
+				<div class="toolbar-row selection-style-row">
+					<button class="clickable-icon action-item icon-only style-action-item" onclick={() => handleHighlight('yellow', 'underline')} title={t('epub.selectionToolbar.underline')} aria-label={t('epub.selectionToolbar.underline')}>
+						<span class="action-icon style-icon underline-style-icon" use:icon={'underline'}></span>
+					</button>
+					<button class="clickable-icon action-item icon-only style-action-item" onclick={() => handleHighlight('yellow', 'strikethrough')} title={t('epub.selectionToolbar.strikethrough')} aria-label={t('epub.selectionToolbar.strikethrough')}>
+						<span class="action-icon style-icon strikethrough-style-icon" use:icon={'strikethrough'}></span>
+					</button>
+					<button class="clickable-icon action-item icon-only style-action-item" onclick={() => handleHighlight('yellow', 'wavy')} title={t('epub.selectionToolbar.wavy')} aria-label={t('epub.selectionToolbar.wavy')}>
+						<span class="action-icon style-icon wavy-style-icon">
+							<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon">
+								<path d="M6 4v6a6 6 0 0 0 12 0V4" />
+								<path d="M4 20c1.5-1 3-1 4.5 0s3 1 4.5 0 3-1 4.5 0 3 1 4.5 0" />
+							</svg>
+						</span>
+					</button>
+				</div>
 			</div>
 		{/if}
 
@@ -905,6 +917,7 @@ let activePopoverType = $state<'dict' | 'grammar' | 'note' | null>(null);
 			anchorRects={lookupSelection.anchorRects}
 			anchorPoint={lookupSelection.anchorPoint}
 			viewportEl={lookupViewportEl}
+			onSaved={handleNoteSaved}
 			onClose={closePopover}
 		/>
 	{/if}

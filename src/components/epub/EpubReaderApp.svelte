@@ -3309,12 +3309,13 @@
 		if (!hasExcerptNotesCapability()) {
 			return;
 		}
-		if (book?.metadata?.title && book?.path) {
+		const resolvedBookPath = book?.filePath || filePath;
+		if (book?.metadata?.title && resolvedBookPath) {
 			const { appendBookReadingNote } = await import('../../services/ai/zora/zora-study-note-service');
 			const { path: newNotePath, blockId } = await appendBookReadingNote(app, {
 				note: '',
 				selectedText: text,
-				bookPath: book.path,
+				bookPath: resolvedBookPath,
 				bookTitle: book.metadata.title,
 				cfiRange: cfiRange,
 				chapterIndex: readerService.getCurrentChapterIndex()
@@ -4497,7 +4498,7 @@
 			void reloadHighlights();
 			return true;
 		}
-		if (book?.id) {
+		if (info.style !== 'reading-note' && book?.id) {
 			await annotationService.deleteDirectHighlightByCfi(book.id, info.cfiRange);
 		}
 		const source = await resolveHighlightSource(info);
@@ -4861,13 +4862,14 @@
 		const source = await resolveHighlightSource(info);
 		if (!source?.sourceFile) {
 			// No existing note, create reading note
-			if (book?.metadata?.title && book?.path) {
+			const resolvedBookPath = book?.filePath || filePath;
+			if (book?.metadata?.title && resolvedBookPath) {
 				// We need to import appendBookReadingNote dynamically or normally
 				const { appendBookReadingNote } = await import('../../services/ai/zora/zora-study-note-service');
 				const { path: newNotePath, blockId } = await appendBookReadingNote(app, {
 					note: '',
 					selectedText: info.text,
-					bookPath: book.path,
+					bookPath: resolvedBookPath,
 					bookTitle: book.metadata.title,
 					cfiRange: info.cfiRange,
 					chapterIndex: readerService.getCurrentChapterIndex()

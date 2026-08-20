@@ -35,7 +35,7 @@ describe("zora-study-note-service", () => {
       "Notes/外文笔记/Flowers for Algernon.md"
     );
     expect(getBookNoteFilePath("Flowers for Algernon")).toBe(
-      "Notes/Flowers for Algernon.md"
+      "Notes/读书笔记/Flowers for Algernon.md"
     );
   });
 
@@ -87,8 +87,8 @@ describe("zora-study-note-service", () => {
     expect(foreignContent).toContain("**核心结构**：主句 + 条件从句");
     expect(foreignContent).toContain("- **虚拟语气**（`would have gone`）：对过去的虚拟");
 
-    // 3. Add reading note to Book Note (Notes/<book>.md)
-    await appendBookReadingNote(mockApp, {
+    // 3. Add reading note to Book Note (Notes/读书笔记/<book>.md)
+    const result = await appendBookReadingNote(mockApp, {
       note: "这里作者使用了极具深意的对比。",
       selectedText: "The shadows lengthened...",
       bookPath: "Books/Flowers.epub",
@@ -96,11 +96,13 @@ describe("zora-study-note-service", () => {
       cfiRange: "epubcfi(/6/2!/4/3:0)",
     });
 
+    expect(result.blockId).toBeTruthy();
     const bookNotePath = getBookNoteFilePath(bookTitle);
     const bookNoteContent = mockApp._store.get(bookNotePath);
-    expect(bookNoteContent).toContain("# Flowers for Algernon · 读书笔记");
-    expect(bookNoteContent).toContain("## 读书笔记");
-    expect(bookNoteContent).toContain("> [!note]- ✍ 读书笔记");
+    expect(bookNoteContent).toContain("> [!EPUB|purple+reading-note]");
+    expect(bookNoteContent).toContain("> <!-- div -->");
+    expect(bookNoteContent).not.toContain("---div---");
+    expect(bookNoteContent).toContain(`^${result.blockId}`);
     expect(bookNoteContent).toContain("> 这里作者使用了极具深意的对比。");
 
     // Verify 外文笔记 does NOT contain 读书笔记/随手笔记

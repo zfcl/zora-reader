@@ -104,6 +104,8 @@ export interface ReaderHighlightInput {
 	presentation?: ReaderHighlightPresentation;
 	pageLabel?: string;
 	pageNumber?: number;
+	baseHighlightColor?: string;
+	baseStyle?: EpubHighlightStyle;
 	// 引用统计
 	referenceCount?: number;
 	referenceHeat?: number;

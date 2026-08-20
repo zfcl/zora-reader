@@ -14,10 +14,11 @@
     anchorRects?: DOMRect[];
     anchorPoint?: ReaderAnchorPoint;
     viewportEl: HTMLElement;
+    onSaved?: (info: { cfiRange: string; blockId: string; text: string; filePath: string }) => void;
     onClose: () => void;
   }
 
-  let { app, selection, anchorRect, anchorRects = [], anchorPoint, viewportEl, onClose }: Props = $props();
+  let { app, selection, anchorRect, anchorRects = [], anchorPoint, viewportEl, onSaved, onClose }: Props = $props();
 
   let popoverEl = $state<HTMLDivElement | null>(null);
   let textareaEl = $state<HTMLTextAreaElement | null>(null);
@@ -148,7 +149,7 @@
     saving = true;
     error = "";
     try {
-      await appendBookReadingNote(app, {
+      const result = await appendBookReadingNote(app, {
         note: text,
         selectedText: selection.text,
         bookPath: selection.bookPath,
@@ -156,6 +157,12 @@
         cfiRange: selection.cfiRange,
       });
       new Notice("已保存至读书笔记");
+      onSaved?.({
+        cfiRange: selection.cfiRange,
+        blockId: result.blockId,
+        text: selection.text,
+        filePath: result.filePath,
+      });
       onClose();
     } catch (e) {
       saving = false;

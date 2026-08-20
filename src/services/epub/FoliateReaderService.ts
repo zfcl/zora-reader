@@ -425,6 +425,8 @@ export class FoliateReaderService implements EpubReaderEngine {
 			getConcealmentPalette: () => this.getConcealmentPalette(),
 			onCommentMarkerClick: (cfiRange, markerElement, anchorRect) =>
 				this.notifyCommentMarkerClick(cfiRange, markerElement, anchorRect),
+			onNoteMarkerClick: (annotation, markerElement, anchorRect) =>
+				this.notifyNoteMarkerClick(annotation, markerElement, anchorRect),
 			onReferenceBadgeClick: (cfiRange, geometry) =>
 				this.notifyReferenceBadgeClick(cfiRange, geometry),
 		});
@@ -5964,6 +5966,30 @@ export class FoliateReaderService implements EpubReaderEngine {
 		);
 	}
 
+	private notifyNoteMarkerClick(
+		annotation: ReaderFoliateAnnotation,
+		markerElement: Element,
+		anchorRect?: HighlightClickInfo["rect"] | null
+	): void {
+		const rangeGeometry = this.getCurrentHighlightViewportGeometry(annotation.cfiRange);
+		const markerRect = createElementViewportRect(markerElement);
+		const rect = markerRect || anchorRect || rangeGeometry?.rect;
+		if (!rect) {
+			return;
+		}
+		this.notifyHighlightClick(
+			buildHighlightClickInfo(
+				annotation,
+				{
+					rect,
+					rects: markerRect ? [markerRect] : rangeGeometry?.rects,
+					anchorPoint: createAnchorPointFromRect(markerRect || anchorRect || rect),
+				},
+				"highlight"
+			)
+		);
+	}
+
 	private getCurrentHighlightViewportGeometry(
 		cfiRange: string,
 		textHint?: string
@@ -6298,6 +6324,13 @@ export class FoliateReaderService implements EpubReaderEngine {
 			return referencedLocator;
 		}
 
+		const excerptLocator = locators.find(
+			(locator) => typeof locator.excerptId === "string" && locator.excerptId.trim().length > 0
+		);
+		if (excerptLocator) {
+			return excerptLocator;
+		}
+
 		const markdownLocator = locators.find((locator) => locator.sourceFile.endsWith(".md"));
 		if (markdownLocator) {
 			return markdownLocator;
@@ -6339,9 +6372,27 @@ export class FoliateReaderService implements EpubReaderEngine {
 			this.collectHighlightSourceLocators(incoming)
 		);
 		const primaryLocator = this.selectPrimarySourceLocator(sourceLocators);
+		const mergedStyle =
+			existing.style === "reading-note" || incoming.style === "reading-note"
+				? "reading-note"
+				: incoming.style || existing.style;
+		const baseHighlightColor =
+			(existing.style !== "reading-note" ? existing.color : undefined) ||
+			(incoming.style !== "reading-note" ? incoming.color : undefined) ||
+			existing.baseHighlightColor ||
+			incoming.baseHighlightColor;
+		const baseStyle =
+			(existing.style !== "reading-note" ? existing.style : undefined) ||
+			(incoming.style !== "reading-note" ? incoming.style : undefined) ||
+			existing.baseStyle ||
+			incoming.baseStyle;
+
 		return {
 			...existing,
 			...incoming,
+			...(mergedStyle ? { style: mergedStyle } : {}),
+			...(baseHighlightColor ? { baseHighlightColor } : {}),
+			...(baseStyle ? { baseStyle } : {}),
 			sourceFile: primaryLocator?.sourceFile || incoming.sourceFile || existing.sourceFile,
 			sourceRef: primaryLocator?.sourceRef || incoming.sourceRef || existing.sourceRef,
 			excerptId: primaryLocator?.excerptId || incoming.excerptId || existing.excerptId,

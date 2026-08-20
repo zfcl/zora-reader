@@ -66,6 +66,7 @@ export class EpubLinkService {
 		"underline",
 		"strikethrough",
 		"wavy",
+		"reading-note",
 	]);
 	private app: App;
 

@@ -1,6 +1,7 @@
-﻿import type { App } from "obsidian";
+import { TFile, type App } from "obsidian";
 import { EPUB_RUNTIME } from "../../epub/epub-runtime";
 import { DirectoryUtils } from "../../../utils/directory-utils";
+import { EpubLinkService } from "../../epub/EpubLinkService";
 
 export interface StudyNoteVocabularyInput {
   word: string;
@@ -16,7 +17,10 @@ export interface StudyNoteVocabularyInput {
 
 export interface StudyNoteGrammarInput {
   sentence: string;
-  explanation: string;
+  explanation?: string;
+  structure?: string;
+  points?: Array<{ label: string; target?: string; explanation: string }>;
+  paraphrase?: string;
   bookPath: string;
   bookTitle: string;
   cfiRange: string;
@@ -72,6 +76,31 @@ export function getBookNoteFilePath(bookTitle: string): string {
   return `Notes/读书笔记/${sanitizeBookFileName(bookTitle)}.md`;
 }
 
+async function writeVaultFile(app: App, filePath: string, content: string): Promise<void> {
+  const adapter = app?.vault?.adapter;
+  if (adapter) {
+    await DirectoryUtils.ensureDirForFile(adapter, filePath);
+  }
+  const abstractFile = app?.vault?.getAbstractFileByPath?.(filePath);
+  if (abstractFile && (abstractFile instanceof TFile || (abstractFile as TFile).extension === "md")) {
+    if (typeof app.vault?.modify === "function") {
+      await app.vault.modify(abstractFile as TFile, content);
+      return;
+    }
+  }
+  if (typeof app?.vault?.create === "function") {
+    try {
+      await app.vault.create(filePath, content);
+      return;
+    } catch {
+      // Fallback to adapter.write if file already exists or create failed
+    }
+  }
+  if (adapter?.write) {
+    await adapter.write(filePath, content);
+  }
+}
+
 export async function appendStudyNoteEntry(
   app: App,
   bookTitle: string,
@@ -108,7 +137,7 @@ export async function appendStudyNoteEntry(
     content = `${content.trimEnd()}\n\n${categoryHeader}\n\n${calloutMarkdown}\n`;
   }
 
-  await adapter.write(filePath, content);
+  await writeVaultFile(app, filePath, content);
   return filePath;
 }
 
@@ -151,14 +180,33 @@ export async function appendGrammarStudyNote(
   input: StudyNoteGrammarInput
 ): Promise<string> {
   const deepLink = buildEpubDeepLink(input.bookPath, input.cfiRange, input.chapterIndex);
+  const titlePart = input.structure ? ` · ${input.structure}` : "";
   const lines = [
-    `> [!example]- 🧩 语法分析`,
+    `> [!example]- 🧩 语法${titlePart}`,
     `> **原句**：${input.sentence.trim()}`,
-    `>`,
-    `> ${input.explanation.trim()}`,
-    `>`,
-    `> [↗ 回到原文](${deepLink})`,
   ];
+  if (input.structure) {
+    lines.push(`>`);
+    lines.push(`> **核心结构**：${input.structure.trim()}`);
+  }
+  if (input.points && input.points.length > 0) {
+    lines.push(`>`);
+    lines.push(`> **语法点**：`);
+    for (const pt of input.points) {
+      const targetStr = pt.target ? `（\`${pt.target}\`）` : "";
+      lines.push(`> - **${pt.label}**${targetStr}：${pt.explanation}`);
+    }
+  }
+  if (input.paraphrase) {
+    lines.push(`>`);
+    lines.push(`> **意译**：${input.paraphrase.trim()}`);
+  }
+  if (input.explanation) {
+    lines.push(`>`);
+    lines.push(`> ${input.explanation.trim()}`);
+  }
+  lines.push(`>`);
+  lines.push(`> [↗ 回到原文](${deepLink})`);
 
   return appendStudyNoteEntry(app, input.bookTitle, "语法", lines.join("\n"));
 }
@@ -183,7 +231,7 @@ export async function appendUserStudyNote(
 export async function appendBookReadingNote(
   app: App,
   input: BookReadingNoteInput
-): Promise<string> {
+): Promise<{ path: string; blockId: string; filePath: string }> {
   const filePath = getBookNoteFilePath(input.bookTitle);
   const adapter = app.vault.adapter;
   await DirectoryUtils.ensureDirForFile(adapter, filePath);
@@ -203,14 +251,15 @@ export async function appendBookReadingNote(
     .join("\n");
 
   const blockId = Math.random().toString(36).substring(2, 8);
+  const encodedCfi = EpubLinkService.encodeCfiForWikilink(input.cfiRange);
   const calloutLines = [
-    `> [!EPUB]- ✍ 读书笔记`,
+    `> [!EPUB|purple+reading-note] [[${input.bookPath}#weave-cfi=${encodedCfi}&eid=${blockId}|${input.bookTitle}]]`,
     quotedText,
-    `>`,
+    `> <!-- div -->`,
     `> [↗ 回到原文](${deepLink})`,
-    `> ---div---`,
   ];
   if (quotedNote) {
+    calloutLines.push(`>`);
     calloutLines.push(quotedNote);
   }
   calloutLines.push(`^${blockId}`);
@@ -253,6 +302,6 @@ export async function appendBookReadingNote(
     content = `${content.trimEnd()}\n\n## 读书笔记\n\n${calloutMarkdown}\n`;
   }
 
-  await adapter.write(filePath, content);
-  return filePath;
+  await writeVaultFile(app, filePath, content);
+  return { path: filePath, blockId, filePath };
 }

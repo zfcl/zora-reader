@@ -11,7 +11,7 @@ import { shouldIncludeHighlightInSidebarSnapshot } from "./reader-annotation-mod
 import type { EpubReaderEngine, ReaderHighlight } from "./reader-engine-types";
 
 export type EpubHighlightColor = "yellow" | "green" | "blue" | "red" | "purple";
-export type EpubHighlightNoteType = "高亮" | "下划线" | "删除线" | "波浪线";
+export type EpubHighlightNoteType = "高亮" | "下划线" | "删除线" | "波浪线" | "读书笔记";
 
 export interface EpubDisplayHighlight {
 	cfiRange: string;
@@ -633,6 +633,8 @@ export class EpubHighlightViewSnapshotService {
 
 	private getHighlightNoteType(style?: ReaderHighlight["style"]): EpubHighlightNoteType {
 		switch (style) {
+			case "reading-note":
+				return "读书笔记";
 			case "underline":
 				return "下划线";
 			case "strikethrough":

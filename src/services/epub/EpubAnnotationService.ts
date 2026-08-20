@@ -328,6 +328,13 @@ export class EpubAnnotationService {
 			return referencedLocator;
 		}
 
+		const excerptLocator = locators.find(
+			(locator) => typeof locator.excerptId === "string" && locator.excerptId.trim().length > 0
+		);
+		if (excerptLocator) {
+			return excerptLocator;
+		}
+
 		const markdownLocator = locators.find((locator) => locator.sourceFile.endsWith(".md"));
 		if (markdownLocator) {
 			return markdownLocator;
@@ -408,7 +415,9 @@ export class EpubAnnotationService {
 					if (!existing.chapterTitle && bh.chapterTitle) {
 						existing.chapterTitle = bh.chapterTitle;
 					}
-					if (existing.style === undefined && bh.style !== undefined) {
+					if (bh.style === "reading-note" || existing.style === "reading-note") {
+						existing.style = "reading-note";
+					} else if (existing.style === undefined && bh.style !== undefined) {
 						existing.style = bh.style;
 					}
 					if (bh.commentText !== undefined) {
@@ -453,6 +462,21 @@ export class EpubAnnotationService {
 					: [];
 			for (const dh of directHighlights) {
 				const identity = getReaderHighlightIdentityKey(dh);
+				const normCfi = EpubLinkService.normalizeCfi(dh.cfiRange);
+				const existingEntry = Array.from(allHighlightsByKey.values()).find(
+					(h) => EpubLinkService.normalizeCfi(h.cfiRange) === normCfi
+				);
+				if (existingEntry) {
+					if (existingEntry.style === "reading-note") {
+						if (dh.style && dh.style !== "reading-note") {
+							existingEntry.baseStyle = dh.style;
+						}
+						if (dh.color && dh.color !== "purple") {
+							existingEntry.baseHighlightColor = dh.color;
+						}
+					}
+					continue;
+				}
 				if (!allHighlightsByKey.has(identity)) {
 					allHighlightsByKey.set(identity, {
 						cfiRange: dh.cfiRange,

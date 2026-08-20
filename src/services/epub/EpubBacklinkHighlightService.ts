@@ -82,6 +82,7 @@ interface ParsedEpubCallout {
 	commentText: string;
 	hasCommentDivider: boolean;
 	commentBlock: string;
+	dividerMarker?: string;
 	chapterTitle?: string;
 	fullMatch: string;
 	createdTime?: number;
@@ -1825,13 +1826,19 @@ export class EpubBacklinkHighlightService {
 	}
 
 	private isCommentDividerLine(line: string): boolean {
-		return /^>\s*---div---\s*$/.test(String(line || ""));
+		return /^>\s*(?:---div---|<!--\s*div\s*-->|<!--\s*divider\s*-->)\s*$/.test(
+			String(line || "")
+		);
 	}
 
 	private normalizeQuotedHighlightText(text: string, style?: EpubHighlightStyle): string {
+		const filteredLines = String(text || "")
+			.split("\n")
+			.filter((line) => !/^\s*\[↗\s*回到原文\]\(.*?\)\s*$/.test(line));
+		const rawText = filteredLines.join("\n");
 		const normalizedText =
 			style === "strikethrough"
-				? text
+				? rawText
 						.split("\n")
 						.map((line) => {
 							const trimmed = line.trim();
@@ -1844,7 +1851,7 @@ export class EpubBacklinkHighlightService {
 							return `${leadingWhitespace}${match[1]}${trailingWhitespace}`;
 						})
 						.join("\n")
-				: text;
+				: rawText;
 
 		return normalizedText.trim();
 	}
@@ -3183,7 +3190,10 @@ logger.debug("[EpubBacklinkHighlightService] deleteHighlightFromCardData failed:
 				continue;
 			}
 			if (this.isSameExcerptTarget(resolvedLink, normalizedTargetCfi, excerptId)) {
-				let result = content.replace(callout.linkMarkup, "");
+				let result = content.replace(callout.fullMatch, "");
+				if (result.startsWith("\n")) {
+					result = result.replace(/^\n+/, "");
+				}
 				return result;
 			}
 		}
@@ -3274,10 +3284,10 @@ logger.debug("[EpubBacklinkHighlightService] deleteHighlightFromCardData failed:
 			};
 		}
 
-		const parts = body.split(/---div---/);
+		const parts = body.split(/(?:---div---|<!--\s*div\s*-->|<!--\s*divider\s*-->)/);
 		const text = String(parts[0] || "").trim() || String(fallbackText || "").trim();
 		const commentText =
-			parts.length > 1 ? parts.slice(1).join("---div---").trim() || undefined : undefined;
+			parts.length > 1 ? parts.slice(1).join("\n\n").trim() || undefined : undefined;
 		return {
 			text,
 			commentText,
@@ -3824,7 +3834,10 @@ logger.debug("[EpubBacklinkHighlightService] deleteHighlightFromCardData failed:
 				continue;
 			}
 			if (this.isSameExcerptTarget(resolvedLink, normalizedTargetCfi, excerptId)) {
-				result = result.replace(callout.linkMarkup, "");
+				result = result.replace(callout.fullMatch, "");
+				if (result.startsWith("\n")) {
+					result = result.replace(/^\n+/, "");
+				}
 				break;
 			}
 		}
@@ -3919,8 +3932,9 @@ logger.debug("[EpubBacklinkHighlightService] deleteHighlightFromCardData failed:
 				const oldCalloutBlock = callout.fullMatch;
 				const oldCalloutHeader = oldCalloutBlock.split("\n")[0];
 				const normalizedComment = String(commentText || "").replace(/\r\n?/g, "\n");
+				const dividerMarker = callout.dividerMarker || "> ---div---";
 				const nextCommentBlock = hasCommentDivider
-					? ["> ---div---", ...this.toQuotedBlockLines(normalizedComment)].join("\n")
+					? [dividerMarker, ...this.toQuotedBlockLines(normalizedComment)].join("\n")
 					: "";
 				const newCalloutBlock = [oldCalloutHeader, callout.quotedText, nextCommentBlock]
 					.filter((part) => part.length > 0)
@@ -4222,6 +4236,7 @@ logger.debug("[EpubBacklinkHighlightService] deleteHighlightFromCardData failed:
 				commentText: this.stripQuotedBlockLines(commentLines).join("\n").trim(),
 				hasCommentDivider: dividerIndex >= 0,
 				commentBlock,
+				dividerMarker: dividerIndex >= 0 ? bodyLines[dividerIndex].trim() : undefined,
 				chapterTitle: this.parseCalloutChapterTitle(rest.slice(linkEnd).trim()),
 				fullMatch,
 				createdTime: this.parseCalloutTimestamp(rest.slice(linkEnd).trim()),

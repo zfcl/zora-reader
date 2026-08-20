@@ -487,4 +487,63 @@ describe("FoliateReaderService comment marker layering", () => {
 			service.destroy();
 		}
 	});
+
+	it("preserves reading-note style and captures base highlight color when merging with a normal highlight", () => {
+		const service = new FoliateReaderService(createMockApp(new ArrayBuffer(0)) as any);
+		try {
+			const existing = {
+				cfiRange: "epubcfi(/6/2!/4/2,/1:0,/1:9)",
+				color: "yellow",
+				text: "Selection text for testing",
+				sourceFile: "Notes/book.md",
+				presentation: "highlight" as const,
+			};
+			const incoming = {
+				cfiRange: "epubcfi(/6/2!/4/2,/1:0,/1:9)",
+				color: "purple",
+				style: "reading-note" as const,
+				text: "Selection text for testing",
+				sourceFile: "Notes/读书笔记/book.md",
+				excerptId: "eid123",
+				presentation: "highlight" as const,
+			};
+
+			const merged = (service as any).mergeHighlights(existing, incoming);
+			expect(merged.style).toBe("reading-note");
+			expect(merged.baseHighlightColor).toBe("yellow");
+			expect(merged.excerptId).toBe("eid123");
+			expect(merged.sourceFile).toBe("Notes/读书笔记/book.md");
+		} finally {
+			service.destroy();
+		}
+	});
+
+	it("preserves reading-note style when merged with an incoming highlight that has undefined style", () => {
+		const service = new FoliateReaderService(createMockApp(new ArrayBuffer(0)) as any);
+		try {
+			const existing = {
+				cfiRange: "epubcfi(/6/2!/4/2,/1:0,/1:9)",
+				color: "purple",
+				style: "reading-note" as const,
+				text: "Selection text for testing",
+				sourceFile: "Notes/读书笔记/book.md",
+				excerptId: "eid123",
+				presentation: "highlight" as const,
+			};
+			const incoming = {
+				cfiRange: "epubcfi(/6/2!/4/2,/1:0,/1:9)",
+				color: "purple",
+				style: undefined,
+				text: "Selection text for testing",
+				sourceFile: "",
+				presentation: "highlight" as const,
+			};
+
+			const merged = (service as any).mergeHighlights(existing, incoming);
+			expect(merged.style).toBe("reading-note");
+			expect(merged.excerptId).toBe("eid123");
+		} finally {
+			service.destroy();
+		}
+	});
 });

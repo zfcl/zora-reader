@@ -34,6 +34,11 @@ export interface ReaderAnnotationOverlayPorts {
 		markerElement: Element,
 		anchorRect?: ReaderViewportRect | null
 	): void;
+	onNoteMarkerClick?(
+		annotation: ReaderFoliateAnnotation,
+		markerElement: Element,
+		anchorRect?: ReaderViewportRect | null
+	): void;
 	onReferenceBadgeClick(
 		cfiRange: string,
 		geometry?: {
@@ -61,22 +66,22 @@ function createStraightLineOverlay(
 	rect: RawViewportRect,
 	strokeColor: string,
 	y: number
-): SVGElement {
+): SVGLineElement {
 	const line = activeDocument.createElementNS(SVG_NS, "line");
 	line.setAttribute("x1", String(rect.left));
 	line.setAttribute("y1", String(y));
 	line.setAttribute("x2", String(rect.left + rect.width));
 	line.setAttribute("y2", String(y));
 	line.setAttribute("stroke", strokeColor);
-	line.setAttribute("stroke-width", String(Math.max(1.5, Math.min(2.6, rect.height * 0.11))));
+	line.setAttribute("stroke-width", String(Math.max(1.4, Math.min(2.2, rect.height * 0.1))));
 	line.setAttribute("stroke-linecap", "round");
 	line.setAttribute("stroke-opacity", "0.96");
 	return line;
 }
 
-function createWavyLineOverlay(rect: RawViewportRect, strokeColor: string): SVGElement {
+function createWavyLineOverlay(rect: RawViewportRect, strokeColor: string): SVGPathElement {
 	const path = activeDocument.createElementNS(SVG_NS, "path");
-	const baseY = rect.top + rect.height - 2;
+	const baseY = rect.top + rect.height - 1.5;
 	const amplitude = Math.max(1.2, Math.min(2.8, rect.height * 0.12));
 	const wavelength = Math.max(6, Math.min(12, rect.height * 0.8));
 	let currentX = rect.left;
@@ -98,6 +103,135 @@ function createWavyLineOverlay(rect: RawViewportRect, strokeColor: string): SVGE
 	return path;
 }
 
+export type NoteMarkerFallbackType =
+	| "top-end-center"
+	| "top-end-aligned"
+	| "bottom-end-center";
+
+export interface ComputeNoteMarkerOptions {
+	viewportBounds?: { width: number; height: number };
+	adjacentRects?: RawViewportRect[];
+	gutterX?: number;
+}
+
+export function isRectIntersecting(
+	a: { left: number; top: number; right: number; bottom: number },
+	b: { left: number; top: number; right: number; bottom: number }
+): boolean {
+	return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+}
+
+export function computeNoteMarkerPosition(
+	rects: RawViewportRect[],
+	markerSize = 8,
+	options?: ComputeNoteMarkerOptions
+): { x: number; y: number; chosenFallback: NoteMarkerFallbackType } | null {
+	const validRects = (rects || []).filter(
+		(r) => r && Number(r.width) > 0 && Number(r.height) > 0
+	);
+	if (validRects.length === 0) {
+		return null;
+	}
+	const targetRect = validRects[validRects.length - 1];
+	const targetRight =
+		typeof targetRect.right === "number"
+			? targetRect.right
+			: targetRect.left + targetRect.width;
+	const targetBottom =
+		typeof targetRect.bottom === "number"
+			? targetRect.bottom
+			: targetRect.top + targetRect.height;
+
+	const viewportWidth =
+		options?.viewportBounds?.width ??
+		(typeof activeDocument !== "undefined" && activeDocument.documentElement?.clientWidth
+			? activeDocument.documentElement.clientWidth
+			: typeof window !== "undefined"
+				? window.innerWidth
+				: Infinity);
+	const viewportHeight =
+		options?.viewportBounds?.height ??
+		(typeof activeDocument !== "undefined" && activeDocument.documentElement?.clientHeight
+			? activeDocument.documentElement.clientHeight
+			: typeof window !== "undefined"
+				? window.innerHeight
+				: Infinity);
+
+	const allObstacles = [
+		...validRects,
+		...(options?.adjacentRects || []).filter(
+			(r) => r && Number(r.width) > 0 && Number(r.height) > 0
+		),
+	];
+
+	const isWithinViewport = (x: number, y: number): boolean => {
+		return (
+			x >= 0 &&
+			y >= 0 &&
+			x + markerSize <= viewportWidth &&
+			y + markerSize <= viewportHeight
+		);
+	};
+
+	const collidesWithObstacles = (x: number, y: number): boolean => {
+		const box = { left: x, top: y, right: x + markerSize, bottom: y + markerSize };
+		return allObstacles.some((r) => {
+			const rRight =
+				typeof r.right === "number" ? r.right : r.left + r.width;
+			const rBottom =
+				typeof r.bottom === "number" ? r.bottom : r.top + r.height;
+			return isRectIntersecting(box, {
+				left: r.left,
+				top: r.top,
+				right: rRight,
+				bottom: rBottom,
+			});
+		});
+	};
+
+	// Primary position: 选区最后一行、最后一个字符终点的正上方
+	// Marker 水平中心对准选区终点: x = targetRect.right - markerSize / 2
+	// 纵向必须整个悬在该行上方: y = targetRect.top - markerSize - 3px
+	const candidatePrimary = {
+		x: targetRight - markerSize / 2,
+		y: targetRect.top - markerSize - 3,
+		type: "top-end-center" as const,
+	};
+
+	// Fallback 1: 靠右对齐正上方（当中心点略微超出视口右侧时）
+	const candidateTopAligned = {
+		x: Math.max(0, targetRight - markerSize),
+		y: targetRect.top - markerSize - 3,
+		type: "top-end-aligned" as const,
+	};
+
+	// Fallback 2: 选区终点正下方（当页面顶部贴顶 y < 0 时）
+	const candidateBottomCenter = {
+		x: targetRight - markerSize / 2,
+		y: targetBottom + 3,
+		type: "bottom-end-center" as const,
+	};
+
+	const candidates = [candidatePrimary, candidateTopAligned, candidateBottomCenter];
+
+	for (const candidate of candidates) {
+		if (
+			isWithinViewport(candidate.x, candidate.y) &&
+			!collidesWithObstacles(candidate.x, candidate.y)
+		) {
+			return { x: candidate.x, y: candidate.y, chosenFallback: candidate.type };
+		}
+	}
+
+	for (const candidate of candidates) {
+		if (!collidesWithObstacles(candidate.x, candidate.y)) {
+			return { x: candidate.x, y: candidate.y, chosenFallback: candidate.type };
+		}
+	}
+
+	return { x: candidatePrimary.x, y: candidatePrimary.y, chosenFallback: candidatePrimary.type };
+}
+
 export class ReaderAnnotationOverlayRenderer {
 	constructor(private readonly ports: ReaderAnnotationOverlayPorts) {}
 
@@ -108,7 +242,29 @@ export class ReaderAnnotationOverlayRenderer {
 	): SVGElement {
 		const group = activeDocument.createElementNS(SVG_NS, "g");
 
-		if (annotation.style) {
+		if (annotation.style === "reading-note") {
+			if (annotation.baseHighlightColor) {
+				if (annotation.baseStyle && annotation.baseStyle !== "reading-note") {
+					group.appendChild(
+						this.createStyledAnnotationOverlay(
+							rects,
+							annotation.baseStyle,
+							annotation.baseHighlightColor
+						)
+					);
+				} else if (overlayer) {
+					group.appendChild(
+						overlayer.Overlayer.highlight(rects, {
+							color: this.ports.resolveHighlightTint(annotation.baseHighlightColor),
+							padding: 1,
+						})
+					);
+				}
+			} else {
+				group.appendChild(this.createReadingNoteHintOverlay(rects));
+			}
+			group.appendChild(this.createNoteMarkerOverlay(annotation, rects));
+		} else if (annotation.style) {
 			group.appendChild(this.createStyledAnnotationOverlay(rects, annotation.style, annotation.color));
 		} else if (overlayer) {
 			group.appendChild(
@@ -119,7 +275,7 @@ export class ReaderAnnotationOverlayRenderer {
 			);
 		}
 
-		if (annotation.hasCommentDivider) {
+		if (annotation.hasCommentDivider && annotation.style !== "reading-note") {
 			group.appendChild(this.createCommentMarkerOverlay(annotation, rects));
 		}
 
@@ -131,6 +287,30 @@ export class ReaderAnnotationOverlayRenderer {
 			group.appendChild(this.createReferenceBadgeOverlay(annotation, rects));
 		}
 
+		return group;
+	}
+
+	createReadingNoteHintOverlay(rects: unknown[]): SVGElement {
+		const group = activeDocument.createElementNS(SVG_NS, "g");
+		group.setAttribute("data-zora-reading-note-hint", "group");
+		const purpleColor = "#8b5cf6";
+		for (const rect of rects as RawViewportRect[]) {
+			if (rect.width <= 0 || rect.height <= 0) {
+				continue;
+			}
+			const bg = activeDocument.createElementNS(SVG_NS, "rect");
+			bg.setAttribute("data-zora-reading-note-hint", "tint");
+			bg.setAttribute("x", String(rect.left));
+			bg.setAttribute("y", String(rect.top));
+			bg.setAttribute("width", String(rect.width));
+			bg.setAttribute("height", String(rect.height));
+			bg.setAttribute("rx", "2");
+			bg.setAttribute("ry", "2");
+			bg.setAttribute("fill", purpleColor);
+			bg.setAttribute("fill-opacity", "0.08");
+			setSvgInteractionAttributes(bg, { pointerEvents: "none" });
+			group.appendChild(bg);
+		}
 		return group;
 	}
 
@@ -213,6 +393,95 @@ export class ReaderAnnotationOverlayRenderer {
 			group.appendChild(outline);
 		}
 
+		return group;
+	}
+
+	createNoteMarkerOverlay(
+		annotation: ReaderFoliateAnnotation,
+		rects: unknown[],
+		options?: ComputeNoteMarkerOptions
+	): SVGElement {
+		const group = activeDocument.createElementNS(SVG_NS, "g");
+		group.setAttribute("data-zora-note-marker", "group");
+		const rectList = rects as RawViewportRect[];
+		const anchorRect = createViewportRectFromRawRectList(rectList);
+
+		const size = 8;
+		const hitSize = 18;
+		const cornerRadius = 2.0;
+
+		const position = computeNoteMarkerPosition(rectList, size, options);
+		if (!position) {
+			return group;
+		}
+
+		const markerX = position.x;
+		const markerY = position.y;
+
+		const purpleColor = "#8b5cf6";
+		const purpleBorder = "#7c3aed";
+		const fillColor = "#ffffff";
+
+		const badge = activeDocument.createElementNS(SVG_NS, "rect");
+		badge.setAttribute("data-zora-note-marker", "badge");
+		badge.setAttribute("x", String(markerX));
+		badge.setAttribute("y", String(markerY));
+		badge.setAttribute("width", String(size));
+		badge.setAttribute("height", String(size));
+		badge.setAttribute("rx", String(cornerRadius));
+		badge.setAttribute("ry", String(cornerRadius));
+		badge.setAttribute("fill", purpleColor);
+		badge.setAttribute("stroke", purpleBorder);
+		badge.setAttribute("stroke-width", "0.75");
+		setSvgInteractionAttributes(badge, { pointerEvents: "none" });
+
+		const icon = activeDocument.createElementNS(SVG_NS, "path");
+		icon.setAttribute("data-zora-note-marker", "icon");
+		const pad = 1.4;
+		const x0 = markerX + pad;
+		const y0 = markerY + pad;
+		const w = size - pad * 2;
+		const h = size - pad * 2;
+		icon.setAttribute(
+			"d",
+			`M ${x0} ${y0} h ${w * 0.65} l ${w * 0.35} ${h * 0.35} v ${h * 0.65} h ${-w} Z M ${x0 + w * 0.22} ${y0 + h * 0.45} h ${w * 0.55} M ${x0 + w * 0.22} ${y0 + h * 0.72} h ${w * 0.38}`
+		);
+		icon.setAttribute("fill", "none");
+		icon.setAttribute("stroke", fillColor);
+		icon.setAttribute("stroke-width", "0.75");
+		icon.setAttribute("stroke-linecap", "round");
+		icon.setAttribute("stroke-linejoin", "round");
+		setSvgInteractionAttributes(icon, { pointerEvents: "none" });
+
+		const hitOffset = (hitSize - size) / 2;
+		const hitArea = activeDocument.createElementNS(SVG_NS, "rect");
+		hitArea.setAttribute("data-zora-note-marker", "hit-area");
+		hitArea.setAttribute("x", String(markerX - hitOffset));
+		hitArea.setAttribute("y", String(markerY - hitOffset));
+		hitArea.setAttribute("width", String(hitSize));
+		hitArea.setAttribute("height", String(hitSize));
+		hitArea.setAttribute("rx", String(cornerRadius + 1.5));
+		hitArea.setAttribute("ry", String(cornerRadius + 1.5));
+		hitArea.setAttribute("fill", "#000000");
+		hitArea.setAttribute("fill-opacity", "0.001");
+		hitArea.setAttribute("role", "button");
+		hitArea.setAttribute("aria-label", "读书笔记 Marker");
+		setSvgInteractionAttributes(hitArea, { cursor: "pointer", pointerEvents: "auto" });
+
+		const handleMarkerClick = (event: Event) => {
+			event.preventDefault();
+			event.stopPropagation();
+			if (this.ports.onNoteMarkerClick) {
+				this.ports.onNoteMarkerClick(annotation, badge, anchorRect);
+			} else {
+				this.ports.onCommentMarkerClick(annotation.cfiRange, badge, anchorRect);
+			}
+		};
+		hitArea.addEventListener("click", handleMarkerClick);
+
+		group.appendChild(hitArea);
+		group.appendChild(badge);
+		group.appendChild(icon);
 		return group;
 	}
 
