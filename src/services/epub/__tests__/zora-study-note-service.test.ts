@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   appendBookReadingNote,
+  appendComprehensionStudyNote,
   appendGrammarStudyNote,
   appendVocabularyStudyNote,
   buildEpubDeepLink,
@@ -47,7 +48,7 @@ describe("zora-study-note-service", () => {
     expect(link).toContain("chapter=2");
   });
 
-  it("appends vocabulary and grammar to Notes/外文笔记/<book>.md, and reading notes to Notes/<book>.md", async () => {
+  it("appends vocabulary, comprehension and grammar to Notes/外文笔记/<book>.md, and reading notes to Notes/<book>.md", async () => {
     const mockApp = createMockApp();
     const bookTitle = "Flowers for Algernon";
 
@@ -70,7 +71,39 @@ describe("zora-study-note-service", () => {
     expect(foreignContent).toContain("> [!abstract]- 📖 old · 形容词");
     expect(foreignContent).toContain("[↗ 回到原文]");
 
-    // 2. Add grammar to 外文笔记
+    // 2. Add comprehension (简易理解) to 外文笔记
+    await appendComprehensionStudyNote(mockApp, {
+      sentence: "I didn't know what he was gonna do and I was holding on tight.",
+      translation: "我不知道他准备做什么，而我正紧紧抓住。",
+      howToRead: [
+        { chunk: "I didn't know", translation: "我不知道" },
+        { chunk: "what he was gonna do", translation: "他准备做什么" },
+      ],
+      keyPatterns: [
+        { pattern: "didn't know what...", meaning: "不知道……" },
+      ],
+      specialNotes: [
+        { target: "gonna", explanation: "口语形式" },
+      ],
+      bookPath: "Books/Flowers.epub",
+      bookTitle,
+      cfiRange: "epubcfi(/6/2!/4/15:0)",
+    });
+
+    foreignContent = mockApp._store.get(foreignNotePath);
+    expect(foreignContent).toContain("## 简易理解");
+    expect(foreignContent).toContain("> [!example]- 💡 理解");
+    expect(foreignContent).toContain("> **原文**：I didn't know what he was gonna do and I was holding on tight.");
+    expect(foreignContent).toContain("> **中文译文**：我不知道他准备做什么，而我正紧紧抓住。");
+    expect(foreignContent).toContain("> **怎么读**：");
+    expect(foreignContent).toContain("> - I didn't know → 我不知道");
+    expect(foreignContent).toContain("> **值得记住**：");
+    expect(foreignContent).toContain("> - **didn't know what...**：不知道……");
+    expect(foreignContent).toContain("> **这里为什么这样说**：");
+    expect(foreignContent).toContain("> - （`gonna`）口语形式");
+    expect(foreignContent).toContain("[↗ 回到原文]");
+
+    // 3. Add grammar to 外文笔记
     await appendGrammarStudyNote(mockApp, {
       sentence: "He would have gone...",
       structure: "主句 + 条件从句",
@@ -87,7 +120,7 @@ describe("zora-study-note-service", () => {
     expect(foreignContent).toContain("**核心结构**：主句 + 条件从句");
     expect(foreignContent).toContain("- **虚拟语气**（`would have gone`）：对过去的虚拟");
 
-    // 3. Add reading note to Book Note (Notes/读书笔记/<book>.md)
+    // 4. Add reading note to Book Note (Notes/读书笔记/<book>.md)
     const result = await appendBookReadingNote(mockApp, {
       note: "这里作者使用了极具深意的对比。",
       selectedText: "The shadows lengthened...",
@@ -107,5 +140,95 @@ describe("zora-study-note-service", () => {
 
     // Verify 外文笔记 does NOT contain 读书笔记/随手笔记
     expect(mockApp._store.get(foreignNotePath)).not.toContain("## 随手笔记");
+  });
+
+  it("appends block-level and item-level comprehension notes with distinct types", async () => {
+    const mockApp = createMockApp();
+    const bookTitle = "Flowers for Algernon";
+    const bookPath = "Books/Flowers.epub";
+    const cfiRange = "epubcfi(/6/2!/4/10:0)";
+    const sentence = "I didn't know what he was gonna do.";
+
+    // 1. Module level 怎么读
+    await (await import("../../ai/zora/zora-study-note-service")).appendComprehensionHowToReadNote(mockApp, {
+      sentence,
+      items: [
+        { chunk: "I didn't know", translation: "我不知道" },
+        { chunk: "what he was gonna do", translation: "他打算做什么" },
+      ],
+      bookPath,
+      bookTitle,
+      cfiRange,
+    });
+
+    // 2. Single item 怎么读
+    await (await import("../../ai/zora/zora-study-note-service")).appendComprehensionSingleChunkNote(mockApp, {
+      sentence,
+      chunk: "what he was gonna do",
+      translation: "他打算做什么",
+      bookPath,
+      bookTitle,
+      cfiRange,
+    });
+
+    // 3. Module level 值得记住
+    await (await import("../../ai/zora/zora-study-note-service")).appendComprehensionKeyPatternsNote(mockApp, {
+      sentence,
+      items: [{ pattern: "keep telling sb to do sth", meaning: "一直叫某人做某事" }],
+      bookPath,
+      bookTitle,
+      cfiRange,
+    });
+
+    // 4. Single item 值得记住
+    await (await import("../../ai/zora/zora-study-note-service")).appendComprehensionSinglePatternNote(mockApp, {
+      sentence,
+      pattern: "get sb + adjective",
+      meaning: "使某人变得……",
+      bookPath,
+      bookTitle,
+      cfiRange,
+    });
+
+    // 5. Module level 为什么这样说
+    await (await import("../../ai/zora/zora-study-note-service")).appendComprehensionSpecialNotesNote(mockApp, {
+      sentence: "I am 32 yeres old.",
+      items: [
+        {
+          target: "yeres",
+          explanation: "原文采用非标准拼写，标准形式为 years；属于人物书写特征，保留原文。",
+        },
+      ],
+      bookPath,
+      bookTitle,
+      cfiRange,
+    });
+
+    // 6. Transfer example 顺手记一下 (迁移例句)
+    await (await import("../../ai/zora/zora-study-note-service")).appendComprehensionTransferNote(mockApp, {
+      sentence,
+      exampleSentence: "She kept asking me the same question.",
+      exampleTranslation: "她一直问我同一个问题。",
+      pattern: "keep doing sth",
+      bookPath,
+      bookTitle,
+      cfiRange,
+    });
+
+    const filePath = getStudyNoteFilePath(bookTitle);
+    const content = mockApp._store.get(filePath);
+
+    expect(content).toContain("> [!example]- 💡 怎么读");
+    expect(content).toContain("> - I didn't know → 我不知道");
+    expect(content).toContain("> **意群**：what he was gonna do → 他打算做什么");
+    expect(content).toContain("> [!example]- 💡 值得记住");
+    expect(content).toContain("> - **keep telling sb to do sth**：一直叫某人做某事");
+    expect(content).toContain("> **表达**：**get sb + adjective** → 使某人变得……");
+    expect(content).toContain("> [!example]- 💡 为什么这样说");
+    expect(content).toContain("> - （`yeres`）原文采用非标准拼写");
+    expect(content).toContain("> [!example]- 💡 迁移例句");
+    expect(content).toContain("> **例句**：She kept asking me the same question.");
+    expect(content).toContain("> **理解**：她一直问我同一个问题。");
+    expect(content).toContain("> **搭配**：keep doing sth");
   });
 });

@@ -10,7 +10,7 @@ import {
 } from './toolbar-positioning';
 
 describe('toolbar-positioning', () => {
-	it('floats mobile toolbars below the selection when the native menu stays above', () => {
+	it('always docks mobile toolbars at the bottom decoupled from selection', () => {
 		const anchorRect = { top: 80, left: 40, bottom: 96, right: 96, width: 56, height: 16 };
 		const result = computeToolbarPosition({
 			anchorRect,
@@ -21,15 +21,14 @@ describe('toolbar-positioning', () => {
 			mobile: true,
 		});
 
-		expect(estimateNativeSelectionMenuSide(anchorRect, 480)).toBe('above');
-		expect(result.mode).toBe('floating');
-		expect(result.isBelowAnchor).toBe(true);
-		expect(result.top).toBe(108);
-		expect(result.left).toBe(12);
+		expect(result.mode).toBe('docked');
+		expect(result.top).toBe(0);
+		expect(result.left).toBe(20);
+		expect(result.arrowOffset).toBe(0);
 		expect(result.anchorRect).toEqual(anchorRect);
 	});
 
-	it('floats mobile toolbars below the selection when the native menu stays above', () => {
+	it('docks mobile toolbars with horizontally clamped centered position', () => {
 		const anchorRect = { top: 120, left: 140, bottom: 144, right: 204, width: 64, height: 24 };
 		const result = computeToolbarPosition({
 			anchorRect,
@@ -40,60 +39,10 @@ describe('toolbar-positioning', () => {
 			mobile: true,
 		});
 
-		expect(estimateNativeSelectionMenuSide(anchorRect, 720)).toBe('above');
-		expect(mirrorFloatingSide('above')).toBe('bottom');
-		expect(result.mode).toBe('floating');
-		expect(result.isBelowAnchor).toBe(true);
-		expect(result.top).toBe(156);
-		expect(result.left).toBe(62);
-	});
-
-	it('docks mobile toolbars when the native menu flips below near the top edge', () => {
-		const anchorRect = { top: 8, left: 40, bottom: 24, right: 96, width: 56, height: 16 };
-		const result = computeToolbarPosition({
-			anchorRect,
-			containerWidth: 320,
-			containerHeight: 480,
-			toolbarWidth: 220,
-			toolbarHeight: 72,
-			mobile: true,
-		});
-
-		expect(estimateNativeSelectionMenuSide(anchorRect, 480)).toBe('below');
-		expect(mirrorFloatingSide('below')).toBe('top');
-		expect(result.mode).toBe('docked');
-	});
-
-	it('docks mobile toolbars when floating would overlap the selection', () => {
-		const result = computeToolbarPosition({
-			anchorRect: { top: 10, left: 40, bottom: 25, right: 96, width: 56, height: 15 },
-			containerWidth: 320,
-			containerHeight: 100,
-			toolbarWidth: 280,
-			toolbarHeight: 72,
-			mobile: true,
-		});
-
 		expect(result.mode).toBe('docked');
 		expect(result.top).toBe(0);
-		expect(result.left).toBe(12);
+		expect(result.left).toBe(85);
 		expect(result.arrowOffset).toBe(0);
-	});
-
-	it('docks mobile toolbars when the mirrored side lacks room', () => {
-		const anchorRect = { top: 360, left: 40, bottom: 376, right: 96, width: 56, height: 16 };
-		const result = computeToolbarPosition({
-			anchorRect,
-			containerWidth: 320,
-			containerHeight: 400,
-			toolbarWidth: 220,
-			toolbarHeight: 72,
-			mobile: true,
-			insetBottom: resolveMobileFloatingInsetBottom(56),
-		});
-
-		expect(estimateNativeSelectionMenuSide(anchorRect, 400)).toBe('above');
-		expect(result.mode).toBe('docked');
 	});
 
 	it('places floating toolbars above the anchor when space is available', () => {

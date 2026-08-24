@@ -17,10 +17,12 @@ import type { ReaderAnchorPoint, ReaderViewportRect } from '../../services/epub/
 	import type { IntegratedAISettings } from '../../config/integrated-ai-settings';
 	import type { ZoraSelectionTranslationInput } from '../../services/ai/zora/zora-translation-service';
 	import SelectionDictionaryPopover from './SelectionDictionaryPopover.svelte';
+	import SelectionComprehensionPopover from './SelectionComprehensionPopover.svelte';
 	import SelectionGrammarPopover from './SelectionGrammarPopover.svelte';
 	import SelectionNotePopover from './SelectionNotePopover.svelte';
 	import { showNotification } from '../../utils/notifications';
 	import { domInstanceOf } from '../../utils/dom-instance-of';
+	import { logMobileEvent, logMobileError } from '../../utils/zora-mobile-logger';
 	import {
 		computeToolbarPosition,
 		createEventBinder,
@@ -28,12 +30,21 @@ import type { ReaderAnchorPoint, ReaderViewportRect } from '../../services/epub/
 		shouldDismissToolbarOnPointerDown,
 		resolveMobileFloatingInsetBottom,
 	} from './toolbar-positioning';
+	import { expandRangeToSentence, expandRangeToParagraph } from './sentence-selection';
+	import { extractWordRangeFromTextNode } from './mobile-tap-selection';
+	import { getWorkspaceBounds } from '../../utils/mobile-modal-bounds';
 
 	type ExternalSelectionState = {
+		source?: string;
 		text: string;
 		cfiRange: string;
 		rect: DOMRect;
 		rects?: DOMRect[];
+		range?: Range;
+		frame?: ReaderFrame;
+		frameDocument?: Document;
+		initialWordRange?: Range;
+		initialWordText?: string;
 		clear?: () => void;
 	};
 
@@ -51,6 +62,7 @@ import type { ReaderAnchorPoint, ReaderViewportRect } from '../../services/epub/
 		boundsEl?: HTMLElement | null;
 		mobileDockBottomOffset?: number;
 		externalSelection?: ExternalSelectionState | null;
+		onCustomSelectionExpand?: (newRange: Range, newText: string, newCfiRange: string) => void;
 		onHighlight?: (text: string, cfiRange: string, color: string, style?: EpubHighlightStyle) => void | Promise<void>;
 		onInsertToNote?: (text: string, cfiRange: string, color?: string, style?: EpubHighlightStyle) => void;
 		onCopySelectionLink?: (
@@ -78,6 +90,7 @@ import type { ReaderAnchorPoint, ReaderViewportRect } from '../../services/epub/
 		boundsEl = null,
 		mobileDockBottomOffset = 0,
 		externalSelection = null,
+		onCustomSelectionExpand,
 		onHighlight,
 		onInsertToNote,
 		onCopySelectionLink,
@@ -107,11 +120,35 @@ import type { ReaderAnchorPoint, ReaderViewportRect } from '../../services/epub/
 	let activeClearSelection: (() => void) | null = null;
 	let pendingExternalSelectionHideFrame: number | null = null;
 	let activeToolbarMenu: Menu | null = null;
+	let pendingCollapsedHideTimer: ReturnType<typeof setTimeout> | null = null;
+	let activeCustomRange: Range | null = null;
+	let activeCustomGeometry: { rect: DOMRect; rects: DOMRect[]; anchorPoint?: ReaderAnchorPoint } | null = null;
+	let activeInitialWordRange: Range | null = null;
+	let activeInitialWordText: string | null = null;
+	let activeGranularity = $state<'word' | 'sentence' | 'paragraph'>('word');
 let lookupSelection: ZoraSelectionTranslationInput & { anchorRect: DOMRect; anchorRects: DOMRect[]; anchorPoint?: ReaderAnchorPoint } | null = $state(null);
 let lookupViewportEl: HTMLElement | null = $state(null);
-let activePopoverType = $state<'dict' | 'grammar' | 'note' | null>(null);
+let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | null>(null);
 
 	const isMobileToolbar = Platform.isMobile || activeDocument.body.classList.contains('is-mobile');
+	let mobileBottomClearance = $state(0);
+
+	function updateMobileBottomClearance() {
+		if (!isMobileToolbar) return;
+		try {
+			const bounds = getWorkspaceBounds();
+			mobileBottomClearance = Math.max(0, bounds.bottom);
+		} catch {
+			mobileBottomClearance = 0;
+		}
+	}
+
+	function clearPendingCollapsedHide() {
+		if (pendingCollapsedHideTimer !== null) {
+			clearTimeout(pendingCollapsedHideTimer);
+			pendingCollapsedHideTimer = null;
+		}
+	}
 
 	function icon(node: HTMLElement, name: string) {
 		setIcon(node, name);
@@ -259,6 +296,7 @@ let activePopoverType = $state<'dict' | 'grammar' | 'note' | null>(null);
 	}
 
 	function hideToolbar() {
+		clearPendingCollapsedHide();
 		dismissActiveToolbarMenu();
 		clearPendingExternalSelectionHide();
 		isVisible = false;
@@ -268,10 +306,16 @@ let activePopoverType = $state<'dict' | 'grammar' | 'note' | null>(null);
 		selectedText = '';
 		currentCfiRange = '';
 		activeClearSelection = null;
+		activeCustomRange = null;
+		activeCustomGeometry = null;
+		activeInitialWordRange = null;
+		activeInitialWordText = null;
+		activeGranularity = 'word';
 		stopPositionTracking();
 	}
 
 	function clearAndHide() {
+		clearPendingCollapsedHide();
 		if (activeClearSelection) {
 			activeClearSelection();
 		} else if (iframeDoc) {
@@ -373,15 +417,37 @@ let activePopoverType = $state<'dict' | 'grammar' | 'note' | null>(null);
 	}
 
 	function prepareLookupSelection() {
-		if (!selectedText || !currentCfiRange || !activeFrame) return null;
-		const frameWindow = activeFrame.window || activeFrame.frameDocument?.defaultView;
-		const frameDocument = frameWindow?.document;
-		const liveSelection = frameDocument?.getSelection?.();
-		const range = liveSelection && liveSelection.rangeCount > 0 ? liveSelection.getRangeAt(0).cloneRange() : null;
+		if (!selectedText || !currentCfiRange) return null;
 		const viewportEl = getViewportContainer(activeFrame);
 		if (!viewportEl) return null;
-		const geometry = liveSelection ? resolveSelectionGeometry(currentCfiRange, activeFrame, liveSelection) : null;
+
+		let range: Range | null = activeCustomRange;
+		let geometry: { rect: DOMRect; rects: DOMRect[]; anchorPoint?: ReaderAnchorPoint } | null = activeCustomGeometry;
+
+		if (activeFrame) {
+			const frameWindow = activeFrame.window || activeFrame.frameDocument?.defaultView;
+			const frameDocument = frameWindow?.document;
+			const liveSelection = frameDocument?.getSelection?.();
+			if (liveSelection && liveSelection.rangeCount > 0 && !range) {
+				range = liveSelection.getRangeAt(0).cloneRange();
+			}
+			if (!geometry && liveSelection && liveSelection.rangeCount > 0) {
+				geometry = resolveSelectionGeometry(currentCfiRange, activeFrame, liveSelection);
+			}
+		}
+
+		if (!geometry && currentCfiRange) {
+			const navigationRect = readerService.getNavigationTargetRect({
+				cfi: currentCfiRange,
+				text: selectedText,
+			});
+			if (navigationRect) {
+				geometry = { rect: navigationRect, rects: [navigationRect] };
+			}
+		}
+
 		if (!geometry) return null;
+
 		return {
 			selection: {
 				text: selectedText,
@@ -389,7 +455,7 @@ let activePopoverType = $state<'dict' | 'grammar' | 'note' | null>(null);
 				chapter: readerService.getCurrentChapterTitle?.() || '',
 				bookPath: book?.filePath || '',
 				bookTitle: book?.metadata?.title || '',
-				context: extractSelectionContext(iframeDoc, selectedText),
+				context: extractSelectionContext(iframeDoc, selectedText, 240, range),
 				range,
 				anchorRect: geometry.rect,
 				anchorRects: geometry.rects,
@@ -405,6 +471,15 @@ let activePopoverType = $state<'dict' | 'grammar' | 'note' | null>(null);
 		lookupSelection = prepared.selection;
 		lookupViewportEl = prepared.viewportEl;
 		activePopoverType = 'dict';
+		hideToolbar();
+	}
+
+	function handleComprehensionLookup() {
+		const prepared = prepareLookupSelection();
+		if (!prepared || !translationSettings) return;
+		lookupSelection = prepared.selection;
+		lookupViewportEl = prepared.viewportEl;
+		activePopoverType = 'comprehension';
 		hideToolbar();
 	}
 
@@ -443,6 +518,114 @@ let activePopoverType = $state<'dict' | 'grammar' | 'note' | null>(null);
 		lookupViewportEl = null;
 		activePopoverType = null;
 		clearAndHide();
+	}
+
+	async function handleGranularityChange(granularity: 'word' | 'sentence' | 'paragraph') {
+		const doc = iframeDoc || activeFrame?.frameDocument;
+		if (!doc) return;
+
+		let targetRange: Range | null = null;
+		let targetText = '';
+
+		if (granularity === 'word') {
+			if (activeInitialWordRange && activeInitialWordText) {
+				targetRange = activeInitialWordRange.cloneRange();
+				targetText = activeInitialWordText;
+			} else {
+				let baseRange = activeCustomRange;
+				if (!baseRange && activeFrame) {
+					const frameWin = activeFrame.window || activeFrame.frameDocument?.defaultView;
+					const live = frameWin?.getSelection?.();
+					if (live && live.rangeCount > 0) baseRange = live.getRangeAt(0);
+				}
+				if (baseRange) {
+					const node = baseRange.startContainer;
+					const offset = baseRange.startOffset;
+					if (domInstanceOf(node, Text)) {
+						const wordRes = extractWordRangeFromTextNode(doc, node, offset);
+						if (wordRes) {
+							targetRange = wordRes.range;
+							targetText = wordRes.text;
+						}
+					}
+				}
+			}
+		} else if (granularity === 'sentence') {
+			let baseRange = activeInitialWordRange || activeCustomRange;
+			if (!baseRange && activeFrame) {
+				const frameWin = activeFrame.window || activeFrame.frameDocument?.defaultView;
+				const live = frameWin?.getSelection?.();
+				if (live && live.rangeCount > 0) baseRange = live.getRangeAt(0);
+			}
+			if (baseRange) {
+				const expanded = expandRangeToSentence(baseRange, doc);
+				if (expanded) {
+					targetRange = expanded.range;
+					targetText = expanded.text;
+				}
+			}
+		} else if (granularity === 'paragraph') {
+			let baseRange = activeInitialWordRange || activeCustomRange;
+			if (!baseRange && activeFrame) {
+				const frameWin = activeFrame.window || activeFrame.frameDocument?.defaultView;
+				const live = frameWin?.getSelection?.();
+				if (live && live.rangeCount > 0) baseRange = live.getRangeAt(0);
+			}
+			if (baseRange) {
+				const expanded = expandRangeToParagraph(baseRange, doc);
+				if (expanded) {
+					targetRange = expanded.range;
+					targetText = expanded.text;
+				}
+			}
+		}
+
+		if (!targetRange || !targetText) return;
+
+		activeGranularity = granularity;
+		const frame = activeFrame || (readerService.getVisibleFrames ? readerService.getVisibleFrames()[0] : null);
+		const newCfiRange = frame?.cfiFromRange ? frame.cfiFromRange(targetRange) : currentCfiRange;
+		if (!newCfiRange) return;
+
+		selectedText = targetText;
+		currentCfiRange = newCfiRange;
+		activeCustomRange = targetRange;
+		lookupSelection = null;
+		lookupViewportEl = null;
+
+		if (onCustomSelectionExpand) {
+			onCustomSelectionExpand(targetRange, targetText, newCfiRange);
+		}
+
+		const iframe = activeFrame ? getFrameElement(activeFrame) : null;
+		const iframeRect = iframe?.getBoundingClientRect() || { left: 0, top: 0 };
+		const bRect = typeof targetRange.getBoundingClientRect === 'function'
+			? targetRange.getBoundingClientRect()
+			: new DOMRect(0, 0, 0, 0);
+		const rawRects = typeof targetRange.getClientRects === 'function'
+			? Array.from(targetRange.getClientRects())
+			: [];
+		const geometry = {
+			rect: new DOMRect(bRect.left + iframeRect.left, bRect.top + iframeRect.top, bRect.width, bRect.height),
+			rects: rawRects.map((r) => new DOMRect(r.left + iframeRect.left, r.top + iframeRect.top, r.width, r.height)),
+		};
+		activeCustomGeometry = geometry;
+
+		const viewportEl = getViewportContainer(activeFrame);
+		if (geometry && viewportEl) {
+			await positionToolbar(geometry.rect, viewportEl, geometry.rects, geometry.anchorPoint);
+		}
+
+		logMobileEvent("Selection", "GranularityChanged", {
+			granularity,
+			originalLength: selectedText?.length,
+			newLength: targetText.length,
+			cfiRange: newCfiRange,
+		});
+	}
+
+	async function handleExpandSentenceSelection() {
+		await handleGranularityChange('sentence');
 	}
 
 	function handleVaultSearch() {
@@ -509,6 +692,9 @@ let activePopoverType = $state<'dict' | 'grammar' | 'note' | null>(null);
 
 		dismissActiveToolbarMenu();
 		if (isVisible) {
+			if (isMobileToolbar) {
+				return;
+			}
 			clearAndHide();
 		}
 	}
@@ -557,6 +743,7 @@ let activePopoverType = $state<'dict' | 'grammar' | 'note' | null>(null);
 		anchorRects: DOMRect[] = [],
 		anchorPoint?: ReaderAnchorPoint
 	) {
+		updateMobileBottomClearance();
 		isVisible = true;
 		await tick();
 
@@ -625,10 +812,11 @@ let activePopoverType = $state<'dict' | 'grammar' | 'note' | null>(null);
 		binder.bind(scrollHost, 'scroll', scheduleActiveSync, { passive: true });
 		binder.bind(iframeWindow, 'scroll', scheduleActiveSync, { passive: true });
 		binder.bind(iframeWindow, 'resize', scheduleActiveSync);
-		binder.bind(iframeDocument, 'mousedown', handlePointerDownOutside, { capture: true });
-		binder.bind(iframeDocument, 'touchstart', handlePointerDownOutside, { capture: true, passive: true });
-		binder.bind(activeDocument, 'mousedown', handlePointerDownOutside, { capture: true });
-		binder.bind(activeDocument, 'touchstart', handlePointerDownOutside, { capture: true, passive: true });
+		binder.bind(iframeDocument, 'selectionchange', scheduleActiveSync);
+		if (!isMobileToolbar) {
+			binder.bind(iframeDocument, 'mousedown', handlePointerDownOutside, { capture: true });
+			binder.bind(activeDocument, 'mousedown', handlePointerDownOutside, { capture: true });
+		}
 		binder.bind(window, 'resize', scheduleActiveSync);
 		binder.bind(window, 'orientationchange', scheduleActiveSync);
 		binder.bind(visualViewport, 'resize', scheduleActiveSync);
@@ -653,12 +841,39 @@ let activePopoverType = $state<'dict' | 'grammar' | 'note' | null>(null);
 			iframeDoc = iframeWindow.document;
 			const selection = iframeWindow.getSelection();
 			if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+				if (isMobileToolbar) {
+					clearPendingCollapsedHide();
+					pendingCollapsedHideTimer = setTimeout(() => {
+						pendingCollapsedHideTimer = null;
+						const currentSelection = iframeWindow.getSelection();
+						if (!currentSelection || currentSelection.isCollapsed || currentSelection.rangeCount === 0) {
+							hideToolbar();
+							logMobileEvent("Selection", "ToolbarHiddenCollapsed", {
+								rangeCount: currentSelection?.rangeCount ?? 0,
+								isCollapsed: currentSelection?.isCollapsed ?? true,
+							});
+						}
+					}, 200);
+					return;
+				}
 				hideToolbar();
 				return;
 			}
+			clearPendingCollapsedHide();
 
 			const text = selection.toString().trim();
 			if (!text) {
+				if (isMobileToolbar) {
+					clearPendingCollapsedHide();
+					pendingCollapsedHideTimer = setTimeout(() => {
+						pendingCollapsedHideTimer = null;
+						const currentSelection = iframeWindow.getSelection();
+						if (!currentSelection || currentSelection.isCollapsed || currentSelection.rangeCount === 0 || !currentSelection.toString().trim()) {
+							hideToolbar();
+						}
+					}, 200);
+					return;
+				}
 				if (!repositionOnly) {
 					hideToolbar();
 				}
@@ -699,8 +914,16 @@ let activePopoverType = $state<'dict' | 'grammar' | 'note' | null>(null);
 
 			startPositionTracking(frame);
 			await positionToolbar(geometry.rect, viewportEl, geometry.rects, geometry.anchorPoint);
+			logMobileEvent("Selection", "TextSelected", {
+				length: text?.length,
+				snippet: text ? text.slice(0, 30) : "",
+				cfiRange: resolvedCfiRange,
+				rangeCount: selection.rangeCount,
+				isCollapsed: selection.isCollapsed,
+			});
 		} catch (e) {
 			logger.warn('[SelectionToolbar] Failed to sync selection:', e);
+			logMobileError("Selection", e);
 			if (!repositionOnly) {
 				hideToolbar();
 			}
@@ -778,22 +1001,44 @@ let activePopoverType = $state<'dict' | 'grammar' | 'note' | null>(null);
 			selectedText = selection.text;
 			currentCfiRange = selection.cfiRange;
 			activeClearSelection = selection.clear || null;
+			if (selection.frame) {
+				activeFrame = selection.frame;
+			}
+			if (selection.frameDocument) {
+				iframeDoc = selection.frameDocument;
+			}
+			activeCustomRange = selection.range || null;
+			activeCustomGeometry = {
+				rect: selection.rect,
+				rects: selection.rects || [selection.rect],
+			};
+			if (selection.initialWordRange) {
+				activeInitialWordRange = selection.initialWordRange;
+				activeInitialWordText = selection.initialWordText || selection.text;
+			} else {
+				activeInitialWordRange = selection.range ? selection.range.cloneRange() : null;
+				activeInitialWordText = selection.text;
+			}
+			activeGranularity = 'word';
 			stopPositionTracking();
 		});
 		void positionToolbar(selection.rect, viewportEl, selection.rects || [selection.rect]);
 	});
 
 	onMount(() => {
-		activeDocument.addEventListener('mousedown', handlePointerDownOutside, { capture: true });
-		activeDocument.addEventListener('touchstart', handlePointerDownOutside, { capture: true, passive: true });
+		if (!isMobileToolbar) {
+			activeDocument.addEventListener('mousedown', handlePointerDownOutside, { capture: true });
+		}
 		return () => {
-			activeDocument.removeEventListener('mousedown', handlePointerDownOutside, { capture: true });
-			activeDocument.removeEventListener('touchstart', handlePointerDownOutside, { capture: true });
+			if (!isMobileToolbar) {
+				activeDocument.removeEventListener('mousedown', handlePointerDownOutside, { capture: true });
+			}
 			teardownReaderTracking?.();
 			teardownReaderTracking = null;
 			stopPositionTracking();
 			clearPendingSync();
 			clearPendingExternalSelectionHide();
+			clearPendingCollapsedHide();
 		};
 	});
 </script>
@@ -803,7 +1048,7 @@ let activePopoverType = $state<'dict' | 'grammar' | 'note' | null>(null);
 	class:visible={isVisible}
 	class:below-selection={isBelowSelection}
 	class:mobile-docked={toolbarMode === 'docked'}
-	style={`top: ${posTop}px; left: ${posLeft}px; --toolbar-arrow-offset: ${arrowOffset}px; --toolbar-bottom-offset: ${Math.max(0, mobileDockBottomOffset)}px;`}
+	style={`top: ${toolbarMode === 'docked' ? 'auto' : posTop + 'px'}; left: ${posLeft}px; --toolbar-arrow-offset: ${arrowOffset}px; --toolbar-bottom-offset: ${Math.max(0, mobileDockBottomOffset)}px; --epub-mobile-bottom-clearance: ${mobileBottomClearance}px;`}
 	bind:this={toolbarEl}
 >
 	<div class="selection-main-row">
@@ -851,10 +1096,29 @@ let activePopoverType = $state<'dict' | 'grammar' | 'note' | null>(null);
 					<span class="action-label">{t('epub.selectionToolbar.vaultSearch')}</span>
 				</button>
 
+				{#if isMobileToolbar}
+					<button class="clickable-icon action-item granularity-action" class:active={activeGranularity === 'word'} onclick={() => handleGranularityChange('word')} title="选取当前单词" aria-label="词">
+						<span class="action-label">词</span>
+					</button>
+					<button class="clickable-icon action-item granularity-action" class:active={activeGranularity === 'sentence'} onclick={() => handleGranularityChange('sentence')} title="扩展至当前完整句" aria-label="句">
+						<span class="action-label">句</span>
+					</button>
+					<button class="clickable-icon action-item granularity-action" class:active={activeGranularity === 'paragraph'} onclick={() => handleGranularityChange('paragraph')} title="扩展至当前段落" aria-label="段">
+						<span class="action-label">段</span>
+					</button>
+				{/if}
+
 				{#if translationSettings?.enabled !== false}
 					<button class="clickable-icon action-item accent" onclick={handleDictionaryLookup} title={isDictionaryLookupCandidate(selectedText) ? '词义' : '翻译'} aria-label={isDictionaryLookupCandidate(selectedText) ? '词义' : '翻译'}>
 						<span class="action-icon" use:icon={isDictionaryLookupCandidate(selectedText) ? 'book-open' : 'languages'}></span>
 						<span class="action-label">{isDictionaryLookupCandidate(selectedText) ? '词义' : '翻译'}</span>
+					</button>
+				{/if}
+
+				{#if translationSettings?.enabled !== false}
+					<button class="clickable-icon action-item ai" onclick={handleComprehensionLookup} title="简易理解" aria-label="理解">
+						<span class="action-icon" use:icon={'sparkles'}></span>
+						<span class="action-label">理解</span>
 					</button>
 				{/if}
 
@@ -889,6 +1153,17 @@ let activePopoverType = $state<'dict' | 'grammar' | 'note' | null>(null);
 {#if lookupSelection && lookupViewportEl}
 	{#if activePopoverType === 'dict' && translationSettings}
 		<SelectionDictionaryPopover
+			{app}
+			settings={translationSettings}
+			selection={lookupSelection}
+			anchorRect={lookupSelection.anchorRect}
+			anchorRects={lookupSelection.anchorRects}
+			anchorPoint={lookupSelection.anchorPoint}
+			viewportEl={lookupViewportEl}
+			onClose={closePopover}
+		/>
+	{:else if activePopoverType === 'comprehension' && translationSettings}
+		<SelectionComprehensionPopover
 			{app}
 			settings={translationSettings}
 			selection={lookupSelection}

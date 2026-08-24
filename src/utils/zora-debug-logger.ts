@@ -47,16 +47,10 @@ export function logZoraSettings(msg: string, data?: any): void {
     // 1. Console log
     console.log("[Zora Settings]", msg, data !== undefined ? data : "");
 
-    // 2. Append to log file in Vault plugin dir (if Node fs is available in Electron)
-    if (typeof require !== "undefined") {
-      try {
-        const fs = require("fs");
-        const logPath = "C:\\Users\\xxzfc\\OneDrive\\应用\\remotely-save\\English Reading Vault\\.obsidian\\plugins\\zora-reader\\zora-debug.log";
-        fs.appendFileSync(logPath, logLine + "\n");
-      } catch (fsErr) {
-        // ignore fs error
-      }
-    }
+    // 2. Append via mobile/vault logger
+    void import("./zora-mobile-logger").then(({ logMobileEvent }) => {
+      logMobileEvent("Settings", msg, typeof data === "object" && data !== null ? data : { raw: data });
+    }).catch(() => {});
   } catch (e) {
     console.error("[Zora Settings Logger Error]", e);
   }

@@ -8,6 +8,8 @@ import { isBuiltinTranslationEnabled } from "../../config/selection-translation-
 import { BUILTIN_WEB_TRANSLATION_PROVIDERS } from "../../config/web-translation-providers";
 import { getEpubBacklinkHighlightService } from "../../services/epub/epub-backlink-highlight-access";
 import { scheduleEpubAnnotationIndexWarmup } from "../../services/epub/epub-annotation-index";
+import { getZoraSyncService } from "../../services/sync/ZoraSyncService";
+import { runZoraSyncV2Migration } from "../../services/sync/zora-sync-migration";
 import { listBookNotesExportTemplateFiles } from "../../services/epub/book-notes-export/template-catalog";
 import { getVaultFileBasename } from "../../utils/VaultMarkdownFileSuggest";
 import { showNotification } from "../../utils/notifications";
@@ -448,6 +450,27 @@ export function mountEpubBasicSettings(options: EpubBasicSettingsMountOptions): 
 				} catch (error) {
 					console.error("[EpubSettings] rebuild highlight index failed:", error);
 					showNotification(t("epub.settings.basic.rebuildHighlightIndexFailed"), "error");
+				} finally {
+					button.setDisabled(false);
+				}
+			});
+		});
+
+	new Setting(hosts.diagnostics)
+		.setName("跨设备同步状态 (Sync V2)")
+		.setDesc("查看设备标识、高亮/笔记同步统计及多端同步进度")
+		.setClass("epub-sync-diagnostics-setting")
+		.addButton((button) => {
+			button.setButtonText("重新载入同步数据");
+			button.onClick(async () => {
+				button.setDisabled(true);
+				try {
+					const result = await runZoraSyncV2Migration(plugin.app);
+					const syncService = getZoraSyncService(plugin.app);
+					await syncService.checkActiveBookDirChanged();
+					showNotification(`同步数据已刷新: 迁移 ${result.migratedBookIds.length} 本书，高亮 ${result.counts.highlights} 条`, "success");
+				} catch (err) {
+					showNotification("载入同步数据失败", "error");
 				} finally {
 					button.setDisabled(false);
 				}

@@ -365,24 +365,24 @@ export function computeToolbarPosition({
 		sideSelectionBounds.width = sideSelectionBounds.right - sideSelectionBounds.left;
 		sideSelectionBounds.height = sideSelectionBounds.bottom - sideSelectionBounds.top;
 	}
-	const nativeMenuSide = mobile
-		? estimateNativeSelectionMenuSide(sideSelectionBounds, containerHeight, edgeMargin)
-		: null;
-	const resolvedPreferredSide: FloatingSidePreference = mobile
-		? mirrorFloatingSide(nativeMenuSide!)
-		: preferredSide;
-	const side = mobile
-		? resolvedPreferredSide
-		: chooseFloatingSide(
-			sideSelectionBounds,
-			containerHeight,
-			toolbarHeight,
-			gap,
-			edgeMargin,
-			insetTop,
-			insetBottom,
-			resolvedPreferredSide
-		);
+	if (mobile) {
+		const minLeft = edgeMargin;
+		const maxLeft = containerWidth - edgeMargin - toolbarWidth;
+		const idealLeft = (containerWidth - toolbarWidth) / 2;
+		const left = clamp(idealLeft, minLeft, maxLeft);
+		return createDockedPosition(left, anchorRect);
+	}
+
+	const side = chooseFloatingSide(
+		sideSelectionBounds,
+		containerHeight,
+		toolbarHeight,
+		gap,
+		edgeMargin,
+		insetTop,
+		insetBottom,
+		preferredSide
+	);
 	const activeAnchorRect = chooseAnchorRectForSide(normalizedRects, side, anchorPoint);
 	const anchorX = getAnchorX(activeAnchorRect, anchorPoint, align);
 	const minLeft = edgeMargin;
@@ -394,23 +394,7 @@ export function computeToolbarPosition({
 			: anchorX;
 	const left = clamp(idealLeft, minLeft, maxLeft);
 
-	if (
-		mobile &&
-		!mobileMirrorSideHasRoom(
-			side,
-			sideSelectionBounds,
-			containerHeight,
-			toolbarHeight,
-			gap,
-			edgeMargin,
-			insetTop,
-			insetBottom
-		)
-	) {
-		return createDockedPosition(left, activeAnchorRect);
-	}
-
-	const floating = computeFloatingPlacement({
+	return computeFloatingPlacement({
 		activeAnchorRect,
 		anchorX,
 		left,
@@ -424,24 +408,6 @@ export function computeToolbarPosition({
 		gap,
 		arrowPadding,
 	});
-
-	if (!mobile) {
-		return floating;
-	}
-
-	if (
-		shouldUseMobileDockedFallback(
-			floating,
-			toolbarHeight,
-			activeAnchorRect,
-			nativeMenuSide!,
-			gap
-		)
-	) {
-		return createDockedPosition(left, activeAnchorRect);
-	}
-
-	return floating;
 }
 
 export function createEventBinder() {

@@ -7,6 +7,7 @@ import type { EpubStorageService } from "./EpubStorageService";
 import type { HighlightSourceLocator, ReaderHighlight } from "./reader-engine-types";
 import { resolveDisplayProgress } from "./book-progress";
 import type { ConcealedText, HighlightColor } from "./types";
+import { getZoraSyncService } from "../sync/ZoraSyncService";
 import { logger } from "../../utils/logger";
 
 export class EpubAnnotationService {
@@ -489,6 +490,43 @@ export class EpubAnnotationService {
 						presentation: "highlight",
 					});
 				}
+			}
+
+			// Synthesize reading-note markers from ZoraSyncService notes
+			try {
+				const app = (this.storageService as any).app;
+				if (app) {
+					const syncService = getZoraSyncService(app);
+					const syncNotes = await syncService.loadNotes(bookId);
+					for (const sn of syncNotes) {
+						if (sn.type === "reading-note" && sn.cfiRange) {
+							const normCfi = EpubLinkService.normalizeCfi(sn.cfiRange);
+							const existing = Array.from(allHighlightsByKey.values()).find(
+								(h) => EpubLinkService.normalizeCfi(h.cfiRange) === normCfi
+							);
+							if (existing) {
+								existing.style = "reading-note";
+								existing.color = "purple";
+								if (sn.content) existing.commentText = sn.content;
+							} else {
+								allHighlightsByKey.set(`note-${sn.id}`, {
+									cfiRange: sn.cfiRange,
+									color: "purple",
+									style: "reading-note",
+									text: sn.selectedText || "",
+									commentText: sn.content,
+									chapterIndex: sn.chapterIndex,
+									chapterTitle: sn.chapterTitle,
+									createdTime: sn.createdAt ? new Date(sn.createdAt).getTime() : Date.now(),
+									presentation: "highlight",
+									excerptId: sn.id,
+								});
+							}
+						}
+					}
+				}
+			} catch (err) {
+				logger.warn("[EpubAnnotationService] Error loading sync notes for markers:", err);
 			}
 
 			const allHighlights = Array.from(allHighlightsByKey.values());

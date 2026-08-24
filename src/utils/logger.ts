@@ -96,23 +96,10 @@ export class Logger {
 
 	async logHighlightDebugToFile(step: string, data: any): Promise<void> {
 		try {
-			// @ts-ignore
-			const fs = window.require('fs');
-			// @ts-ignore
-			const path = window.require('path');
-			// Get app somehow, but since we are in Obsidian plugin we can use obsidian API
-			// Actually fs and path work.
-			// Let's hardcode the path for diagnostic
-			const logPath = "C:\\Users\\xxzfc\\OneDrive\\应用\\remotely-save\\English Reading Vault\\.obsidian\\plugins\\zora-reader\\zora-highlight-debug.log";
-			const timestamp = new Date().toISOString();
-			const entry = `[${timestamp}] [${step}] | ${JSON.stringify(data)}\n`;
-			if (fs.existsSync(logPath)) {
-				fs.appendFileSync(logPath, entry, 'utf8');
-			} else {
-				fs.writeFileSync(logPath, entry, 'utf8');
-			}
-		} catch (e) {
-			console.error("Diagnostic logger failed", e);
+			const { logMobileEvent } = await import("./zora-mobile-logger");
+			logMobileEvent("HighlightDebug", step, typeof data === "object" && data !== null ? data : { data });
+		} catch {
+			// Fail-safe
 		}
 	}
 

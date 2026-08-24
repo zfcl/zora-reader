@@ -2,6 +2,8 @@ import { TFile, type App } from "obsidian";
 import { EPUB_RUNTIME } from "../../epub/epub-runtime";
 import { DirectoryUtils } from "../../../utils/directory-utils";
 import { EpubLinkService } from "../../epub/EpubLinkService";
+import { getZoraSyncService } from "../../sync/ZoraSyncService";
+import { logMobileEvent, logMobileError } from "../../../utils/zora-mobile-logger";
 
 export interface StudyNoteVocabularyInput {
   word: string;
@@ -21,6 +23,18 @@ export interface StudyNoteGrammarInput {
   structure?: string;
   points?: Array<{ label: string; target?: string; explanation: string }>;
   paraphrase?: string;
+  bookPath: string;
+  bookTitle: string;
+  cfiRange: string;
+  chapterIndex?: number;
+}
+
+export interface StudyNoteComprehensionInput {
+  sentence: string;
+  translation?: string;
+  howToRead?: Array<{ chunk: string; translation: string }>;
+  keyPatterns?: Array<{ pattern: string; meaning: string }>;
+  specialNotes?: Array<{ target?: string; explanation: string }>;
   bookPath: string;
   bookTitle: string;
   cfiRange: string;
@@ -104,7 +118,7 @@ async function writeVaultFile(app: App, filePath: string, content: string): Prom
 export async function appendStudyNoteEntry(
   app: App,
   bookTitle: string,
-  category: "词义" | "语法" | "随手笔记",
+  category: "词义" | "语法" | "简易理解" | "随手笔记" | string,
   calloutMarkdown: string
 ): Promise<string> {
   const filePath = getStudyNoteFilePath(bookTitle);
@@ -138,6 +152,7 @@ export async function appendStudyNoteEntry(
   }
 
   await writeVaultFile(app, filePath, content);
+  logMobileEvent("Notes", "StudyNoteAppended", { bookTitle, category, filePath });
   return filePath;
 }
 
@@ -209,6 +224,206 @@ export async function appendGrammarStudyNote(
   lines.push(`> [↗ 回到原文](${deepLink})`);
 
   return appendStudyNoteEntry(app, input.bookTitle, "语法", lines.join("\n"));
+}
+
+export async function appendComprehensionHowToReadNote(
+  app: App,
+  input: {
+    sentence: string;
+    items: Array<{ chunk: string; translation: string }>;
+    bookPath: string;
+    bookTitle: string;
+    cfiRange: string;
+    chapterIndex?: number;
+  }
+): Promise<string> {
+  const deepLink = buildEpubDeepLink(input.bookPath, input.cfiRange, input.chapterIndex);
+  const lines = [
+    `> [!example]- 💡 怎么读`,
+    `> **原句**：${input.sentence.trim()}`,
+  ];
+  if (input.items && input.items.length > 0) {
+    lines.push(`>`);
+    for (const item of input.items) {
+      lines.push(`> - ${item.chunk} → ${item.translation}`);
+    }
+  }
+  lines.push(`>`);
+  lines.push(`> [↗ 回到原文](${deepLink})`);
+  return appendStudyNoteEntry(app, input.bookTitle, "简易理解", lines.join("\n"));
+}
+
+export async function appendComprehensionSingleChunkNote(
+  app: App,
+  input: {
+    sentence: string;
+    chunk: string;
+    translation: string;
+    bookPath: string;
+    bookTitle: string;
+    cfiRange: string;
+    chapterIndex?: number;
+  }
+): Promise<string> {
+  const deepLink = buildEpubDeepLink(input.bookPath, input.cfiRange, input.chapterIndex);
+  const lines = [
+    `> [!example]- 💡 怎么读`,
+    `> **意群**：${input.chunk.trim()} → ${input.translation.trim()}`,
+    `>`,
+    `> **原句**：${input.sentence.trim()}`,
+    `>`,
+    `> [↗ 回到原文](${deepLink})`,
+  ];
+  return appendStudyNoteEntry(app, input.bookTitle, "简易理解", lines.join("\n"));
+}
+
+export async function appendComprehensionKeyPatternsNote(
+  app: App,
+  input: {
+    sentence: string;
+    items: Array<{ pattern: string; meaning: string }>;
+    bookPath: string;
+    bookTitle: string;
+    cfiRange: string;
+    chapterIndex?: number;
+  }
+): Promise<string> {
+  const deepLink = buildEpubDeepLink(input.bookPath, input.cfiRange, input.chapterIndex);
+  const lines = [
+    `> [!example]- 💡 值得记住`,
+    `> **原句**：${input.sentence.trim()}`,
+  ];
+  if (input.items && input.items.length > 0) {
+    lines.push(`>`);
+    for (const pat of input.items) {
+      lines.push(`> - **${pat.pattern}**：${pat.meaning}`);
+    }
+  }
+  lines.push(`>`);
+  lines.push(`> [↗ 回到原文](${deepLink})`);
+  return appendStudyNoteEntry(app, input.bookTitle, "简易理解", lines.join("\n"));
+}
+
+export async function appendComprehensionSinglePatternNote(
+  app: App,
+  input: {
+    sentence: string;
+    pattern: string;
+    meaning: string;
+    bookPath: string;
+    bookTitle: string;
+    cfiRange: string;
+    chapterIndex?: number;
+  }
+): Promise<string> {
+  const deepLink = buildEpubDeepLink(input.bookPath, input.cfiRange, input.chapterIndex);
+  const lines = [
+    `> [!example]- 💡 值得记住`,
+    `> **表达**：**${input.pattern.trim()}** → ${input.meaning.trim()}`,
+    `>`,
+    `> **原句**：${input.sentence.trim()}`,
+    `>`,
+    `> [↗ 回到原文](${deepLink})`,
+  ];
+  return appendStudyNoteEntry(app, input.bookTitle, "简易理解", lines.join("\n"));
+}
+
+export async function appendComprehensionSpecialNotesNote(
+  app: App,
+  input: {
+    sentence: string;
+    items: Array<{ target?: string; explanation: string }>;
+    bookPath: string;
+    bookTitle: string;
+    cfiRange: string;
+    chapterIndex?: number;
+  }
+): Promise<string> {
+  const deepLink = buildEpubDeepLink(input.bookPath, input.cfiRange, input.chapterIndex);
+  const lines = [
+    `> [!example]- 💡 为什么这样说`,
+    `> **原句**：${input.sentence.trim()}`,
+  ];
+  if (input.items && input.items.length > 0) {
+    lines.push(`>`);
+    for (const note of input.items) {
+      const targetStr = note.target ? `（\`${note.target}\`）` : "";
+      lines.push(`> - ${targetStr}${note.explanation}`);
+    }
+  }
+  lines.push(`>`);
+  lines.push(`> [↗ 回到原文](${deepLink})`);
+  return appendStudyNoteEntry(app, input.bookTitle, "简易理解", lines.join("\n"));
+}
+
+export async function appendComprehensionTransferNote(
+  app: App,
+  input: {
+    sentence: string;
+    exampleSentence: string;
+    exampleTranslation: string;
+    pattern?: string;
+    bookPath: string;
+    bookTitle: string;
+    cfiRange: string;
+    chapterIndex?: number;
+  }
+): Promise<string> {
+  const deepLink = buildEpubDeepLink(input.bookPath, input.cfiRange, input.chapterIndex);
+  const lines = [
+    `> [!example]- 💡 迁移例句`,
+    `> **例句**：${input.exampleSentence.trim()}`,
+    `> **理解**：${input.exampleTranslation.trim()}`,
+  ];
+  if (input.pattern) {
+    lines.push(`> **搭配**：${input.pattern.trim()}`);
+  }
+  lines.push(`>`);
+  lines.push(`> **原句**：${input.sentence.trim()}`);
+  lines.push(`>`);
+  lines.push(`> [↗ 回到原文](${deepLink})`);
+  return appendStudyNoteEntry(app, input.bookTitle, "简易理解", lines.join("\n"));
+}
+
+export async function appendComprehensionStudyNote(
+  app: App,
+  input: StudyNoteComprehensionInput
+): Promise<string> {
+  const deepLink = buildEpubDeepLink(input.bookPath, input.cfiRange, input.chapterIndex);
+  const lines = [
+    `> [!example]- 💡 理解`,
+    `> **原文**：${input.sentence.trim()}`,
+  ];
+  if (input.translation) {
+    lines.push(`>`);
+    lines.push(`> **中文译文**：${input.translation.trim()}`);
+  }
+  if (input.howToRead && input.howToRead.length > 0) {
+    lines.push(`>`);
+    lines.push(`> **怎么读**：`);
+    for (const chunk of input.howToRead) {
+      lines.push(`> - ${chunk.chunk} → ${chunk.translation}`);
+    }
+  }
+  if (input.keyPatterns && input.keyPatterns.length > 0) {
+    lines.push(`>`);
+    lines.push(`> **值得记住**：`);
+    for (const pat of input.keyPatterns) {
+      lines.push(`> - **${pat.pattern}**：${pat.meaning}`);
+    }
+  }
+  if (input.specialNotes && input.specialNotes.length > 0) {
+    lines.push(`>`);
+    lines.push(`> **这里为什么这样说**：`);
+    for (const note of input.specialNotes) {
+      const targetStr = note.target ? `（\`${note.target}\`）` : "";
+      lines.push(`> - ${targetStr}${note.explanation}`);
+    }
+  }
+  lines.push(`>`);
+  lines.push(`> [↗ 回到原文](${deepLink})`);
+
+  return appendStudyNoteEntry(app, input.bookTitle, "简易理解", lines.join("\n"));
 }
 
 export async function appendUserStudyNote(
@@ -303,5 +518,38 @@ export async function appendBookReadingNote(
   }
 
   await writeVaultFile(app, filePath, content);
+
+  try {
+    const syncService = getZoraSyncService(app);
+    const bookId = await syncService.computeBookIdFromFile(input.bookPath);
+    if (bookId) {
+      const noteId = blockId;
+      const annotationId = `ann-${blockId}`;
+      await syncService.saveNote({
+        id: noteId,
+        bookId,
+        annotationId,
+        cfiRange: input.cfiRange,
+        type: "reading-note",
+        content: input.note || "",
+        selectedText: input.selectedText,
+        chapterIndex: input.chapterIndex,
+      });
+      await syncService.saveAnnotation({
+        id: annotationId,
+        bookId,
+        cfiRange: input.cfiRange,
+        type: "reading-note",
+        color: "purple",
+        style: "reading-note",
+        text: input.selectedText,
+        chapterIndex: input.chapterIndex,
+      });
+    }
+  } catch (syncErr) {
+    logMobileError("Notes", "SyncBookReadingNoteFailed", syncErr);
+  }
+
+  logMobileEvent("Notes", "BookReadingNoteAppended", { bookTitle: input.bookTitle, blockId, filePath });
   return { path: filePath, blockId, filePath };
 }

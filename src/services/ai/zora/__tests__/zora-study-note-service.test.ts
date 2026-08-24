@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  appendComprehensionStudyNote,
   appendGrammarStudyNote,
   appendStudyNoteEntry,
   appendUserStudyNote,
@@ -43,7 +44,7 @@ describe("zora-study-note-service", () => {
     expect(link).toContain("chapter=2");
   });
 
-  it("appends vocabulary, grammar and user notes under separate sections in single file", async () => {
+  it("appends vocabulary, comprehension, grammar and user notes under separate sections in single file", async () => {
     const mockApp = createMockApp();
     const bookTitle = "Flowers for Algernon";
 
@@ -67,7 +68,39 @@ describe("zora-study-note-service", () => {
     expect(content).toContain("> **语境义**：最古老的；历史最悠久的");
     expect(content).toContain("[↗ 回到原文]");
 
-    // 2. Add grammar
+    // 2. Add comprehension (简易理解)
+    await appendComprehensionStudyNote(mockApp, {
+      sentence: "I didn't know what he was gonna do and I was holding on tight.",
+      translation: "我不知道他准备做什么，而我正紧紧抓住。",
+      howToRead: [
+        { chunk: "I didn't know", translation: "我不知道" },
+        { chunk: "what he was gonna do", translation: "他准备做什么" },
+      ],
+      keyPatterns: [
+        { pattern: "didn't know what...", meaning: "不知道……" },
+      ],
+      specialNotes: [
+        { target: "gonna", explanation: "口语形式" },
+      ],
+      bookPath: "Books/Flowers.epub",
+      bookTitle,
+      cfiRange: "epubcfi(/6/2!/4/15:0)",
+    });
+
+    content = mockApp._store.get(filePath);
+    expect(content).toContain("## 简易理解");
+    expect(content).toContain("> [!example]- 💡 理解");
+    expect(content).toContain("> **原文**：I didn't know what he was gonna do and I was holding on tight.");
+    expect(content).toContain("> **中文译文**：我不知道他准备做什么，而我正紧紧抓住。");
+    expect(content).toContain("> **怎么读**：");
+    expect(content).toContain("> - I didn't know → 我不知道");
+    expect(content).toContain("> **值得记住**：");
+    expect(content).toContain("> - **didn't know what...**：不知道……");
+    expect(content).toContain("> **这里为什么这样说**：");
+    expect(content).toContain("> - （`gonna`）口语形式");
+    expect(content).toContain("[↗ 回到原文]");
+
+    // 3. Add grammar
     await appendGrammarStudyNote(mockApp, {
       sentence: "He would have gone...",
       explanation: "【核心语法】：虚拟语气，表示对过去的虚拟。",
@@ -81,7 +114,7 @@ describe("zora-study-note-service", () => {
     expect(content).toContain("> [!example]- 🧩 语法");
     expect(content).toContain("> 【核心语法】：虚拟语气");
 
-    // 3. Add user note
+    // 4. Add user note
     await appendUserStudyNote(mockApp, {
       note: "这里用了非常精妙的隐喻",
       selectedText: "The shadows lengthened...",
@@ -95,7 +128,7 @@ describe("zora-study-note-service", () => {
     expect(content).toContain("> [!note]- ✍ 笔记");
     expect(content).toContain("> 这里用了非常精妙的隐喻");
 
-    // 4. Add another vocabulary and verify it inserts under ## 词义 before ## 语法
+    // 5. Add another vocabulary and verify it inserts under ## 词义 before ## 简易理解
     await appendVocabularyStudyNote(mockApp, {
       word: "maze",
       partOfSpeech: "名词",
@@ -107,9 +140,101 @@ describe("zora-study-note-service", () => {
 
     content = mockApp._store.get(filePath);
     const vocabIndex = content.indexOf("## 词义");
+    const compIndex = content.indexOf("## 简易理解");
     const grammarIndex = content.indexOf("## 语法");
     const mazeIndex = content.indexOf("📖 maze");
     expect(mazeIndex).toBeGreaterThan(vocabIndex);
-    expect(mazeIndex).toBeLessThan(grammarIndex);
+    expect(mazeIndex).toBeLessThan(compIndex);
+    expect(compIndex).toBeLessThan(grammarIndex);
+  });
+
+  it("appends block-level and item-level comprehension notes with distinct types", async () => {
+    const mockApp = createMockApp();
+    const bookTitle = "Flowers for Algernon";
+    const bookPath = "Books/Flowers.epub";
+    const cfiRange = "epubcfi(/6/2!/4/10:0)";
+    const sentence = "I didn't know what he was gonna do.";
+
+    // 1. Module level 怎么读
+    await (await import("../zora-study-note-service")).appendComprehensionHowToReadNote(mockApp, {
+      sentence,
+      items: [
+        { chunk: "I didn't know", translation: "我不知道" },
+        { chunk: "what he was gonna do", translation: "他打算做什么" },
+      ],
+      bookPath,
+      bookTitle,
+      cfiRange,
+    });
+
+    // 2. Single item 怎么读
+    await (await import("../zora-study-note-service")).appendComprehensionSingleChunkNote(mockApp, {
+      sentence,
+      chunk: "what he was gonna do",
+      translation: "他打算做什么",
+      bookPath,
+      bookTitle,
+      cfiRange,
+    });
+
+    // 3. Module level 值得记住
+    await (await import("../zora-study-note-service")).appendComprehensionKeyPatternsNote(mockApp, {
+      sentence,
+      items: [{ pattern: "keep telling sb to do sth", meaning: "一直叫某人做某事" }],
+      bookPath,
+      bookTitle,
+      cfiRange,
+    });
+
+    // 4. Single item 值得记住
+    await (await import("../zora-study-note-service")).appendComprehensionSinglePatternNote(mockApp, {
+      sentence,
+      pattern: "get sb + adjective",
+      meaning: "使某人变得……",
+      bookPath,
+      bookTitle,
+      cfiRange,
+    });
+
+    // 5. Module level 为什么这样说
+    await (await import("../zora-study-note-service")).appendComprehensionSpecialNotesNote(mockApp, {
+      sentence: "I am 32 yeres old.",
+      items: [
+        {
+          target: "yeres",
+          explanation: "原文采用非标准拼写，标准形式为 years；属于人物书写特征，保留原文。",
+        },
+      ],
+      bookPath,
+      bookTitle,
+      cfiRange,
+    });
+
+    // 6. Transfer example 顺手记一下 (迁移例句)
+    await (await import("../zora-study-note-service")).appendComprehensionTransferNote(mockApp, {
+      sentence,
+      exampleSentence: "She kept asking me the same question.",
+      exampleTranslation: "她一直问我同一个问题。",
+      pattern: "keep doing sth",
+      bookPath,
+      bookTitle,
+      cfiRange,
+    });
+
+    const filePath = getStudyNoteFilePath(bookTitle);
+    const content = mockApp._store.get(filePath);
+
+    expect(content).toContain("> [!example]- 💡 怎么读");
+    expect(content).toContain("> - I didn't know → 我不知道");
+    expect(content).toContain("> **意群**：what he was gonna do → 他打算做什么");
+    expect(content).toContain("> [!example]- 💡 值得记住");
+    expect(content).toContain("> - **keep telling sb to do sth**：一直叫某人做某事");
+    expect(content).toContain("> **表达**：**get sb + adjective** → 使某人变得……");
+    expect(content).toContain("> [!example]- 💡 为什么这样说");
+    expect(content).toContain("> - （`yeres`）原文采用非标准拼写");
+    expect(content).toContain("> [!example]- 💡 迁移例句");
+    expect(content).toContain("> **例句**：She kept asking me the same question.");
+    expect(content).toContain("> **理解**：她一直问我同一个问题。");
+    expect(content).toContain("> **搭配**：keep doing sth");
   });
 });

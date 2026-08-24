@@ -47,17 +47,24 @@ export function composeVisibleAnnotationHighlight(
 
 export function shouldRenderAnnotationAsConceal(
 	annotation: Pick<ReaderFoliateAnnotation, "cfiRange" | "presentation" | "style">,
-	_currentStrikethroughPresentation?: EpubStrikethroughDisplayMode
+	currentStrikethroughPresentation?: EpubStrikethroughDisplayMode
 ): boolean {
-	return annotation.presentation === "conceal";
+	return (
+		annotation.presentation === "conceal" ||
+		(currentStrikethroughPresentation === "conceal" && annotation.style === "strikethrough")
+	);
 }
 
 /** Highlights treated as concealed for bookmark analytics and concealedCount. */
 export function isHighlightCountedAsConcealed(
 	highlight: Pick<ReaderHighlightInput, "presentation" | "color" | "style">,
-	_strikethroughDisplayMode?: EpubStrikethroughDisplayMode
+	strikethroughDisplayMode?: EpubStrikethroughDisplayMode
 ): boolean {
-	return highlight.presentation === "conceal" || highlight.color === "mask";
+	return (
+		highlight.presentation === "conceal" ||
+		highlight.color === "mask" ||
+		(strikethroughDisplayMode === "conceal" && highlight.style === "strikethrough")
+	);
 }
 
 /** Sidebar snapshot visibility — matches notes panel strikethrough toggle. */

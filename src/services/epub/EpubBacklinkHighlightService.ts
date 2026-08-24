@@ -5,6 +5,7 @@ import { DirectoryUtils } from "../../utils/directory-utils";
 import { safeReadJson } from "../../utils/safe-json-io";
 import { extractBodyContent, parseYAMLFromContent, setCardProperty } from "../../utils/yaml-utils";
 import { logger } from "../../utils/logger";
+import { logMobileEvent } from "../../utils/zora-mobile-logger";
 import { unknownPlainText } from "../../utils/unknown-plain-text";
 import { getReaderHighlightIdentityKey } from "./highlight/highlight-identity";
 import { EpubLinkService } from "./EpubLinkService";
@@ -424,6 +425,16 @@ export class EpubBacklinkHighlightService {
 			boundCanvasPath
 		);
 
+		logMobileEvent("BOOK", "Identity", {
+			relativePath: targetIdentity.filePath,
+			bookId: targetIdentity.sourceId || targetIdentity.fileName,
+			sourceId: targetIdentity.sourceId || "N/A",
+		});
+		logMobileEvent("MARKER", "Count", {
+			foundCount: highlights.length,
+			renderedCount: highlights.length,
+		});
+
 		logger.debug(
 			`[EpubBacklinkHighlightService] Found ${highlights.length} highlights for ${epubFilePath} ` +
 				`(markdown=${manifest.markdownSources.length}, canvas=${manifest.canvasSources.length}, cardData=${manifest.cardDataSources.length})`
@@ -586,6 +597,33 @@ export class EpubBacklinkHighlightService {
 		return resolved.highlights;
 	}
 
+	private async checkBookNotesModifiedSince(
+		targetIdentity: EpubTargetIdentity,
+		savedAtIso: string,
+		cachedMarkdownSources: HighlightSourceFileStamp[]
+	): Promise<boolean> {
+		const cachedPaths = new Set(cachedMarkdownSources.map((s) => normalizePath(s.path)));
+		const savedAtTime = new Date(savedAtIso).getTime();
+		const title = targetIdentity.fileName.replace(/\.epub$/i, "");
+		const candidates = [
+			`Notes/读书笔记/${title}.md`,
+			`Notes/外文笔记/${title}.md`,
+		];
+		for (const candidatePath of candidates) {
+			const normalizedCandidate = normalizePath(candidatePath);
+			const file = this.app.vault.getAbstractFileByPath(normalizedCandidate);
+			if (file && this.isTFile(file)) {
+				if (!cachedPaths.has(normalizedCandidate)) {
+					return true;
+				}
+				if (file.stat.mtime > savedAtTime) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
 	private async tryResolveValidBookCacheEntry(
 		targetIdentity: EpubTargetIdentity,
 		boundCanvasPath?: string | null,
@@ -598,6 +636,14 @@ export class EpubBacklinkHighlightService {
 		const resolvedStore = store ?? (await this.loadDiskCacheStore());
 		const entry = resolvedStore.entries[cacheKey];
 		if (!entry?.manifest || !Array.isArray(entry.highlights)) {
+			return null;
+		}
+		const notesChanged = await this.checkBookNotesModifiedSince(
+			targetIdentity,
+			entry.savedAt,
+			entry.manifest.markdownSources
+		);
+		if (notesChanged) {
 			return null;
 		}
 		const refreshedManifest = await this.refreshManifestStamps(
@@ -719,6 +765,18 @@ export class EpubBacklinkHighlightService {
 				} catch {
 					// Obsidian backlink API is optional/undocumented.
 				}
+			}
+		}
+		const title = targetIdentity.fileName.replace(/\.epub$/i, "");
+		const candidates = [
+			`Notes/读书笔记/${title}.md`,
+			`Notes/外文笔记/${title}.md`,
+		];
+		for (const candidatePath of candidates) {
+			const normalizedCandidate = normalizePath(candidatePath);
+			const file = this.app.vault.getAbstractFileByPath(normalizedCandidate);
+			if (file && this.isTFile(file)) {
+				paths.add(normalizedCandidate);
 			}
 		}
 
@@ -936,8 +994,15 @@ export class EpubBacklinkHighlightService {
 		}
 
 		if (file.extension === "md") {
-			const content = await this.app.vault.cachedRead(file);
-			if (!content.includes("[!EPUB")) {
+			let content = await this.app.vault.cachedRead(file);
+			if (!content || !content.includes("[!EPUB")) {
+				try {
+					content = await this.app.vault.read(file);
+				} catch {
+					/* ignore */
+				}
+			}
+			if (!content || !content.includes("[!EPUB")) {
 				return false;
 			}
 			const targetIdentity = await this.resolveTargetIdentity(epubFilePath);
@@ -1305,8 +1370,25 @@ export class EpubBacklinkHighlightService {
 		let canvasFileNodeBindings: IndexedCanvasFileNodeBinding[] | undefined;
 		try {
 			if (kind === "markdown") {
-				const content = await this.app.vault.cachedRead(file);
+				let content = await this.app.vault.cachedRead(file);
+				if (!content || !content.includes("[!EPUB")) {
+					try {
+						content = await this.app.vault.read(file);
+					} catch {
+						/* ignore */
+					}
+				}
 				directHighlights = this.parseIndexedHighlightsFromTextContent(content, file.path);
+				for (const item of directHighlights) {
+					if (item.highlight.style === "reading-note") {
+						logMobileEvent("READING_NOTE", "Parsed", {
+							markdownPath: file.path,
+							blockId: item.highlight.excerptId || "N/A",
+							cfi: item.highlight.cfiRange,
+							parsed: true,
+						});
+					}
+				}
 			} else if (kind === "cardData") {
 				const content = await this.readStructuredCardDataText(file);
 				if (!content) {

@@ -1,7 +1,7 @@
 <script lang="ts">
   import "../../styles/epub/zora-lookup.css";
   import { onMount, tick, untrack } from "svelte";
-  import type { App } from "obsidian";
+  import { Platform, type App } from "obsidian";
   import type { IntegratedAISettings } from "../../config/integrated-ai-settings";
   import type { ReaderAnchorPoint, ReaderViewportRect } from "../../services/epub/reader-engine-types";
   import type { TranslationResult } from "../../services/ai/zora/translation";
@@ -9,6 +9,8 @@
   import { appendVocabularyStudyNote } from "../../services/ai/zora/zora-study-note-service";
   import { contextPosLabel } from "../../services/ai/zora/translation";
   import { computeToolbarPosition } from "./toolbar-positioning";
+  import { createZoraDraggable } from "./zora-draggable";
+  import { logMobileEvent, logMobileError } from "../../utils/zora-mobile-logger";
 
   interface Props {
     app: App;
@@ -30,10 +32,6 @@
   let isDocked = $state(false);
   let isDragging = $state(false);
   let userDragged = $state(false);
-  let dragStartX = 0;
-  let dragStartY = 0;
-  let popoverStartLeft = 0;
-  let popoverStartTop = 0;
   let vocabState = $state<"idle" | "saving" | "saved" | "error">("idle");
   let vocabMessage = $state("");
   let studyNoteState = $state<"idle" | "saving" | "saved" | "error">("idle");
@@ -41,12 +39,37 @@
   let copied = $state(false);
   let generation = 0;
 
+  const draggable = createZoraDraggable({
+    getPopoverEl: () => popoverEl,
+    getViewportEl: () => viewportEl,
+    getPos: () => ({ left: posLeft, top: posTop }),
+    onDragStart: () => {
+      userDragged = true;
+      isDocked = false;
+    },
+    onDragStateChange: (state) => {
+      isDragging = state;
+    },
+    onDragEnd: (finalPos) => {
+      posLeft = finalPos.left;
+      posTop = finalPos.top;
+      userDragged = true;
+    },
+  });
+
   function toRelativeRect(rect: DOMRect | ReaderViewportRect) {
     const containerRect = viewportEl.getBoundingClientRect();
     return { top: rect.top - containerRect.top, left: rect.left - containerRect.left, bottom: rect.bottom - containerRect.top, right: rect.right - containerRect.left, width: rect.width, height: rect.height };
   }
   async function positionPopover() {
     if (userDragged) return;
+    const isMobile = Platform.isMobile || (typeof document !== "undefined" && (document.body.classList.contains("is-mobile") || document.body.classList.contains("is-phone")));
+    if (isMobile) {
+      posTop = 0;
+      posLeft = 0;
+      isDocked = true;
+      return;
+    }
     await tick();
     const el = popoverEl;
     if (!el) return;
@@ -57,8 +80,8 @@
       anchorPoint: anchorPoint ? { x: anchorPoint.x - containerRect.left, y: anchorPoint.y - containerRect.top } : undefined,
       containerWidth: viewportEl.clientWidth,
       containerHeight: viewportEl.clientHeight,
-      toolbarWidth: el.offsetWidth || 340,
-      toolbarHeight: Math.min(el.offsetHeight || 420, viewportEl.clientHeight - 24),
+      toolbarWidth: Math.min(el.offsetWidth || 500, viewportEl.clientWidth - 24),
+      toolbarHeight: Math.min(el.offsetHeight || 440, viewportEl.clientHeight * 0.75),
       mobile: false,
       insetBottom: 0,
     });
@@ -67,57 +90,18 @@
     isDocked = position.mode === "docked";
   }
 
-  function handleHeaderMouseDown(e: MouseEvent) {
-    if (e.button !== 0) return;
-    const target = e.target as HTMLElement | null;
-    if (target && target.closest("button")) {
-      return;
-    }
-    e.preventDefault();
-    e.stopPropagation();
-
-    isDragging = true;
-    dragStartX = e.clientX;
-    dragStartY = e.clientY;
-    popoverStartLeft = posLeft;
-    popoverStartTop = posTop;
-
-    const handleMouseMove = (moveEvt: MouseEvent) => {
-      if (!isDragging) return;
-      moveEvt.preventDefault();
-      const dx = moveEvt.clientX - dragStartX;
-      const dy = moveEvt.clientY - dragStartY;
-
-      const el = popoverEl;
-      const elWidth = el?.offsetWidth || 340;
-      const elHeight = el?.offsetHeight || 420;
-      const maxLeft = Math.max(0, viewportEl.clientWidth - elWidth);
-      const maxTop = Math.max(0, viewportEl.clientHeight - elHeight);
-
-      posLeft = Math.max(0, Math.min(maxLeft, popoverStartLeft + dx));
-      posTop = Math.max(0, Math.min(maxTop, popoverStartTop + dy));
-      userDragged = true;
-    };
-
-    const handleMouseUp = () => {
-      isDragging = false;
-      window.removeEventListener("mousemove", handleMouseMove, { capture: true });
-      window.removeEventListener("mouseup", handleMouseUp, { capture: true });
-    };
-
-    window.addEventListener("mousemove", handleMouseMove, { capture: true });
-    window.addEventListener("mouseup", handleMouseUp, { capture: true });
-  }
-
   async function run(token: number) {
     status = "loading"; error = "";
     try {
+      logMobileEvent("AI", "DictionaryLookupStart", { word: selection.text });
       const next = await runZoraSelectionTranslation({ app, settings, selection });
       if (token !== generation) return;
       result = next; status = "success"; await tick(); await positionPopover();
+      logMobileEvent("AI", "DictionaryLookupSuccess", { word: selection.text, kind: result?.kind });
     } catch (e) {
       if (token !== generation) return;
       error = e instanceof Error ? e.message : String(e); status = "error";
+      logMobileError("AI", e, { word: selection.text });
     }
   }
   $effect(() => { const token = ++generation; untrack(() => { void run(token); }); });
@@ -129,16 +113,22 @@
   }
   function handleKeydown(event: KeyboardEvent) { if (event.key === "Escape") onClose(); }
   onMount(() => {
+    const isMobile = Platform.isMobile || (typeof document !== "undefined" && (document.body.classList.contains("is-mobile") || document.body.classList.contains("is-phone")));
     activeDocument.addEventListener("mousedown", handlePointerDown, { capture: true });
     activeDocument.addEventListener("touchstart", handlePointerDown, true);
     window.addEventListener("keydown", handleKeydown);
-    viewportEl.addEventListener("scroll", onClose, { passive: true });
+    if (!isMobile) {
+      viewportEl.addEventListener("scroll", onClose, { passive: true });
+    }
     void positionPopover();
     return () => {
+      draggable.destroy();
       activeDocument.removeEventListener("mousedown", handlePointerDown, { capture: true });
       activeDocument.removeEventListener("touchstart", handlePointerDown, true);
       window.removeEventListener("keydown", handleKeydown);
-      viewportEl.removeEventListener("scroll", onClose);
+      if (!isMobile) {
+        viewportEl.removeEventListener("scroll", onClose);
+      }
     };
   });
 
@@ -214,7 +204,13 @@
 
   async function handleCopy() {
     const text = result ? (result.kind === "word" ? `${result.lemma || result.surfaceForm} ${result.phonetic || ""}\n${result.currentMeaning || result.translation}\n${result.senses.map((s) => `${s.label} ${s.meaning}`).join("\n")}` : result.translation) : selection.text;
-    try { await navigator.clipboard.writeText(text); copied = true; } catch { copied = false; }
+    try {
+      await navigator.clipboard.writeText(text);
+      copied = true;
+      setTimeout(() => { copied = false; }, 1500);
+    } catch {
+      copied = false;
+    }
   }
   let displayWord = $derived(result?.kind === "word" ? (result.lemma || result.surfaceForm || selection.text) : selection.text);
   let visibleSenses = $derived(result?.kind === "word" ? result.senses.slice(0, 5) : []);
@@ -233,27 +229,54 @@
   <div
     class="zora-lookup-header"
     style="cursor: grab; user-select: none;"
-    onmousedown={handleHeaderMouseDown}
+    onpointerdown={draggable.handleHeaderPointerDown}
+    onmousedown={draggable.handleHeaderPointerDown}
   >
     <span class="zora-lookup-kind">{result?.kind === "word" ? "词义" : result?.kind === "phrase" ? "短语" : "翻译"}</span>
-    <button class="clickable-icon" onclick={onClose} aria-label="关闭"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
+    <button class="clickable-icon" onclick={onClose} aria-label="关闭">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <path d="M18 6 6 18M6 6l12 12"></path>
+      </svg>
+    </button>
   </div>
   <div class="zora-lookup-body">
     {#if status === "loading"}
-      <div class="zora-lookup-loading"><span class="zora-lookup-target">{selection.text}</span><span>正在查询…</span></div>
+      <div class="zora-lookup-loading">
+        <span class="zora-lookup-target">{selection.text}</span>
+        <div class="zora-lookup-spinner-row">
+          <span class="epub-loading-spinner zora-mini-spinner"></span>
+          <span>正在查询…</span>
+        </div>
+      </div>
     {:else if status === "error"}
-      <div class="zora-lookup-error" role="alert"><span>{error}</span><button class="mod-cta" onclick={() => run(++generation)}>重试</button></div>
+      <div class="zora-lookup-error" role="alert">
+        <span>{error}</span>
+        <button class="mod-cta" onclick={() => run(++generation)}>重试</button>
+      </div>
     {:else if result}
       {#if result.kind === "word"}
         <div class="zora-lookup-word-head">
-          <div class="zora-lookup-display">{displayWord}</div>
-          {#if result.phonetic}<div class="zora-lookup-phonetic">{result.phonetic}</div>{/if}
-          {#if result.surfaceForm && result.lemma && result.surfaceForm !== result.lemma}<div class="zora-lookup-surface">原文形式：{result.surfaceForm}</div>{/if}
+          <div class="zora-dict-title-row">
+            <span class="zora-lookup-display">{displayWord}</span>
+            {#if result.phonetic}<span class="zora-lookup-phonetic">{result.phonetic}</span>{/if}
+          </div>
+          {#if result.surfaceForm && result.lemma && result.surfaceForm.toLowerCase() !== result.lemma.toLowerCase()}
+            <div class="zora-lookup-surface">原型: {result.lemma} · 原文: {result.surfaceForm}</div>
+          {/if}
         </div>
         <section class="zora-lookup-section">
-          <h4>当前语境 <span class="zora-pos">{contextPosLabel(result.contextPartOfSpeech || result.partOfSpeech)}</span></h4>
-          <p class="zora-lookup-meaning">{result.currentMeaning || result.translation}</p>
-          {#if result.contextExplanation}<p class="zora-lookup-explanation">{result.contextExplanation}</p>{/if}
+          <h4>
+            <span>当前语境</span>
+            {#if result.contextPartOfSpeech || result.partOfSpeech}
+              <span class="zora-pos">{contextPosLabel(result.contextPartOfSpeech || result.partOfSpeech)}</span>
+            {/if}
+          </h4>
+          <div class="zora-lookup-context-box">
+            <p class="zora-lookup-meaning">{result.currentMeaning || result.translation}</p>
+            {#if result.contextExplanation}
+              <p class="zora-lookup-explanation">{result.contextExplanation}</p>
+            {/if}
+          </div>
         </section>
         {#if visibleSenses.length > 0}
           <section class="zora-lookup-section">
@@ -279,7 +302,17 @@
           </section>
         {/if}
       {:else}
-        <div class="zora-lookup-source">{selection.text}</div><section class="zora-lookup-section"><h4>翻译</h4><p class="zora-lookup-translation">{result.translation}</p></section>
+        <div class="zora-lookup-source">{selection.text}</div>
+        <section class="zora-lookup-section">
+          <h4>中文翻译</h4>
+          <p class="zora-lookup-translation-main">{result.translation}</p>
+        </section>
+        {#if result.sentenceTranslation && result.sentenceTranslation !== result.translation}
+          <section class="zora-lookup-section">
+            <h4>本句翻译</h4>
+            <p class="zora-lookup-translation">{result.sentenceTranslation}</p>
+          </section>
+        {/if}
       {/if}
     {/if}
   </div>

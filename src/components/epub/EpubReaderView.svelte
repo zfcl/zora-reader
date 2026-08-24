@@ -16,8 +16,9 @@
 	import type { EpubBook, EpubExcerptSettings, EpubFlowMode, EpubLayoutMode, EpubReaderEngine, EpubReaderSettings, EpubStorageService, PaginationInfo, ReaderHighlight, ReadingPosition } from '../../services/epub';
 	import { flushEpubPendingProgress } from '../../services/epub';
 	import type { EpubAnnotationService } from '../../services/epub';
-	import type { EpubBacklinkHighlightService } from '../../services/epub/EpubBacklinkHighlightService';
 	import { logger } from '../../utils/logger';
+	import { logMobileEvent, logMobileError, logMobileSyncDebug } from '../../utils/zora-mobile-logger';
+	import { getZoraSyncService } from '../../services/sync/zora-sync-access';
 
 	interface Props {
 		filePath: string;
@@ -149,6 +150,20 @@
 		}
 		book.currentPosition = position;
 		await storageService.saveProgress(book.id, position, readingStats);
+
+		try {
+			const app = storageService.getApp?.();
+			if (app) {
+				const syncService = getZoraSyncService(app);
+				syncService.saveProgress(book.id, {
+					cfi: position.cfi,
+					href: position.href,
+					percentage: position.percent || 0,
+				});
+			}
+		} catch (syncErr) {
+			logger.debug('[EpubReaderView] Sync save progress notice:', syncErr);
+		}
 	}
 
 	async function syncReadingPositionPersistence(position: EpubBook['currentPosition'], info: PaginationInfo): Promise<void> {
@@ -312,8 +327,37 @@
 			return null;
 		}
 
+		let candidateProgress: any = null;
+		const app = storageService.getApp?.();
+		if (app) {
+			try {
+				const syncService = getZoraSyncService(app);
+				const syncProgress = await syncService.loadProgress(currentBook.id);
+				if (syncProgress?.cfi) {
+					candidateProgress = {
+						cfi: syncProgress.cfi,
+						href: syncProgress.href || '',
+						percent: syncProgress.percentage,
+						updatedAt: new Date(syncProgress.updatedAt).getTime() || Date.now(),
+					};
+				}
+			} catch (syncErr) {
+				logger.debug('[EpubReaderView] Sync load progress notice:', syncErr);
+			}
+		}
+
 		const savedProgress = await storageService.loadProgress(currentBook.id, currentBook);
-		return canonicalizeStoredCfiLocation(savedProgress, {
+		if (candidateProgress && savedProgress) {
+			const savedTime = (savedProgress as any)?.updatedAt ? new Date((savedProgress as any).updatedAt).getTime() : 0;
+			const syncTime = candidateProgress.updatedAt || 0;
+			if (syncTime < savedTime) {
+				candidateProgress = savedProgress;
+			}
+		} else if (!candidateProgress) {
+			candidateProgress = savedProgress;
+		}
+
+		return canonicalizeStoredCfiLocation(candidateProgress, {
 			bookId: currentBook.id,
 			label: 'EPUB progress',
 			persistCanonical: async (canonicalProgress) => {
@@ -570,12 +614,14 @@
 			}
 
 			// Keep source-note / explicit navigation highest priority.
+			let restoredPositionCfi: string | undefined;
 			if (!hasPendingNavigation) {
 				const preferredRestorePosition = await resolvePreferredRestorePosition();
 				if (isStaleRender(renderToken)) {
 					return;
 				}
 				if (preferredRestorePosition?.cfi) {
+					restoredPositionCfi = preferredRestorePosition.cfi;
 					await restoreSavedProgress(preferredRestorePosition, renderToken);
 					if (isStaleRender(renderToken)) {
 						return;
@@ -605,6 +651,25 @@
 			highlightsReady = true;
 
 			notifyReaderReady();
+			logMobileEvent("EPUB", "RenderSuccess", {
+				bookId: book?.id,
+				title: book?.title,
+				chapter: readerService.getCurrentChapterTitle(),
+				progress: canUseReadingProgress ? readerService.getReadingProgress() : 0,
+			});
+			const directHighlightsCount = allHighlights.filter((h) => h.style !== 'reading-note').length;
+			const readingNoteMarkerCount = allHighlights.filter((h) => h.style === 'reading-note').length;
+			void logMobileSyncDebug({
+				app: storageService.getApp(),
+				bookId: book?.id,
+				sourceId: book?.sourceId,
+				filePath,
+				readingPositionCfi: restoredPositionCfi,
+				directHighlightsCount,
+				readingNoteMarkerCount,
+				selectionRangeCount: 0,
+				selectionCollapsed: true,
+			});
 			void stabilizeMobileRenderer(renderToken);
 		} catch (error) {
 			if (isStaleRender(renderToken)) {
@@ -613,6 +678,11 @@
 			const classified = reportEpubError(error, 'render');
 			rendered = false;
 			notifyRenderError(classified.userMessage);
+			logMobileError("EPUB", error, {
+				bookId: book?.id,
+				filePath,
+				classified: classified.userMessage,
+			});
 		}
 	}
 

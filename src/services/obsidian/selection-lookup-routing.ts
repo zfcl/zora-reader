@@ -66,7 +66,8 @@ export function isDictionaryLookupCandidate(text: string): boolean {
 export function extractSelectionContext(
 	iframeDoc: Document | null,
 	selectedText: string,
-	maxLength = 240
+	maxLength = 240,
+	explicitRange?: Range | null
 ): string {
 	const fallback = selectedText.trim();
 	if (!iframeDoc || !fallback) {
@@ -74,12 +75,18 @@ export function extractSelectionContext(
 	}
 
 	try {
-		const selection = iframeDoc.getSelection();
-		if (!selection || selection.rangeCount === 0) {
+		let range: Range | null = explicitRange || null;
+		if (!range) {
+			const selection = iframeDoc.getSelection();
+			if (selection && selection.rangeCount > 0) {
+				range = selection.getRangeAt(0);
+			}
+		}
+
+		if (!range) {
 			return fallback;
 		}
 
-		const range = selection.getRangeAt(0);
 		let node: Node | null = range.commonAncestorContainer;
 		if (node.nodeType === Node.TEXT_NODE) {
 			node = node.parentElement;

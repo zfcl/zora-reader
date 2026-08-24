@@ -1,12 +1,9 @@
 import { type App, TAbstractFile, TFile } from "obsidian";
 import { errorPlainText, unknownPlainText } from "../../utils/unknown-plain-text";
 import { Platform, normalizePath } from "obsidian";
-import {
-	getPluginPathsById,
-	LEGACY_PATHS,
-	getV2Paths,
-	toVaultAdapterPath,
-} from "../../config/paths";
+import { getPluginPathsById, LEGACY_PATHS, getV2Paths, toVaultAdapterPath } from "../../config/paths";
+import { getZoraSyncService } from "../sync/ZoraSyncService";
+import { generateCardUUID } from "../identifier/WeaveIDGenerator";
 import { DirectoryUtils } from "../../utils/directory-utils";
 import { logger } from "../../utils/logger";
 import {
@@ -1893,31 +1890,73 @@ export class EpubStorageService {
 		bookId: string
 	): Promise<Pick<EpubBook, "currentPosition" | "readingStats"> | null> {
 		bookId = await this.resolveCanonicalBookId(bookId);
+		const syncService = getZoraSyncService(this.app);
+		const latestSyncProgress = await syncService.loadLatestProgress(bookId);
+
 		const book = await this.getBook(bookId);
+		let localState: Pick<EpubBook, "currentPosition" | "readingStats"> | null = null;
 		if (book) {
 			try {
-				const fromBookmark = await this.getBookmarkService().readReadingState(book);
-				if (fromBookmark) {
-					return fromBookmark;
-				}
+				localState = await this.getBookmarkService().readReadingState(book);
 			} catch (error) {
 				logger.warn("[EpubStorageService] Failed to read reading state from bookmark file:", error);
 			}
 		}
 
-		const fromUnified = await this.readUnifiedBookState(bookId);
-		const fromLegacy = fromUnified ?? (await this.readLegacyBookState(bookId));
-		if (fromLegacy && book) {
-			try {
-				await this.getBookmarkService().writeReadingState(book, fromLegacy);
-			} catch (error) {
-				logger.warn(
-					"[EpubStorageService] Failed to migrate reading state into bookmark file:",
-					error
-				);
+		if (!localState) {
+			const fromUnified = await this.readUnifiedBookState(bookId);
+			localState = fromUnified ?? (await this.readLegacyBookState(bookId));
+			if (localState && book) {
+				try {
+					await this.getBookmarkService().writeReadingState(book, localState);
+				} catch (error) {
+					logger.warn(
+						"[EpubStorageService] Failed to migrate reading state into bookmark file:",
+						error
+					);
+				}
 			}
 		}
-		return fromLegacy;
+
+		if (localState?.currentPosition?.cfi) {
+			if (latestSyncProgress && latestSyncProgress.cfi) {
+				const isRemoteDevice = latestSyncProgress.deviceId !== syncService.getDeviceId();
+				const syncTime = new Date(latestSyncProgress.updatedAt).getTime();
+				const localTime = localState.readingStats?.lastReadTime || 0;
+
+				if (isRemoteDevice && syncTime > localTime) {
+					return {
+						currentPosition: {
+							chapterIndex: latestSyncProgress.chapterIndex || 0,
+							cfi: latestSyncProgress.cfi,
+							percent: latestSyncProgress.percentage || 0,
+						},
+						readingStats: normalizeReadingPaceStats({
+							...localState.readingStats,
+							lastReadTime: syncTime,
+						}),
+					};
+				}
+			}
+			return localState;
+		}
+
+		if (latestSyncProgress && latestSyncProgress.cfi) {
+			const syncTime = new Date(latestSyncProgress.updatedAt).getTime();
+			return {
+				currentPosition: {
+					chapterIndex: latestSyncProgress.chapterIndex || 0,
+					cfi: latestSyncProgress.cfi,
+					percent: latestSyncProgress.percentage || 0,
+				},
+				readingStats: normalizeReadingPaceStats({
+					...(localState?.readingStats || { totalReadTime: 0, createdTime: 0 }),
+					lastReadTime: syncTime,
+				}),
+			};
+		}
+
+		return localState;
 	}
 
 	private async readUnifiedBookState(
@@ -1943,6 +1982,24 @@ export class EpubStorageService {
 		data: Pick<EpubBook, "currentPosition" | "readingStats">
 	): Promise<void> {
 		bookId = await this.resolveCanonicalBookId(bookId);
+		if (data.currentPosition?.cfi) {
+			const syncService = getZoraSyncService(this.app);
+			try {
+				await syncService.saveProgress(bookId, {
+					cfi: data.currentPosition.cfi,
+					percentage: data.currentPosition.percent || 0,
+					chapterIndex: data.currentPosition.chapterIndex || 0,
+					chapterTitle: (data.currentPosition as any).chapterTitle,
+					updatedAt:
+						typeof data.readingStats?.lastReadTime === "number" &&
+						data.readingStats.lastReadTime > 0
+							? new Date(data.readingStats.lastReadTime).toISOString()
+							: undefined,
+				});
+			} catch (err) {
+				logger.warn("[EpubStorageService] Failed to sync progress:", err);
+			}
+		}
 		const previous = this._bookStateWriteLocks.get(bookId) || Promise.resolve();
 		const persist = async () => {
 			const book = await this.getBook(bookId);
@@ -3909,12 +3966,37 @@ export class EpubStorageService {
 
 	async loadDirectHighlights(bookId: string): Promise<DirectHighlight[]> {
 		bookId = await this.resolveCanonicalBookId(bookId);
+		const syncService = getZoraSyncService(this.app);
+		const syncAnnotations = await syncService.loadAnnotations(bookId);
+
 		const unifiedData = await this.readUnifiedLocalReaderData();
 		const bookRecord = unifiedData.books?.[bookId];
-		if (bookRecord && Array.isArray(bookRecord.directHighlights)) {
-			return [...bookRecord.directHighlights];
+		const localList = bookRecord && Array.isArray(bookRecord.directHighlights) ? bookRecord.directHighlights : [];
+
+		if (syncAnnotations.length === 0) {
+			return [...localList];
 		}
-		return [];
+
+		const merged = new Map<string, DirectHighlight>();
+		for (const item of localList) {
+			const normCfi = EpubLinkService.normalizeCfi(item.cfiRange);
+			merged.set(normCfi, item);
+		}
+
+		for (const ann of syncAnnotations) {
+			const normCfi = EpubLinkService.normalizeCfi(ann.cfiRange);
+			merged.set(normCfi, {
+				cfiRange: ann.cfiRange,
+				color: ann.color,
+				style: ann.style,
+				text: ann.text,
+				chapterIndex: ann.chapterIndex,
+				chapterTitle: ann.chapterTitle,
+				createdTime: ann.createdAt ? new Date(ann.createdAt).getTime() : Date.now(),
+			});
+		}
+
+		return Array.from(merged.values());
 	}
 
 	async saveDirectHighlights(bookId: string, directHighlights: DirectHighlight[]): Promise<void> {
@@ -3937,6 +4019,22 @@ export class EpubStorageService {
 			style: highlight.style
 		});
 		try {
+			bookId = await this.resolveCanonicalBookId(bookId);
+			const syncService = getZoraSyncService(this.app);
+			const annotationId = generateCardUUID();
+			await syncService.saveAnnotation({
+				id: annotationId,
+				bookId,
+				cfiRange: highlight.cfiRange,
+				type: (highlight.style as any) || 'highlight',
+				color: highlight.color,
+				style: highlight.style,
+				text: highlight.text,
+				chapterIndex: highlight.chapterIndex,
+				chapterTitle: highlight.chapterTitle,
+				createdAt: highlight.createdTime ? new Date(highlight.createdTime).toISOString() : new Date().toISOString(),
+			});
+
 			const list = await this.loadDirectHighlights(bookId);
 			const normCfi = EpubLinkService.normalizeCfi(highlight.cfiRange);
 			const existingIndex = list.findIndex(
@@ -3959,8 +4057,18 @@ export class EpubStorageService {
 	}
 
 	async deleteDirectHighlightByCfi(bookId: string, cfiRange: string): Promise<void> {
-		const list = await this.loadDirectHighlights(bookId);
+		bookId = await this.resolveCanonicalBookId(bookId);
 		const normCfi = EpubLinkService.normalizeCfi(cfiRange);
+
+		const syncService = getZoraSyncService(this.app);
+		const syncAnnotations = await syncService.loadAnnotations(bookId);
+		for (const ann of syncAnnotations) {
+			if (EpubLinkService.normalizeCfi(ann.cfiRange) === normCfi) {
+				await syncService.deleteAnnotation(bookId, ann.id);
+			}
+		}
+
+		const list = await this.loadDirectHighlights(bookId);
 		const filtered = list.filter(
 			(item) => EpubLinkService.normalizeCfi(item.cfiRange) !== normCfi
 		);
@@ -3972,8 +4080,22 @@ export class EpubStorageService {
 		cfiRange: string,
 		updates: { color?: string; style?: EpubHighlightStyle }
 	): Promise<void> {
-		const list = await this.loadDirectHighlights(bookId);
+		bookId = await this.resolveCanonicalBookId(bookId);
 		const normCfi = EpubLinkService.normalizeCfi(cfiRange);
+
+		const syncService = getZoraSyncService(this.app);
+		const syncAnnotations = await syncService.loadAnnotations(bookId);
+		for (const ann of syncAnnotations) {
+			if (EpubLinkService.normalizeCfi(ann.cfiRange) === normCfi) {
+				await syncService.saveAnnotation({
+					...ann,
+					color: updates.color || ann.color,
+					style: updates.style !== undefined ? updates.style : ann.style,
+				});
+			}
+		}
+
+		const list = await this.loadDirectHighlights(bookId);
 		const item = list.find(
 			(i) => EpubLinkService.normalizeCfi(i.cfiRange) === normCfi
 		);

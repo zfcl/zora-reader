@@ -1,13 +1,19 @@
 <script lang="ts">
   import "../../styles/epub/zora-lookup.css";
   import { onMount, tick, untrack } from "svelte";
-  import type { App } from "obsidian";
+  import { Platform, type App } from "obsidian";
   import type { IntegratedAISettings } from "../../config/integrated-ai-settings";
   import type { ReaderAnchorPoint, ReaderViewportRect } from "../../services/epub/reader-engine-types";
   import type { ZoraSelectionTranslationInput } from "../../services/ai/zora/zora-translation-service";
-  import { runZoraGrammarAnalysis, type ZoraGrammarAnalysisResult } from "../../services/ai/zora/zora-grammar-service";
+  import {
+    runZoraGrammarAnalysis,
+    type ZoraGrammarAnalysisResult,
+    type ZoraGrammarComplexity,
+  } from "../../services/ai/zora/zora-grammar-service";
   import { appendGrammarStudyNote } from "../../services/ai/zora/zora-study-note-service";
   import { computeToolbarPosition } from "./toolbar-positioning";
+  import { createZoraDraggable } from "./zora-draggable";
+  import { logMobileEvent, logMobileError } from "../../utils/zora-mobile-logger";
 
   interface Props {
     app: App;
@@ -31,10 +37,6 @@
   let isDocked = $state(false);
   let isDragging = $state(false);
   let userDragged = $state(false);
-  let dragStartX = 0;
-  let dragStartY = 0;
-  let popoverStartLeft = 0;
-  let popoverStartTop = 0;
   let studyNoteState = $state<"idle" | "saving" | "saved" | "error">("idle");
   let studyNoteMessage = $state("");
   let copied = $state(false);
@@ -42,16 +44,73 @@
 
   let expandedQuote = $state(false);
 
-  let widthTier = $derived.by(() => {
+  const draggable = createZoraDraggable({
+    getPopoverEl: () => popoverEl,
+    getViewportEl: () => viewportEl,
+    getPos: () => ({ left: posLeft, top: posTop }),
+    onDragStart: () => {
+      userDragged = true;
+      isDocked = false;
+    },
+    onDragStateChange: (state) => {
+      isDragging = state;
+    },
+    onDragEnd: (finalPos) => {
+      posLeft = finalPos.left;
+      posTop = finalPos.top;
+      userDragged = true;
+    },
+  });
+
+  let effectiveComplexity = $derived.by<ZoraGrammarComplexity>(() => {
+    if (result?.complexity) return result.complexity;
     const textLen = (selection?.text || "").trim().length;
     const pointsCount = result?.points?.length || 0;
-    if (textLen < 45 && pointsCount <= 1) {
-      return "tier-compact";
+    if (textLen < 60 && pointsCount <= 3 && !result?.difficulty) {
+      return "short";
     }
-    if (textLen < 120 && pointsCount <= 3) {
-      return "tier-normal";
+    if (textLen >= 140 || pointsCount >= 5) {
+      return "complex";
     }
-    return "tier-wide";
+    return "medium";
+  });
+
+  let widthTier = $derived.by(() => {
+    if (effectiveComplexity === "short") {
+      return "tier-compact"; // ~480px (460~500px)
+    }
+    if (effectiveComplexity === "complex") {
+      return "tier-wide"; // ~660px (620~680px)
+    }
+    return "tier-normal"; // ~560px (540~580px)
+  });
+
+  let pointsHeading = $derived(
+    effectiveComplexity === "short" ? "关键点" : "关键语法"
+  );
+
+  let isLongQuote = $derived.by(() => {
+    const textLen = (selection?.text || "").trim().length;
+    const transLen = (result?.paraphrase || "").trim().length;
+    return textLen > 80 || transLen > 60;
+  });
+
+  let showDifficulty = $derived.by(() => {
+    if (!result?.difficulty || !result.difficulty.trim()) return false;
+    const diff = result.difficulty.trim();
+    if (diff === "无" || diff === "暂无" || diff === "无难点" || diff === "none") return false;
+    if (result.paraphrase && diff === result.paraphrase.trim()) return false;
+    return true;
+  });
+
+  let structureParts = $derived.by(() => {
+    if (!result?.structure) return [];
+    const raw = result.structure.trim();
+    const parts = raw.split(/\s*(?:→|->|\+|\|)\s*/).filter(Boolean);
+    if (parts.length > 1) {
+      return parts;
+    }
+    return [raw];
   });
 
   function toRelativeRect(rect: DOMRect | ReaderViewportRect) {
@@ -68,11 +127,18 @@
 
   async function positionPopover() {
     if (userDragged) return;
+    const isMobile = Platform.isMobile || (typeof document !== "undefined" && (document.body.classList.contains("is-mobile") || document.body.classList.contains("is-phone")));
+    if (isMobile) {
+      posTop = 0;
+      posLeft = 0;
+      isDocked = true;
+      return;
+    }
     await tick();
     const el = popoverEl;
     if (!el) return;
     const containerRect = viewportEl.getBoundingClientRect();
-    const targetWidth = widthTier === "tier-compact" ? 450 : widthTier === "tier-normal" ? 530 : 640;
+    const targetWidth = widthTier === "tier-compact" ? 480 : widthTier === "tier-normal" ? 560 : 660;
     const position = computeToolbarPosition({
       anchorRect: toRelativeRect(anchorRect),
       anchorRects: anchorRects.map(toRelativeRect),
@@ -82,7 +148,7 @@
       containerWidth: viewportEl.clientWidth,
       containerHeight: viewportEl.clientHeight,
       toolbarWidth: Math.min(el.offsetWidth || targetWidth, viewportEl.clientWidth - 32),
-      toolbarHeight: Math.min(el.offsetHeight || 420, viewportEl.clientHeight * 0.8),
+      toolbarHeight: Math.min(el.offsetHeight || 440, viewportEl.clientHeight * 0.75),
       mobile: false,
       insetBottom: 0,
     });
@@ -91,52 +157,11 @@
     isDocked = position.mode === "docked";
   }
 
-  function handleHeaderMouseDown(e: MouseEvent) {
-    if (e.button !== 0) return;
-    const target = e.target as HTMLElement | null;
-    if (target && target.closest("button")) {
-      return;
-    }
-    e.preventDefault();
-    e.stopPropagation();
-
-    isDragging = true;
-    dragStartX = e.clientX;
-    dragStartY = e.clientY;
-    popoverStartLeft = posLeft;
-    popoverStartTop = posTop;
-
-    const handleMouseMove = (moveEvt: MouseEvent) => {
-      if (!isDragging) return;
-      moveEvt.preventDefault();
-      const dx = moveEvt.clientX - dragStartX;
-      const dy = moveEvt.clientY - dragStartY;
-
-      const el = popoverEl;
-      const elWidth = el?.offsetWidth || 640;
-      const elHeight = el?.offsetHeight || 460;
-      const maxLeft = Math.max(0, viewportEl.clientWidth - elWidth);
-      const maxTop = Math.max(0, viewportEl.clientHeight - elHeight);
-
-      posLeft = Math.max(0, Math.min(maxLeft, popoverStartLeft + dx));
-      posTop = Math.max(0, Math.min(maxTop, popoverStartTop + dy));
-      userDragged = true;
-    };
-
-    const handleMouseUp = () => {
-      isDragging = false;
-      window.removeEventListener("mousemove", handleMouseMove, { capture: true });
-      window.removeEventListener("mouseup", handleMouseUp, { capture: true });
-    };
-
-    window.addEventListener("mousemove", handleMouseMove, { capture: true });
-    window.addEventListener("mouseup", handleMouseUp, { capture: true });
-  }
-
   async function run(token: number) {
     status = "loading";
     error = "";
     try {
+      logMobileEvent("AI", "GrammarAnalysisStart", { length: selection.text?.length });
       const next = await runZoraGrammarAnalysis({
         app,
         settings,
@@ -148,10 +173,12 @@
       status = "success";
       await tick();
       await positionPopover();
+      logMobileEvent("AI", "GrammarAnalysisSuccess", { points: result?.points?.length });
     } catch (e) {
       if (token !== generation) return;
       error = e instanceof Error ? e.message : String(e);
       status = "error";
+      logMobileError("AI", e, { context: "GrammarAnalysis" });
     }
   }
 
@@ -174,16 +201,22 @@
   }
 
   onMount(() => {
+    const isMobile = Platform.isMobile || (typeof document !== "undefined" && (document.body.classList.contains("is-mobile") || document.body.classList.contains("is-phone")));
     activeDocument.addEventListener("mousedown", handlePointerDown, { capture: true });
     activeDocument.addEventListener("touchstart", handlePointerDown, true);
     window.addEventListener("keydown", handleKeydown);
-    viewportEl.addEventListener("scroll", onClose, { passive: true });
+    if (!isMobile) {
+      viewportEl.addEventListener("scroll", onClose, { passive: true });
+    }
     void positionPopover();
     return () => {
+      draggable.destroy();
       activeDocument.removeEventListener("mousedown", handlePointerDown, { capture: true });
       activeDocument.removeEventListener("touchstart", handlePointerDown, true);
       window.removeEventListener("keydown", handleKeydown);
-      viewportEl.removeEventListener("scroll", onClose);
+      if (!isMobile) {
+        viewportEl.removeEventListener("scroll", onClose);
+      }
     };
   });
 
@@ -218,10 +251,10 @@
     if (!result) return;
     const lines = [
       `原句：${selection.text}`,
-      `核心结构：${result.structure}`,
+      ...(result.paraphrase ? [`译文：${result.paraphrase}`] : []),
+      `句子骨架：${result.structure}`,
       ...(result.points.map((p) => `· ${p.label}${p.target ? ` (${p.target})` : ""}: ${p.explanation}`)),
-      ...(result.difficulty ? [`难点解析：${result.difficulty}`] : []),
-      ...(result.paraphrase ? [`整句理解：${result.paraphrase}`] : []),
+      ...(showDifficulty && result.difficulty ? [`难点解析：${result.difficulty}`] : []),
     ];
     try {
       await navigator.clipboard.writeText(lines.join("\n"));
@@ -246,11 +279,12 @@
   <div
     class="zora-lookup-header"
     style="cursor: grab; user-select: none;"
-    onmousedown={handleHeaderMouseDown}
+    onpointerdown={draggable.handleHeaderPointerDown}
+    onmousedown={draggable.handleHeaderPointerDown}
   >
     <span class="zora-lookup-kind">语法解析</span>
     <button class="clickable-icon" onclick={onClose} aria-label="关闭">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
         <path d="M18 6 6 18M6 6l12 12"></path>
       </svg>
     </button>
@@ -258,15 +292,28 @@
   <div class="zora-lookup-body">
     <div class="zora-grammar-quote-box" class:is-expanded={expandedQuote}>
       <div class="zora-grammar-quote-text">{selection.text}</div>
-      {#if selection.text.length > 100}
-        <button class="zora-grammar-quote-toggle" onclick={() => (expandedQuote = !expandedQuote)}>
-          {expandedQuote ? "收起" : "展开"}
-        </button>
+      {#if result?.paraphrase}
+        <div class="zora-grammar-quote-translation">{result.paraphrase}</div>
+      {/if}
+      {#if isLongQuote}
+        <div class="zora-grammar-quote-action">
+          <button
+            type="button"
+            class="zora-grammar-quote-toggle"
+            onclick={() => (expandedQuote = !expandedQuote)}
+            aria-label={expandedQuote ? "收起" : "展开"}
+          >
+            {expandedQuote ? "收起⌃" : "展开⌄"}
+          </button>
+        </div>
       {/if}
     </div>
     {#if status === "loading"}
       <div class="zora-lookup-loading">
-        <span>正在分析语法…</span>
+        <div class="zora-lookup-spinner-row">
+          <span class="epub-loading-spinner zora-mini-spinner"></span>
+          <span>正在分析语法…</span>
+        </div>
       </div>
     {:else if status === "error"}
       <div class="zora-lookup-error" role="alert">
@@ -276,17 +323,27 @@
     {:else if result}
       {#if result.structure}
         <section class="zora-lookup-section">
-          <h4>核心结构</h4>
-          <div class="zora-grammar-structure-box">{result.structure}</div>
+          <h4>句子骨架</h4>
+          <div class="zora-grammar-structure-flow">
+            {#each structureParts as part, idx}
+              {#if idx > 0}
+                <span class="zora-flow-arrow">→</span>
+              {/if}
+              <span class="zora-flow-node">{part}</span>
+            {/each}
+          </div>
         </section>
       {/if}
 
       {#if result.points && result.points.length > 0}
         <section class="zora-lookup-section">
-          <h4>关键语法</h4>
-          <div class="zora-grammar-points-list">
+          <h4>{pointsHeading}</h4>
+          <div
+            class="zora-grammar-points-list"
+            class:grid-2col={result.points.length >= 2}
+          >
             {#each result.points as point}
-              <div class="zora-grammar-point-card">
+              <div class="zora-grammar-point-item">
                 <div class="zora-grammar-point-head">
                   <span class="zora-pos">{point.label}</span>
                   {#if point.target}
@@ -300,17 +357,10 @@
         </section>
       {/if}
 
-      {#if result.difficulty}
+      {#if showDifficulty && result.difficulty}
         <section class="zora-lookup-section">
           <h4>难点解析</h4>
-          <p class="zora-grammar-text">{result.difficulty}</p>
-        </section>
-      {/if}
-
-      {#if result.paraphrase}
-        <section class="zora-lookup-section">
-          <h4>整句理解</h4>
-          <p class="zora-lookup-translation">{result.paraphrase}</p>
+          <p class="zora-grammar-difficulty-text">{result.difficulty}</p>
         </section>
       {/if}
     {/if}

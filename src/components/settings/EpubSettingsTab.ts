@@ -29,7 +29,11 @@ export class EpubSettingsTab extends PluginSettingTab {
 
 	hide(): void {
 		this.unmountPanel();
-		this.containerEl.empty();
+		if (typeof this.containerEl?.empty === "function") {
+			this.containerEl.empty();
+		} else if (typeof this.containerEl?.replaceChildren === "function") {
+			this.containerEl.replaceChildren();
+		}
 	}
 
 	private unmountPanel(): void {
@@ -40,10 +44,20 @@ export class EpubSettingsTab extends PluginSettingTab {
 		this.svelteRoot = null;
 	}
 
-	private renderPanelInto(containerEl: HTMLElement): void {
+	private renderPanelInto(rawContainerEl: HTMLElement | { settingEl?: HTMLElement }): void {
 		this.unmountPanel();
 
-		containerEl.empty();
+		const containerEl =
+			rawContainerEl && "settingEl" in rawContainerEl && rawContainerEl.settingEl
+				? rawContainerEl.settingEl
+				: (rawContainerEl as HTMLElement);
+		if (!containerEl) return;
+
+		if (typeof containerEl?.empty === "function") {
+			containerEl.empty();
+		} else if (typeof containerEl?.replaceChildren === "function") {
+			containerEl.replaceChildren();
+		}
 
 		try {
 			this.svelteRoot = mount(EpubSettingsPanel as SvelteComponent, {

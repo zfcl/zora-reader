@@ -1,11 +1,12 @@
 <script lang="ts">
   import "../../styles/epub/zora-lookup.css";
   import { onMount, tick } from "svelte";
-  import { Notice, type App } from "obsidian";
+  import { Notice, Platform, type App } from "obsidian";
   import type { ReaderAnchorPoint, ReaderViewportRect } from "../../services/epub/reader-engine-types";
   import type { ZoraSelectionTranslationInput } from "../../services/ai/zora/zora-translation-service";
   import { appendBookReadingNote } from "../../services/ai/zora/zora-study-note-service";
   import { computeToolbarPosition } from "./toolbar-positioning";
+  import { createZoraDraggable } from "./zora-draggable";
 
   interface Props {
     app: App;
@@ -30,10 +31,24 @@
   let isDocked = $state(false);
   let isDragging = $state(false);
   let userDragged = $state(false);
-  let dragStartX = 0;
-  let dragStartY = 0;
-  let popoverStartLeft = 0;
-  let popoverStartTop = 0;
+
+  const draggable = createZoraDraggable({
+    getPopoverEl: () => popoverEl,
+    getViewportEl: () => viewportEl,
+    getPos: () => ({ left: posLeft, top: posTop }),
+    onDragStart: () => {
+      userDragged = true;
+      isDocked = false;
+    },
+    onDragStateChange: (state) => {
+      isDragging = state;
+    },
+    onDragEnd: (finalPos) => {
+      posLeft = finalPos.left;
+      posTop = finalPos.top;
+      userDragged = true;
+    },
+  });
 
   function toRelativeRect(rect: DOMRect | ReaderViewportRect) {
     const containerRect = viewportEl.getBoundingClientRect();
@@ -49,6 +64,13 @@
 
   async function positionPopover() {
     if (userDragged) return;
+    const isMobile = Platform.isMobile || (typeof document !== "undefined" && (document.body.classList.contains("is-mobile") || document.body.classList.contains("is-phone")));
+    if (isMobile) {
+      posTop = 0;
+      posLeft = 0;
+      isDocked = true;
+      return;
+    }
     await tick();
     const el = popoverEl;
     if (!el) return;
@@ -71,48 +93,6 @@
     isDocked = position.mode === "docked";
   }
 
-  function handleHeaderMouseDown(e: MouseEvent) {
-    if (e.button !== 0) return;
-    const target = e.target as HTMLElement | null;
-    if (target && target.closest("button")) {
-      return;
-    }
-    e.preventDefault();
-    e.stopPropagation();
-
-    isDragging = true;
-    dragStartX = e.clientX;
-    dragStartY = e.clientY;
-    popoverStartLeft = posLeft;
-    popoverStartTop = posTop;
-
-    const handleMouseMove = (moveEvt: MouseEvent) => {
-      if (!isDragging) return;
-      moveEvt.preventDefault();
-      const dx = moveEvt.clientX - dragStartX;
-      const dy = moveEvt.clientY - dragStartY;
-
-      const el = popoverEl;
-      const elWidth = el?.offsetWidth || 340;
-      const elHeight = el?.offsetHeight || 320;
-      const maxLeft = Math.max(0, viewportEl.clientWidth - elWidth);
-      const maxTop = Math.max(0, viewportEl.clientHeight - elHeight);
-
-      posLeft = Math.max(0, Math.min(maxLeft, popoverStartLeft + dx));
-      posTop = Math.max(0, Math.min(maxTop, popoverStartTop + dy));
-      userDragged = true;
-    };
-
-    const handleMouseUp = () => {
-      isDragging = false;
-      window.removeEventListener("mousemove", handleMouseMove, { capture: true });
-      window.removeEventListener("mouseup", handleMouseUp, { capture: true });
-    };
-
-    window.addEventListener("mousemove", handleMouseMove, { capture: true });
-    window.addEventListener("mouseup", handleMouseUp, { capture: true });
-  }
-
   function handlePointerDown(event: Event) {
     if (isDragging) return;
     const target = event.target as Node | null;
@@ -125,18 +105,24 @@
   }
 
   onMount(() => {
+    const isMobile = Platform.isMobile || (typeof document !== "undefined" && (document.body.classList.contains("is-mobile") || document.body.classList.contains("is-phone")));
     activeDocument.addEventListener("mousedown", handlePointerDown, { capture: true });
     activeDocument.addEventListener("touchstart", handlePointerDown, true);
     window.addEventListener("keydown", handleKeydown);
-    viewportEl.addEventListener("scroll", onClose, { passive: true });
+    if (!isMobile) {
+      viewportEl.addEventListener("scroll", onClose, { passive: true });
+    }
     void positionPopover().then(() => {
       textareaEl?.focus();
     });
     return () => {
+      draggable.destroy();
       activeDocument.removeEventListener("mousedown", handlePointerDown, { capture: true });
       activeDocument.removeEventListener("touchstart", handlePointerDown, true);
       window.removeEventListener("keydown", handleKeydown);
-      viewportEl.removeEventListener("scroll", onClose);
+      if (!isMobile) {
+        viewportEl.removeEventListener("scroll", onClose);
+      }
     };
   });
 
@@ -184,7 +170,8 @@
   <div
     class="zora-lookup-header"
     style="cursor: grab; user-select: none;"
-    onmousedown={handleHeaderMouseDown}
+    onpointerdown={draggable.handleHeaderPointerDown}
+    onmousedown={draggable.handleHeaderPointerDown}
   >
     <span class="zora-lookup-kind">添加读书笔记</span>
     <button class="clickable-icon" onclick={onClose} aria-label="关闭">

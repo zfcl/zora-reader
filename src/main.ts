@@ -72,6 +72,7 @@ import { registerCanvasDirectionMenu } from "./services/epub/register-canvas-dir
 import { registerCanvasExcerptAnchorMenu } from "./services/epub/register-canvas-excerpt-anchor-menu";
 import { getBookSessionManager } from "./services/epub/session/book-session-manager-access";
 import { configureNavigationHub } from "./services/navigation/navigation-hub-access";
+import { getZoraSyncService } from "./services/sync/zora-sync-access";
 import { PremiumFeatureGuard } from "./services/premium/PremiumFeatureGuard";
 import { aiConfigStore } from "./stores/ai-config.store";
 import type {
@@ -650,10 +651,18 @@ new ZoraVocabularyModal(this.app, this).open();
 	}
 
 	async onload(): Promise<void> {
+		try {
+			const { initMobileDiagnostics } = await import("./utils/zora-mobile-logger");
+			initMobileDiagnostics(this.app, this.manifest.id);
+		} catch {
+			// Fail-safe
+		}
 		await this.loadSettings();
 		await vaultStorage.initialize(this.app);
 		initI18n(this.settings.interfaceLanguage);
 		registerEpubHost(this.app, this);
+		const syncService = getZoraSyncService(this.app);
+		void syncService.migrateLegacyData(this.getEpubStorageService());
 		configureNavigationHub(this.app, {
 			getSourceNavigationOpenInNewTab: () =>
 				this.settings.sourceNavigationOpenInNewTab !== false,

@@ -18,6 +18,10 @@
 	import EpubFootnotePreviewPopover from './EpubFootnotePreviewPopover.svelte';
 	import ReferenceDetailModal from './ReferenceDetailModal.svelte';
 	import EpubPremiumFeaturePopover from './EpubPremiumFeaturePopover.svelte';
+	import { MobileTapSelectionController, type MobileTapSelectionContext } from './mobile-tap-selection';
+	import { getZoraSyncService } from '../../services/sync/ZoraSyncService';
+	import { runZoraSyncV2Migration } from '../../services/sync/zora-sync-migration';
+	import { logMobileEvent } from '../../utils/zora-mobile-logger';
 	import { canUseEpubCanvasExcerpts, canUseEpubChapterExport, canUseEpubExcerptNotes, canUseEpubFootnotePreview, canUseEpubParagraphMode, canUseEpubReadingProgress, canUseEpubReadingReference, canUseEpubSourceLocation, canUseEpubStyledExcerpts, createEpubReaderEngine, DEFAULT_EPUB_EXCERPT_SETTINGS, ensureBookSourceLocationAccess, ensureEpubPremiumFeature, EPUB_RUNTIME, EpubAnnotationService, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubAnnotationIndexService, getEpubBacklinkHighlightService, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress, resolveEpubHost, resolveEpubWeaveOfficialAPI, warmEpubAnnotationIndexForPaths } from '../../services/epub';
 	import { EpubBookmarkService } from '../../services/epub/EpubBookmarkService';
 	import { EpubReferenceStatsService } from '../../services/epub/EpubReferenceStatsService';
@@ -274,6 +278,45 @@
 		rects: DOMRect[];
 		clear: () => void;
 	} | null>(null);
+	let customMobileSelection = $state<MobileTapSelectionContext | null>(null);
+	let isMobileSelectionArmed = $state(false);
+
+	let mobileSelectionController = untrack(() => new MobileTapSelectionController({
+		onStateChange: (state) => {
+			isMobileSelectionArmed = state.mode === 'armed';
+			if (state.selection) {
+				customMobileSelection = state.selection;
+			} else if (state.mode === 'idle') {
+				if (customMobileSelection && !state.selection) {
+					customMobileSelection = null;
+				}
+			}
+		},
+		onSelectionComplete: (selection) => {
+			customMobileSelection = selection;
+		},
+	}));
+
+	function toggleMobileSelectionMode() {
+		if (isMobileSelectionArmed) {
+			mobileSelectionController.cancel();
+		} else {
+			if (customMobileSelection) {
+				mobileSelectionController.clearSelection();
+				customMobileSelection = null;
+			}
+			mobileSelectionController.syncFrames(readerService.getVisibleFrames());
+			mobileSelectionController.arm();
+		}
+	}
+
+	function handleCustomSelectionExpand(newRange: Range, newText: string, newCfiRange: string) {
+		mobileSelectionController.updateSelectionRange(newRange, newText, newCfiRange);
+		const current = mobileSelectionController.getSelection();
+		if (current) {
+			customMobileSelection = current;
+		}
+	}
 	let paragraphModeLocation = $state<{ paragraphs: ReaderParagraph[]; currentIndex: number } | null>(null);
 	let paragraphModeBusy = $state(false);
 	let paragraphModeImmersive = $state(false);
@@ -5235,16 +5278,23 @@
 			return false;
 		};
 
-		const requestReload = (path: string, delayMs = 180) => {
+		const requestReload = (path: string, eventType: string, delayMs = 180) => {
 			const normalizedPath = normalizeTrackedVaultPath(path);
 			if (!normalizedPath || !book || componentDisposed) return;
 			if (isEphemeralEditorHighlightSourcePath(app, normalizedPath)) {
 				return;
 			}
-			if (shouldReloadForPath(normalizedPath)) {
+			const isReadingNotePath =
+				normalizedPath.startsWith('Notes/读书笔记/') ||
+				normalizedPath.startsWith('Notes/外文笔记/');
+			if (isReadingNotePath || shouldReloadForPath(normalizedPath)) {
 				rememberHighlightSourcePath(normalizedPath);
 				void syncHighlightsAfterSourcePathChange(normalizedPath);
-				queueHighlightReload(delayMs, { incremental: true });
+				queueHighlightReload(delayMs, { incremental: true, invalidateCache: isReadingNotePath });
+				logMobileEvent("VAULT_EVENT", eventType, {
+					path: normalizedPath,
+					triggeredRescan: true,
+				});
 				return;
 			}
 			void (async () => {
@@ -5255,11 +5305,19 @@
 						canvasService.getCanvasPath()
 					);
 					if (!mayAffectHighlights || componentDisposed) {
+						logMobileEvent("VAULT_EVENT", eventType, {
+							path: normalizedPath,
+							triggeredRescan: false,
+						});
 						return;
 					}
 					rememberHighlightSourcePath(normalizedPath);
 					void syncHighlightsAfterSourcePathChange(normalizedPath);
-					queueHighlightReload(delayMs, { incremental: true });
+					queueHighlightReload(delayMs, { incremental: true, invalidateCache: true });
+					logMobileEvent("VAULT_EVENT", eventType, {
+						path: normalizedPath,
+						triggeredRescan: true,
+					});
 				} catch (error) {
 					logger.debug('[EpubReaderApp] Failed to inspect changed highlight source file:', {
 						path: normalizedPath,
@@ -5271,28 +5329,38 @@
 
 		vaultEventRefs = [
 			app.vault.on('create', (file: TAbstractFile) => {
-				requestReload(file.path, 160);
+				requestReload(file.path, 'create', 160);
 			}),
 			app.vault.on('modify', (file: TAbstractFile) => {
-				requestReload(file.path, 180);
+				requestReload(file.path, 'modify', 180);
 			}),
 			app.vault.on('delete', (file: TAbstractFile) => {
-				requestReload(file.path, 120);
+				requestReload(file.path, 'delete', 120);
 			}),
 			app.vault.on('rename', (file: TAbstractFile, oldPath: string) => {
 				if (shouldReloadForPath(oldPath) || shouldReloadForPath(file.path)) {
 					rememberHighlightSourcePath(oldPath);
 					rememberHighlightSourcePath(file.path);
-					queueHighlightReload(120, { incremental: true });
+					queueHighlightReload(120, { incremental: true, invalidateCache: true });
+					logMobileEvent("VAULT_EVENT", "rename", {
+						path: file.path,
+						triggeredRescan: true,
+					});
 					return;
 				}
-				requestReload(file.path, 160);
+				requestReload(file.path, 'rename', 160);
 			}),
 		];
 	}
 
 	onMount(() => {
 		document.addEventListener('fullscreenchange', handleFullscreenChange);
+		const handleVisibilityChange = () => {
+			if (document.visibilityState === 'visible' && !componentDisposed && !!book) {
+				queueHighlightReload(200, { incremental: true, invalidateCache: true });
+			}
+		};
+		document.addEventListener('visibilitychange', handleVisibilityChange);
 		const cleanupExternalHighlightSyncReload = attachExternalHighlightSyncReload({
 			canReload: () => !componentDisposed && !!book && hasExcerptNotesCapability(),
 			onReload: (delayMs) => {
@@ -5508,6 +5576,7 @@
 			app.workspace.offref(activeLeafChangeRef);
 			app.workspace.offref(canvasDirectionRef);
 			document.removeEventListener('fullscreenchange', handleFullscreenChange);
+			document.removeEventListener('visibilitychange', handleVisibilityChange);
 			cleanupExternalHighlightSyncReload();
 			cleanupCardHighlightSync();
 			setParagraphModeImmersiveClass(false);
@@ -5567,6 +5636,7 @@
 			}).finally(() => {
 				bookshelfProgressChangedNotifier.dispose();
 			});
+			mobileSelectionController.dispose();
 			readerService.destroy();
 			epubActiveDocumentStore.clearActiveDocument(filePath);
 		};
@@ -5737,6 +5807,11 @@
 						});
 						syncScrolledChapterNavVisibility();
 						scheduleScrolledNavLayoutSync();
+						mobileSelectionController.syncFrames(readerService.getVisibleFrames());
+						if (customMobileSelection && !isMobileSelectionArmed) {
+							mobileSelectionController.clearSelection();
+							customMobileSelection = null;
+						}
 					}}
 					onPaginationChange={(info) => {
 						paginationInfo = info;
@@ -5759,10 +5834,16 @@
 						}
 						syncScrolledChapterNavVisibility();
 						onChapterTitleChange?.(String(title || '').trim());
+						mobileSelectionController.syncFrames(readerService.getVisibleFrames());
+						if (customMobileSelection) {
+							mobileSelectionController.clearSelection();
+							customMobileSelection = null;
+						}
 					}}
 					onReaderReady={() => {
 						readerVersion++;
 						readerReady = true;
+						mobileSelectionController.syncFrames(readerService.getVisibleFrames());
 						if (pendingLoadedHighlights) {
 							void readerService.applyHighlights(pendingLoadedHighlights).then(() => {
 								if (pendingLoadedHighlights && pendingLoadedHighlights.length > 0) {
@@ -5907,6 +5988,22 @@
 				onClose={closeReferencePopover}
 			/>
 
+			{#if isMobileReader() && !settings.paragraphModeEnabled && readerReady}
+				<div class="zora-mobile-selection-control-slot">
+					<button
+						type="button"
+						class="zora-mobile-selection-toggle-btn"
+						class:active={isMobileSelectionArmed}
+						onclick={toggleMobileSelectionMode}
+						title={isMobileSelectionArmed ? "点击取消选取" : "选取"}
+						aria-label={isMobileSelectionArmed ? "选取中…" : "选取"}
+					>
+						<span class="zora-select-btn-icon" use:icon={isMobileSelectionArmed ? 'x' : 'highlighter'}></span>
+						<span class="zora-select-btn-text">{isMobileSelectionArmed ? '选取中…' : '选取'}</span>
+					</button>
+				</div>
+			{/if}
+
 			<SelectionToolbar
 				{app}
 				{readerService}
@@ -5914,7 +6011,8 @@
 				{readerVersion}
 				boundsEl={viewportEl}
 				mobileDockBottomOffset={settings.paragraphModeEnabled ? paragraphModeNavBottomOffset : 0}
-				externalSelection={settings.paragraphModeEnabled ? paragraphModeSelection : null}
+				externalSelection={settings.paragraphModeEnabled ? paragraphModeSelection : (customMobileSelection || null)}
+				onCustomSelectionExpand={handleCustomSelectionExpand}
 				{autoInsert}
 				{canvasMode}
 				canUseExcerptNotes={hasExcerptNotesCapability()}

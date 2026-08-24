@@ -120,6 +120,7 @@ bun.lockb
 # OS
 .DS_Store
 Thumbs.db
+*-DESKTOP-*
 
 # IDE
 .vscode/

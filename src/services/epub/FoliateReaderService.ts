@@ -5598,22 +5598,31 @@ export class FoliateReaderService implements EpubReaderEngine {
 
 	private emitSelectionChangeIfNeeded(doc: Document): void {
 		const selection = doc.defaultView?.getSelection?.();
+		const frame = this.getVisibleFramesWithIndex().find((item) => item.frameDocument === doc);
+		if (!frame) {
+			return;
+		}
+
 		if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+			const hadSelection = this.lastSelectionByDocument.has(doc);
 			this.lastSelectionByDocument.delete(doc);
+			if (hadSelection) {
+				this.notifySelectionChange("", frame.frame);
+			}
 			return;
 		}
 
 		const range = selection.getRangeAt(0);
 		const text = selection.toString().trim();
 		if (!text) {
+			const hadSelection = this.lastSelectionByDocument.has(doc);
 			this.lastSelectionByDocument.delete(doc);
+			if (hadSelection) {
+				this.notifySelectionChange("", frame.frame);
+			}
 			return;
 		}
 
-		const frame = this.getVisibleFramesWithIndex().find((item) => item.frameDocument === doc);
-		if (!frame) {
-			return;
-		}
 		const cfiRange = frame.frame.cfiFromRange(range.cloneRange());
 		if (!cfiRange) {
 			return;
