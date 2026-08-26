@@ -56,8 +56,8 @@ export class ZoraSyncService {
 	private resolveDeviceId(): string {
 		const storageKey = "zora-sync-device-id";
 		try {
-			if (typeof localStorage !== "undefined") {
-				const existing = localStorage.getItem(storageKey);
+			if (typeof window !== "undefined" && typeof window.localStorage !== "undefined" && typeof window.localStorage.getItem === "function") {
+				const existing = window.localStorage.getItem(storageKey);
 				if (existing && existing.trim().length > 0) {
 					return existing.trim();
 				}
@@ -82,8 +82,8 @@ export class ZoraSyncService {
 		const newId = `${platformPrefix}-${generateCardUUID().slice(0, 8)}`;
 		fallbackGlobalDeviceId = newId;
 		try {
-			if (typeof localStorage !== "undefined") {
-				localStorage.setItem(storageKey, newId);
+			if (typeof window !== "undefined" && typeof window.localStorage !== "undefined" && typeof window.localStorage.setItem === "function") {
+				window.localStorage.setItem(storageKey, newId);
 			}
 		} catch {
 			// ignore
@@ -130,15 +130,15 @@ export class ZoraSyncService {
 
 	async computeBookIdFromBytes(bytes: Uint8Array | ArrayBuffer): Promise<string> {
 		const input = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-		if (typeof crypto?.subtle?.digest === "function") {
-			try {
+		try {
+			if (typeof crypto !== "undefined" && typeof crypto.subtle?.digest === "function") {
 				const digest = await crypto.subtle.digest("SHA-256", input);
 				return Array.from(new Uint8Array(digest))
 					.map((b) => b.toString(16).padStart(2, "0"))
 					.join("");
-			} catch (error) {
-				logger.warn("[ZoraSyncService] crypto.subtle.digest failed:", error);
 			}
+		} catch (error) {
+			logger.warn("[ZoraSyncService] crypto.subtle.digest failed:", error);
 		}
 
 		// Fallback simple checksum if crypto.subtle is unavailable
@@ -595,25 +595,33 @@ export class ZoraSyncService {
 			}
 		};
 
-		this.vaultEventRefs.push(
-			this.app.vault.on("create", (file) => handleEvent(file.path)),
-			this.app.vault.on("modify", (file) => handleEvent(file.path)),
-			this.app.vault.on("delete", (file) => handleEvent(file.path)),
-			this.app.vault.on("rename", (file, oldPath) => {
-				handleEvent(file.path);
-				handleEvent(oldPath);
-			})
-		);
+		try {
+			this.vaultEventRefs.push(
+				this.app.vault.on("create", (file) => file && handleEvent(file.path)),
+				this.app.vault.on("modify", (file) => file && handleEvent(file.path)),
+				this.app.vault.on("delete", (file) => file && handleEvent(file.path)),
+				this.app.vault.on("rename", (file, oldPath) => {
+					if (file) handleEvent(file.path);
+					if (oldPath) handleEvent(oldPath);
+				})
+			);
+		} catch (err) {
+			logger.warn("[ZoraSyncService] setupVaultWatchers failed:", err);
+		}
 	}
 
 	private setupVisibilityWatcher(): void {
-		if (typeof document !== "undefined") {
-			this.visibilityHandler = () => {
-				if (document.visibilityState === "visible" && this.activeBookId) {
-					void this.checkActiveBookDirChanged();
-				}
-			};
-			document.addEventListener("visibilitychange", this.visibilityHandler);
+		if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+			try {
+				this.visibilityHandler = () => {
+					if (document.visibilityState === "visible" && this.activeBookId) {
+						void this.checkActiveBookDirChanged();
+					}
+				};
+				document.addEventListener("visibilitychange", this.visibilityHandler);
+			} catch (err) {
+				logger.warn("[ZoraSyncService] setupVisibilityWatcher failed:", err);
+			}
 		}
 	}
 
@@ -718,13 +726,17 @@ export class ZoraSyncService {
 			clearTimeout(this.debounceTimer);
 			this.debounceTimer = null;
 		}
-		if (this.visibilityHandler && typeof document !== "undefined") {
-			document.removeEventListener("visibilitychange", this.visibilityHandler);
+		if (this.visibilityHandler && typeof document !== "undefined" && typeof document.removeEventListener === "function") {
+			try {
+				document.removeEventListener("visibilitychange", this.visibilityHandler);
+			} catch {}
 			this.visibilityHandler = null;
 		}
 		if (this.app?.vault && typeof this.app.vault.offref === "function") {
 			for (const ref of this.vaultEventRefs) {
-				this.app.vault.offref(ref);
+				try {
+					this.app.vault.offref(ref);
+				} catch {}
 			}
 		}
 		this.vaultEventRefs = [];

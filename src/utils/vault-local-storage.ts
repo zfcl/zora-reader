@@ -48,7 +48,11 @@ class VaultLocalStorage {
 			this.setApp(app);
 			this.initializePromise = this.loadAndMigrate();
 		}
-		await this.initializePromise;
+		try {
+			await this.initializePromise;
+		} catch (error) {
+			logger.warn("[VaultLocalStorage] initialize failed:", error);
+		}
 	}
 
 	getItem(key: string): string | null {
@@ -147,13 +151,28 @@ class VaultLocalStorage {
 		if (!this.app) {
 			return null;
 		}
-		const value = getAppWithLegacyLocalStorage(this.app).loadLocalStorage(key);
-		return typeof value === "string" ? value : null;
+		try {
+			const appWithStorage = getAppWithLegacyLocalStorage(this.app);
+			if (typeof appWithStorage.loadLocalStorage === "function") {
+				const value = appWithStorage.loadLocalStorage(key);
+				return typeof value === "string" ? value : null;
+			}
+		} catch (error) {
+			logger.warn(`[VaultLocalStorage] readRawLegacyValue failed for key ${key}:`, error);
+		}
+		return null;
 	}
 
 	private writeLegacyValue(key: string, value: string | undefined): void {
 		if (this.app) {
-			getAppWithLegacyLocalStorage(this.app).saveLocalStorage(key, value);
+			try {
+				const appWithStorage = getAppWithLegacyLocalStorage(this.app);
+				if (typeof appWithStorage.saveLocalStorage === "function") {
+					appWithStorage.saveLocalStorage(key, value);
+				}
+			} catch (error) {
+				logger.warn(`[VaultLocalStorage] writeLegacyValue failed for key ${key}:`, error);
+			}
 		}
 	}
 
@@ -299,13 +318,17 @@ class VaultLocalStorage {
 
 	private collectLegacyManagedEntries(): Map<string, string> {
 		const entries = new Map<string, string>();
-		if (typeof window === "undefined") {
+		if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
 			return entries;
 		}
 
 		try {
-			for (let i = 0; i < window.localStorage.length; i++) {
-				const rawKey = window.localStorage.key(i);
+			const storage = window.localStorage;
+			if (!storage || typeof storage.length !== "number") {
+				return entries;
+			}
+			for (let i = 0; i < storage.length; i++) {
+				const rawKey = storage.key(i);
 				if (!rawKey) {
 					continue;
 				}
@@ -320,8 +343,8 @@ class VaultLocalStorage {
 					entries.set(canonicalKey, value);
 				}
 			}
-		} catch {
-			// ignore legacy scan failures
+		} catch (error) {
+			logger.warn("[VaultLocalStorage] scan legacy localStorage failed:", error);
 		}
 
 		return entries;

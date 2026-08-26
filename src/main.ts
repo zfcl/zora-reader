@@ -1,8 +1,9 @@
-import { Plugin, TAbstractFile, TFile, normalizePath } from "obsidian";
+import { Platform, Plugin, TAbstractFile, TFile, normalizePath } from "obsidian";
 import "./styles/epub/integrated-ai.css";
 import "./utils/blob-url-registry";
 import "./utils/group-by-compat";
 
+import { EpubSettingsTab } from "./components/settings/EpubSettingsTab";
 import { EpubDataManagementModalObsidian } from "./components/epub/EpubDataManagementModalObsidian";
 import { DEFAULT_EPUB_BOOKMARK_FOLDER } from "./config/epub-user-vault-folders";
 import {
@@ -62,6 +63,7 @@ import {
 } from "./services/epub/bookshelf-display-mode";
 import { registerCanvasExcerptAnchorCacheWarmup } from "./services/epub/canvas-excerpt-anchor";
 import {
+	getRegisteredViewTypeForExtension,
 	openEpubBookshelf,
 	openEpubReader,
 	registerEpubMarkdownPostProcessor,
@@ -103,6 +105,11 @@ import { logger } from "./utils/logger";
 import { safeOpenSettings } from "./utils/obsidian-api-safe";
 import { getInheritedLicensesFromLegacyWeave } from "./utils/plugin-access";
 import { vaultStorage } from "./utils/vault-local-storage";
+import {
+	initMobileDiagnostics,
+	logMobileError,
+	logMobileEvent,
+} from "./utils/zora-mobile-logger";
 
 interface StandaloneEpubPluginSettings {
 	license: LicenseInfo;
@@ -421,33 +428,37 @@ new ZoraVocabularyModal(this.app, this).open();
 		this.settings.lastSelectedIRDeckId = String(
 			this.settings.lastSelectedIRDeckId || "",
 		).trim();
-		const hasLocalUiMemory =
-			await this.getEpubStorageService().hasPluginUiMemory();
-		const localUiMemory =
-			await this.getEpubStorageService().loadPluginUiMemory();
-		this.settings.selectionQuickCreateLastFolder =
-			this.normalizeRememberedFolder(
+		try {
+			const hasLocalUiMemory =
+				await this.getEpubStorageService().hasPluginUiMemory();
+			const localUiMemory =
+				await this.getEpubStorageService().loadPluginUiMemory();
+			this.settings.selectionQuickCreateLastFolder =
+				this.normalizeRememberedFolder(
+					hasLocalUiMemory
+						? localUiMemory.selectionQuickCreateLastFolder
+						: localUiMemory.selectionQuickCreateLastFolder ||
+						  this.settings.selectionQuickCreateLastFolder,
+				);
+			this.settings.epubMarkdownExportLastFolder = this.normalizeRememberedFolder(
 				hasLocalUiMemory
-					? localUiMemory.selectionQuickCreateLastFolder
-					: localUiMemory.selectionQuickCreateLastFolder ||
-					  this.settings.selectionQuickCreateLastFolder,
+					? localUiMemory.epubMarkdownExportLastFolder
+					: localUiMemory.epubMarkdownExportLastFolder ||
+					  this.settings.epubMarkdownExportLastFolder,
 			);
+			this.settings.lastSelectedIRDeckId = String(
+				hasLocalUiMemory
+					? localUiMemory.lastSelectedIRDeckId
+					: localUiMemory.lastSelectedIRDeckId ||
+					  this.settings.lastSelectedIRDeckId ||
+					  "",
+			).trim();
+		} catch (storageError) {
+			logger.warn("[StandaloneEpubPlugin] loadPluginUiMemory fallback:", storageError);
+		}
 		this.settings.vocabularyEntries = Array.isArray(this.settings.vocabularyEntries)
 			? this.settings.vocabularyEntries.map((entry) => normalizeVocabularyEntry(entry)).filter((entry): entry is ZoraVocabularyEntry => entry !== null)
 			: [];
-		this.settings.epubMarkdownExportLastFolder = this.normalizeRememberedFolder(
-			hasLocalUiMemory
-				? localUiMemory.epubMarkdownExportLastFolder
-				: localUiMemory.epubMarkdownExportLastFolder ||
-				  this.settings.epubMarkdownExportLastFolder,
-		);
-		this.settings.lastSelectedIRDeckId = String(
-			hasLocalUiMemory
-				? localUiMemory.lastSelectedIRDeckId
-				: localUiMemory.lastSelectedIRDeckId ||
-				  this.settings.lastSelectedIRDeckId ||
-				  "",
-		).trim();
 		const licenseSettingsChanged = this.syncLicenseSettings();
 		this.syncDebugSettings();
 		this.syncPremiumPreviewSettings();
@@ -462,12 +473,16 @@ new ZoraVocabularyModal(this.app, this).open();
 		);
 		setInterfaceLanguagePreference(this.settings.interfaceLanguage);
 		if (licenseSettingsChanged || this.hasLegacyRememberedUiKeys(loadedData)) {
-			if (this.hasLegacyRememberedUiKeys(loadedData)) {
-				await this.getEpubStorageService().savePluginUiMemory(
-					this.getRememberedUiMemory(),
-				);
+			try {
+				if (this.hasLegacyRememberedUiKeys(loadedData)) {
+					await this.getEpubStorageService().savePluginUiMemory(
+						this.getRememberedUiMemory(),
+					);
+				}
+				await this.persistSettingsData();
+			} catch (persistError) {
+				logger.warn("[StandaloneEpubPlugin] persistSettingsData fallback:", persistError);
 			}
-			await this.persistSettingsData();
 		}
 	}
 
@@ -650,112 +665,313 @@ new ZoraVocabularyModal(this.app, this).open();
 		return Promise.resolve();
 	}
 
+	private async safeInit(
+		name: string,
+		startEvent: string | null,
+		successEvent: string,
+		errorEvent: string,
+		fn: () => Promise<void> | void,
+	): Promise<void> {
+		if (startEvent) {
+			logMobileEvent("Lifecycle", startEvent);
+		}
+		try {
+			await fn();
+			logMobileEvent("Lifecycle", successEvent);
+		} catch (error) {
+			logMobileError(errorEvent, error, { phase: name });
+		}
+	}
+
 	async onload(): Promise<void> {
 		try {
-			const { initMobileDiagnostics } = await import("./utils/zora-mobile-logger");
 			initMobileDiagnostics(this.app, this.manifest.id);
 		} catch {
 			// Fail-safe
 		}
-		await this.loadSettings();
-		await vaultStorage.initialize(this.app);
-		initI18n(this.settings.interfaceLanguage);
-		registerEpubHost(this.app, this);
-		const syncService = getZoraSyncService(this.app);
-		void syncService.migrateLegacyData(this.getEpubStorageService());
-		configureNavigationHub(this.app, {
-			getSourceNavigationOpenInNewTab: () =>
-				this.settings.sourceNavigationOpenInNewTab !== false,
-			getEnableDebugMode: () => this.settings.enableDebugMode === true,
+
+		logMobileEvent("Lifecycle", "ONLOAD_START", {
+			pluginId: this.manifest.id,
+			version: this.manifest.version,
+			platform: Platform.isIosApp ? "iOS-App" : Platform.isMobile ? "Mobile" : "Desktop",
 		});
-		getBookSessionManager(this.app, {
-			cardSyncDedupeMs: 600,
-			getEnableDebugMode: () => this.settings.enableDebugMode === true,
-		});
-		aiConfigStore.initialize(this);
-		const { EpubSettingsTab } = await import(
-			"./components/settings/EpubSettingsTab"
-		);
-		this.addSettingTab(new EpubSettingsTab(this.app, this));
-		await PremiumFeatureGuard.getInstance().initializeForProduct({
-			product: this.getLicensedProductId(),
-			localLicenses: this.getLocalLicenses(),
-			inheritedLicenses: this.getInheritedLicenses(),
-		});
-		registerLicenseSyncBridge(this, this);
-		registerCanvasExcerptAnchorMenu(this);
-		registerCanvasDirectionMenu(this);
-		registerCanvasExcerptAnchorCacheWarmup(this);
-		this.registerWorkspaceViews();
-		registerEpubMarkdownPostProcessor(this, this.app);
-		registerEpubProtocolHandler(this, this.app, "[Standalone EPUB Protocol]");
-		this.registerBookshelfVaultRefreshBridge();
-		const { bootstrapEpubAnnotationIndex, scheduleEpubAnnotationIndexWarmup } =
-			await import("./services/epub/epub-annotation-index");
-		this.registerEvent(
-			this.app.workspace.on("layout-ready", () => {
-				bootstrapEpubAnnotationIndex(this.app);
-				void import("./services/epub/epub-bookmark-migration").then(
-					({ maybePromptEpubBookmarkV3Migration }) =>
-						maybePromptEpubBookmarkV3Migration(this.app),
-				);
-			}),
-		);
-		scheduleEpubAnnotationIndexWarmup(this.app);
-		this.registerDomEvent(
-			window,
-			EPUB_RUNTIME.events.bookshelfDataChanged as keyof WindowEventMap,
-			() => {
-				scheduleEpubAnnotationIndexWarmup(this.app, 8_000);
-			},
-		);
-		this.registerEvent(
-			this.app.workspace.on("layout-change", () => {
-				syncI18nLanguage();
-			}),
-		);
-		this.registerDomEvent(window, "focus", () => {
-			syncI18nLanguage();
-		});
-		this.registerDomEvent(activeDocument, "visibilitychange", () => {
-			if (!activeDocument.hidden) {
-				syncI18nLanguage();
+
+		// --------------------------------------------------------------------
+		// 核心启动步骤 1: 加载设置
+		// --------------------------------------------------------------------
+		logMobileEvent("Lifecycle", "LOAD_SETTINGS_START");
+		try {
+			await this.loadSettings();
+			logMobileEvent("Lifecycle", "LOAD_SETTINGS_SUCCESS");
+		} catch (error) {
+			logMobileError("LOAD_SETTINGS_ERROR", error, { stage: "loadSettings" });
+			throw error;
+		}
+
+		// --------------------------------------------------------------------
+		// 核心启动步骤 2: 注册 SettingTab（最先注册，确保 Obsidian 菜单中出现“设置”）
+		// --------------------------------------------------------------------
+		logMobileEvent("Lifecycle", "SETTING_TAB_REGISTER_START");
+		try {
+			const settingTab = new EpubSettingsTab(this.app, this);
+			this.addSettingTab(settingTab);
+			logMobileEvent("Lifecycle", "SETTING_TAB_REGISTER_SUCCESS", {
+				pluginId: this.manifest.id,
+				settingTabClass: settingTab.constructor?.name || "EpubSettingsTab",
+				registrationSuccess: true,
+			});
+		} catch (error) {
+			logMobileError("SETTING_TAB_REGISTER_ERROR", error, { stage: "addSettingTab" });
+			throw error;
+		}
+
+		// --------------------------------------------------------------------
+		// 核心启动步骤 3: 注册 EPUB Workspace Views 及扩展名绑定
+		// --------------------------------------------------------------------
+		logMobileEvent("Lifecycle", "EPUB_VIEW_REGISTER_START");
+		try {
+			const existingViewType = getRegisteredViewTypeForExtension(this.app, "epub");
+			this.registerWorkspaceViews();
+			const finalViewType = getRegisteredViewTypeForExtension(this.app, "epub");
+
+			let epubFilesCount = 0;
+			let sampleEpubPaths: string[] = [];
+			try {
+				const epubFiles = this.app.vault.getFiles().filter((f) => f.extension === "epub");
+				epubFilesCount = epubFiles.length;
+				sampleEpubPaths = epubFiles.slice(0, 5).map((f) => f.path);
+			} catch {
+				// non-fatal
 			}
-		});
-		this.addRibbonIcon(
-			"library",
-			i18n.t("views.epubBookshelfSidebar.title"),
-			() => {
-				void this.openEpubBookshelf();
+
+			logMobileEvent("Lifecycle", "EPUB_VIEW_REGISTER_SUCCESS", {
+				existingViewType,
+				finalViewType,
+				epubFilesCount,
+				sampleEpubPaths,
+			});
+
+			logMobileEvent("Lifecycle", "EPUB_EXTENSION_REGISTER_RESULT", {
+				existingViewType,
+				finalViewType,
+				epubFilesCount,
+				sampleEpubPaths,
+			});
+		} catch (error) {
+			logMobileError("EPUB_VIEW_REGISTER_ERROR", error, { stage: "registerWorkspaceViews" });
+			throw error;
+		}
+
+		// --------------------------------------------------------------------
+		// 核心启动步骤 4: 注册 Commands、Ribbon、PostProcessor 与 Protocol Handler
+		// --------------------------------------------------------------------
+		try {
+			this.addRibbonIcon(
+				"library",
+				i18n.t("views.epubBookshelfSidebar.title"),
+				() => {
+					void this.openEpubBookshelf();
+				},
+			);
+
+			this.addCommand({
+				id: "open-epub-bookshelf",
+				name: i18n.t("views.epubBookshelfSidebar.title"),
+				callback: () => {
+					void this.openEpubBookshelf();
+				},
+			});
+			this.addCommand({
+				id: "open-vocabulary",
+				name: "打开生词本",
+				callback: () => {
+					void this.openVocabularyList();
+				},
+			});
+			this.addCommand({
+				id: "open-active-epub-reader",
+				name: i18n.t("commands.openEpubReader.name"),
+				checkCallback: (checking) => {
+					const activeFile = this.app.workspace.getActiveFile();
+					const canOpen =
+						activeFile instanceof TFile && isSupportedBookFile(activeFile);
+					if (!checking && canOpen) {
+						void this.openEpubReader(activeFile.path);
+					}
+					return canOpen;
+				},
+			});
+
+			registerEpubMarkdownPostProcessor(this, this.app);
+			registerEpubProtocolHandler(this, this.app, "[Standalone EPUB Protocol]");
+			this.registerBookshelfVaultRefreshBridge();
+		} catch (coreEntryError) {
+			logMobileError("CORE_ENTRY_REGISTER_ERROR", coreEntryError);
+		}
+
+		// --------------------------------------------------------------------
+		// 非核心步骤隔离初始化 (safeInit)
+		// --------------------------------------------------------------------
+
+		// 1. Vault Storage
+		await this.safeInit(
+			"VaultStorage",
+			"VAULT_STORAGE_START",
+			"VAULT_STORAGE_SUCCESS",
+			"VAULT_STORAGE_ERROR",
+			async () => {
+				await vaultStorage.initialize(this.app);
 			},
 		);
 
-		this.addCommand({
-			id: "open-epub-bookshelf",
-			name: i18n.t("views.epubBookshelfSidebar.title"),
-			callback: () => {
-				void this.openEpubBookshelf();
+		// 2. I18N
+		await this.safeInit(
+			"I18n",
+			"I18N_START",
+			"I18N_SUCCESS",
+			"I18N_ERROR",
+			() => {
+				initI18n(this.settings.interfaceLanguage);
 			},
-		});
-		this.addCommand({
-			id: "open-vocabulary",
-			name: "打开生词本",
-			callback: () => {
-				void this.openVocabularyList();
+		);
+
+		// 3. Register Epub Host
+		await this.safeInit(
+			"RegisterHost",
+			null,
+			"REGISTER_HOST_SUCCESS",
+			"REGISTER_HOST_ERROR",
+			() => {
+				registerEpubHost(this.app, this);
 			},
-		});
-		this.addCommand({
-			id: "open-active-epub-reader",
-			name: i18n.t("commands.openEpubReader.name"),
-			checkCallback: (checking) => {
-				const activeFile = this.app.workspace.getActiveFile();
-				const canOpen =
-					activeFile instanceof TFile && isSupportedBookFile(activeFile);
-				if (!checking && canOpen) {
-					void this.openEpubReader(activeFile.path);
-				}
-				return canOpen;
+		);
+
+		// 4. Zora Sync Service
+		await this.safeInit(
+			"SyncService",
+			null,
+			"SYNC_SERVICE_SUCCESS",
+			"SYNC_SERVICE_ERROR",
+			() => {
+				const syncService = getZoraSyncService(this.app);
+				void syncService.migrateLegacyData(this.getEpubStorageService());
 			},
+		);
+
+		// 5. Navigation Hub
+		await this.safeInit(
+			"NavigationHub",
+			null,
+			"NAVIGATION_HUB_SUCCESS",
+			"NAVIGATION_HUB_ERROR",
+			() => {
+				configureNavigationHub(this.app, {
+					getSourceNavigationOpenInNewTab: () =>
+						this.settings.sourceNavigationOpenInNewTab !== false,
+					getEnableDebugMode: () => this.settings.enableDebugMode === true,
+				});
+			},
+		);
+
+		// 6. Book Session Manager
+		await this.safeInit(
+			"BookSession",
+			null,
+			"BOOK_SESSION_SUCCESS",
+			"BOOK_SESSION_ERROR",
+			() => {
+				getBookSessionManager(this.app, {
+					cardSyncDedupeMs: 600,
+					getEnableDebugMode: () => this.settings.enableDebugMode === true,
+				});
+			},
+		);
+
+		// 7. AI Config
+		await this.safeInit(
+			"AIConfig",
+			null,
+			"AI_CONFIG_SUCCESS",
+			"AI_CONFIG_ERROR",
+			() => {
+				aiConfigStore.initialize(this);
+			},
+		);
+
+		// 8. Premium Feature Guard & License Sync Bridge
+		await this.safeInit(
+			"PremiumInit",
+			"PREMIUM_INIT_START",
+			"PREMIUM_INIT_SUCCESS",
+			"PREMIUM_INIT_ERROR",
+			async () => {
+				await PremiumFeatureGuard.getInstance().initializeForProduct({
+					product: this.getLicensedProductId(),
+					localLicenses: this.getLocalLicenses(),
+					inheritedLicenses: this.getInheritedLicenses(),
+				});
+				registerLicenseSyncBridge(this, this);
+			},
+		);
+
+		// 9. Canvas Integrations
+		await this.safeInit(
+			"Canvas",
+			null,
+			"CANVAS_INIT_SUCCESS",
+			"CANVAS_INIT_ERROR",
+			() => {
+				registerCanvasExcerptAnchorMenu(this);
+				registerCanvasDirectionMenu(this);
+				registerCanvasExcerptAnchorCacheWarmup(this);
+			},
+		);
+
+		// 10. Annotation Index & Warmup & Layout Listeners
+		await this.safeInit(
+			"AnnotationWarmup",
+			null,
+			"ANNOTATION_INIT_SUCCESS",
+			"ANNOTATION_INIT_ERROR",
+			async () => {
+				const { bootstrapEpubAnnotationIndex, scheduleEpubAnnotationIndexWarmup } =
+					await import("./services/epub/epub-annotation-index");
+				this.registerEvent(
+					this.app.workspace.on("layout-ready", () => {
+						bootstrapEpubAnnotationIndex(this.app);
+						void import("./services/epub/epub-bookmark-migration").then(
+							({ maybePromptEpubBookmarkV3Migration }) =>
+								maybePromptEpubBookmarkV3Migration(this.app),
+						);
+					}),
+				);
+				scheduleEpubAnnotationIndexWarmup(this.app);
+				this.registerDomEvent(
+					window,
+					EPUB_RUNTIME.events.bookshelfDataChanged as keyof WindowEventMap,
+					() => {
+						scheduleEpubAnnotationIndexWarmup(this.app, 8_000);
+					},
+				);
+				this.registerEvent(
+					this.app.workspace.on("layout-change", () => {
+						syncI18nLanguage();
+					}),
+				);
+				this.registerDomEvent(window, "focus", () => {
+					syncI18nLanguage();
+				});
+				this.registerDomEvent(activeDocument, "visibilitychange", () => {
+					if (!activeDocument.hidden) {
+						syncI18nLanguage();
+					}
+				});
+			},
+		);
+
+		logMobileEvent("Lifecycle", "ONLOAD_COMPLETE", {
+			pluginId: this.manifest.id,
+			version: this.manifest.version,
 		});
 	}
 
