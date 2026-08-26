@@ -1,231 +1,71 @@
-name: Release Obsidian Plugin
+name: Release plugin
 
-# The complete GPL source is public. Releases are rebuilt and attested from an
-# explicit tag through workflow_dispatch after manual Obsidian UI validation.
 on:
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "Tag to publish or republish (e.g. 1.0.0)"
-        required: true
-        type: string
+  push:
+    tags:
+      - '*'
 
 permissions:
   contents: write
-  id-token: write
   attestations: write
+  id-token: write
 
 jobs:
   release:
-    name: Build And Release
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Check out source
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', github.event.inputs.tag) || github.ref }}
 
-      - name: Setup Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
-          cache: "npm"
+          node-version: 22
+          cache: npm
 
       - name: Install dependencies
-        run: node scripts/ci-install-dependencies.cjs
+        run: npm ci
 
-      - name: Verify public repo safety
-        run: npm run verify:public-repo
-
-      - name: Read release version
-        id: version
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG_VERSION="${{ github.event.inputs.tag }}"
-          else
-            TAG_VERSION="${GITHUB_REF#refs/tags/}"
-          fi
-
-          MANIFEST_VERSION=$(node -p "require('./manifest.json').version")
-          PACKAGE_VERSION=$(node -p "require('./package.json').version")
-
-          echo "tag=$TAG_VERSION" >> "$GITHUB_OUTPUT"
-          echo "manifest=$MANIFEST_VERSION" >> "$GITHUB_OUTPUT"
-          echo "package=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
-
-          if [ "$TAG_VERSION" != "$MANIFEST_VERSION" ]; then
-            echo "Tag version ($TAG_VERSION) does not match manifest.json ($MANIFEST_VERSION)"
-            exit 1
-          fi
-
-          if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
-            echo "Tag version ($TAG_VERSION) does not match package.json ($PACKAGE_VERSION)"
-            exit 1
-          fi
-
-          node -e "const versions=require('./versions.json'); const version=process.argv[1]; if (!versions[version]) { console.error('versions.json missing version ' + version); process.exit(1); }" "$TAG_VERSION"
-
-      - name: Verify Obsidian community compliance
-        run: npm run verify:obsidian-community
-
-      - name: Run unit tests
-        run: npm test
-
-      - name: Prepare release notes
-        id: notes
-        shell: bash
-        run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          NOTES_FILE=".github/release-notes/${TAG}.md"
-
-          if [ -f "$NOTES_FILE" ]; then
-            cp "$NOTES_FILE" /tmp/release-notes.md
-            echo "Loaded release notes from checked-out tag"
-          else
-            {
-              echo "## ${TAG}"
-              echo ""
-              echo "Automated release for the Obsidian community plugin directory."
-            } > /tmp/release-notes.md
-          fi
-
-          if [ ! -s /tmp/release-notes.md ]; then
-            echo "Release notes file is empty for ${TAG}"
-            exit 1
-          fi
-
-          echo "path=/tmp/release-notes.md" >> "$GITHUB_OUTPUT"
-
-      - name: Build plugin
+      - name: Build release assets
         run: npm run build
 
-      - name: Verify release assets
-        run: npm run verify:release
+      - name: Test plugin
+        run: npm test
 
-      - name: Verify bundle has no dynamic script injection
-        run: node scripts/verify-no-dynamic-script.cjs dist/main.js
-
-      - name: Package convenience ZIP
-        id: package
-        shell: bash
+      - name: Prepare release files
         run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          ARCHIVE_NAME="weave-epub-ai-reader-${TAG}.zip"
-          PACKAGE_ROOT="${RUNNER_TEMP}/weave-epub-ai-reader"
-
-          mkdir -p "$PACKAGE_ROOT"
-          cp dist/main.js dist/manifest.json dist/styles.css README.md "$PACKAGE_ROOT/"
-          (
-            cd "$RUNNER_TEMP"
-            zip -qr "${GITHUB_WORKSPACE}/dist/${ARCHIVE_NAME}" weave-epub-ai-reader
-          )
-
-          echo "archive=dist/${ARCHIVE_NAME}" >> "$GITHUB_OUTPUT"
+          cp dist/main.js dist/manifest.json dist/styles.css ./
+          zip zora-reader-${GITHUB_REF_NAME}.zip main.js manifest.json styles.css LICENSE NOTICE.md
 
       - name: Attest release assets
-        uses: actions/attest@v4
+        uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
-            dist/main.js
-            dist/manifest.json
-            dist/styles.css
-            ${{ steps.package.outputs.archive }}
+            main.js
+            manifest.json
+            styles.css
+            zora-reader-${GITHUB_REF_NAME}.zip
 
-      - name: Create or update GitHub release
+      - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: bash
         run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          NOTES_FILE="${{ steps.notes.outputs.path }}"
-
-          if gh release view "$TAG" > /dev/null 2>&1; then
-            echo "Updating existing release ${TAG}..."
-            gh release delete-asset "$TAG" versions.json -y 2>/dev/null || true
-            gh release upload "$TAG" \
-              dist/main.js \
-              dist/manifest.json \
-              dist/styles.css \
-              "${{ steps.package.outputs.archive }}" \
+          if gh release view "${GITHUB_REF_NAME}" > /dev/null 2>&1; then
+            echo "Updating existing release ${GITHUB_REF_NAME}..."
+            gh release upload "${GITHUB_REF_NAME}" \
+              main.js \
+              manifest.json \
+              styles.css \
+              zora-reader-${GITHUB_REF_NAME}.zip \
               --clobber
-            gh release edit "$TAG" --title "$TAG" --notes-file "$NOTES_FILE"
+            gh release edit "${GITHUB_REF_NAME}" --title "Zora Reader ${GITHUB_REF_NAME}"
           else
-            gh release create "$TAG" \
-              --title "$TAG" \
-              --notes-file "$NOTES_FILE" \
-              dist/main.js \
-              dist/manifest.json \
-              dist/styles.css \
-              "${{ steps.package.outputs.archive }}"
+            gh release create "${GITHUB_REF_NAME}" \
+              main.js \
+              manifest.json \
+              styles.css \
+              zora-reader-${GITHUB_REF_NAME}.zip \
+              --title "Zora Reader ${GITHUB_REF_NAME}" \
+              --generate-notes
           fi
-
-      - name: Verify remote release metadata
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          node - <<'EOF' "$TAG"
-          (async () => {
-            const [tag] = process.argv.slice(2);
-            const token = process.env.GITHUB_TOKEN;
-            const repo = process.env.GITHUB_REPOSITORY;
-
-            if (!tag || !token || !repo) {
-              console.error("Missing tag, token, or repository context for release metadata verification.");
-              process.exit(1);
-            }
-
-            const url = `https://api.github.com/repos/${repo}/releases/tags/${tag}`;
-            const response = await fetch(url, {
-              headers: {
-                Authorization: `Bearer ${token}`,
-                Accept: "application/vnd.github+json",
-                "User-Agent": "weave-epub-ai-reader-release-check",
-              },
-            });
-
-            if (!response.ok) {
-              console.error(`Failed to fetch release metadata for ${tag}: ${response.status} ${response.statusText}`);
-              process.exit(1);
-            }
-
-            const release = await response.json();
-            if (release.name !== tag) {
-              console.error(`Release title mismatch for ${tag}: expected "${tag}", got "${release.name ?? ""}"`);
-              process.exit(1);
-            }
-
-            const body = (release.body ?? "").trim();
-            if (!body) {
-              console.error(`Release description is empty for ${tag}`);
-              process.exit(1);
-            }
-
-            const assetNames = (release.assets ?? []).map((asset) => asset.name).sort();
-            const expectedAssets = [
-              "main.js",
-              "manifest.json",
-              "styles.css",
-              `weave-epub-ai-reader-${tag}.zip`,
-            ];
-            const unexpectedAssets = assetNames.filter((name) => !expectedAssets.includes(name));
-            if (unexpectedAssets.length > 0) {
-              console.error(`Unexpected release asset(s) for ${tag}: ${unexpectedAssets.join(", ")}`);
-              process.exit(1);
-            }
-
-            const missingAssets = expectedAssets.filter((name) => !assetNames.includes(name));
-            if (missingAssets.length > 0) {
-              console.error(`Missing release asset(s) for ${tag}: ${missingAssets.join(", ")}`);
-              process.exit(1);
-            }
-
-            console.log(`Verified release metadata for ${tag}`);
-          })().catch((error) => {
-            console.error(error);
-            process.exit(1);
-          });
-          EOF

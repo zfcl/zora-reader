@@ -12,25 +12,40 @@ describe("ZoraSyncService", () => {
 		mockApp = {
 			vault: {
 				adapter: {
-					exists: vi.fn(async (path: string) => Object.prototype.hasOwnProperty.call(memoryFs, path)),
+					exists: vi.fn(async (path: string) => {
+						const norm = path.replace(/\\/g, "/").replace(/\/$/, "");
+						return Object.keys(memoryFs).some(
+							(k) => k.replace(/\\/g, "/") === norm || k.replace(/\\/g, "/").startsWith(`${norm}/`),
+						);
+					}),
+					mkdir: vi.fn(async (_path: string) => {}),
 					read: vi.fn(async (path: string) => {
-						if (!Object.prototype.hasOwnProperty.call(memoryFs, path)) {
+						const norm = path.replace(/\\/g, "/");
+						const matchKey = Object.keys(memoryFs).find((k) => k.replace(/\\/g, "/") === norm);
+						if (!matchKey) {
 							throw new Error(`File not found: ${path}`);
 						}
-						return memoryFs[path];
+						return memoryFs[matchKey];
 					}),
 					write: vi.fn(async (path: string, data: string) => {
-						memoryFs[path] = data;
+						memoryFs[path.replace(/\\/g, "/")] = data;
 					}),
 					remove: vi.fn(async (path: string) => {
-						delete memoryFs[path];
+						const norm = path.replace(/\\/g, "/");
+						for (const key of Object.keys(memoryFs)) {
+							if (key.replace(/\\/g, "/") === norm) {
+								delete memoryFs[key];
+							}
+						}
 					}),
 					list: vi.fn(async (dir: string) => {
-						const prefix = dir.endsWith("/") ? dir : `${dir}/`;
-						const files = Object.keys(memoryFs).filter((k) => k.startsWith(prefix));
+						const norm = dir.replace(/\\/g, "/").replace(/\/$/, "");
+						const files = Object.keys(memoryFs).filter((k) => k.replace(/\\/g, "/").startsWith(`${norm}/`));
 						return { files, folders: [] };
 					}),
 				},
+				getAbstractFileByPath: vi.fn((path: string) => ({ path, name: path.split("/").pop() })),
+				readBinary: vi.fn(async () => new Uint8Array([1, 2, 3])),
 				on: vi.fn(() => ({})),
 				offref: vi.fn(),
 			},
