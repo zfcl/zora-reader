@@ -70,6 +70,11 @@ html, body, body * {
 	-webkit-user-select: none !important;
 	user-select: none !important;
 	-webkit-touch-callout: none !important;
+}
+input, textarea, select, [contenteditable="true"] {
+	-webkit-user-select: auto !important;
+	user-select: auto !important;
+	-webkit-touch-callout: default !important;
 }`
 		: "";
 

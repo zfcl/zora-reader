@@ -18,9 +18,16 @@ export interface MobileDirectSelectionContext {
 	clear: () => void;
 }
 
+export type MobileGestureKind =
+	| 'text-selection'
+	| 'interactive'
+	| 'native-control'
+	| 'blocked';
+
 export interface MobileDirectSelectionState {
 	mode: MobileDirectSelectionMode;
 	selection: MobileDirectSelectionContext | null;
+	gestureKind?: MobileGestureKind | null;
 }
 
 /**
@@ -360,6 +367,215 @@ export class MobileDirectSelectionOverlay {
 }
 
 /**
+ * Determines whether a touch target is a known interactive EPUB element.
+ */
+export function isInteractiveTarget(target: EventTarget | null): boolean {
+	if (!target) {
+		return false;
+	}
+	let el: Element | null = null;
+	if (target instanceof Element || (target as any).nodeType === Node.ELEMENT_NODE) {
+		el = target as Element;
+	} else if ((target as any).parentElement) {
+		el = (target as any).parentElement as Element;
+	}
+	if (!el || typeof el.closest !== 'function') {
+		return false;
+	}
+
+	const interactiveSelector = [
+		'a[href]',
+		'a[data-href]',
+		'button',
+		'summary',
+		'label',
+		'input',
+		'textarea',
+		'select',
+		'option',
+		'[role="button"]',
+		'[role="link"]',
+		'[role="checkbox"]',
+		'[role="switch"]',
+		'[role="menuitem"]',
+		'[role="tab"]',
+		'[data-zora-interactive="true"]',
+		'[data-zora-note-marker]',
+		'[data-weave-comment-marker]',
+		'[data-weave-reference-badge]',
+		'audio',
+		'video',
+	].join(', ');
+
+	if (el.closest(interactiveSelector)) {
+		return true;
+	}
+
+	const tabindexEl = el.closest('[tabindex]');
+	if (tabindexEl) {
+		const tabIndex = parseInt(tabindexEl.getAttribute('tabindex') || '-1', 10);
+		if (tabIndex >= 0) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/**
+ * Determines whether a target is a native form/media control that should retain native touch mechanics.
+ */
+export function isNativeControlTarget(target: EventTarget | null): boolean {
+	if (!target) {
+		return false;
+	}
+	let el: Element | null = null;
+	if (target instanceof Element || (target as any).nodeType === Node.ELEMENT_NODE) {
+		el = target as Element;
+	} else if ((target as any).parentElement) {
+		el = (target as any).parentElement as Element;
+	}
+	if (!el || typeof el.closest !== 'function') {
+		return false;
+	}
+	const nativeControlSelector = [
+		'input',
+		'textarea',
+		'select',
+		'option',
+		'[contenteditable="true"]',
+		'[contenteditable=""]',
+		'audio[controls]',
+		'video[controls]',
+	].join(', ');
+
+	return Boolean(el.closest(nativeControlSelector));
+}
+
+/**
+ * Determines whether a target is a standalone media element (not enclosed in a link or interactive widget).
+ */
+export function isBlockedStandaloneMedia(target: EventTarget | null): boolean {
+	if (!target) {
+		return false;
+	}
+	let el: Element | null = null;
+	if (target instanceof Element || (target as any).nodeType === Node.ELEMENT_NODE) {
+		el = target as Element;
+	} else if ((target as any).parentElement) {
+		el = (target as any).parentElement as Element;
+	}
+	if (!el || typeof el.closest !== 'function') {
+		return false;
+	}
+	if (el.closest('a') || el.closest('[data-zora-interactive="true"]')) {
+		return false;
+	}
+	const tagName = el.tagName?.toLowerCase();
+	return tagName === 'img' || tagName === 'svg' || tagName === 'canvas' || tagName === 'image';
+}
+
+/**
+ * Performs a localized glyph bounding-box hit test around the resolved caret position.
+ */
+export function isPointOnTextGlyph(
+	doc: Document,
+	caretPos: { node: Node; offset: number } | null,
+	x: number,
+	y: number,
+	tolerance = 5
+): boolean {
+	if (!doc || !caretPos || !caretPos.node) {
+		return false;
+	}
+
+	let textNode: Text | null = null;
+	let offset = caretPos.offset;
+
+	if (domInstanceOf(caretPos.node, Text)) {
+		textNode = caretPos.node;
+	} else if (domInstanceOf(caretPos.node, Element)) {
+		const normalized = normalizeCaretNodeOffset(caretPos.node, offset);
+		if (domInstanceOf(normalized.node, Text)) {
+			textNode = normalized.node;
+			offset = normalized.offset;
+		}
+	}
+
+	if (!textNode || !textNode.textContent) {
+		return false;
+	}
+
+	const content = textNode.textContent;
+	const len = content.length;
+	if (len === 0) {
+		return false;
+	}
+
+	const offsetsToTest: Array<[number, number]> = [];
+	if (offset > 0) {
+		offsetsToTest.push([offset - 1, offset]);
+	}
+	if (offset < len) {
+		offsetsToTest.push([offset, offset + 1]);
+	}
+	if (offset + 1 < len) {
+		offsetsToTest.push([offset + 1, offset + 2]);
+	}
+
+	if (offsetsToTest.length === 0) {
+		return false;
+	}
+
+	const pointInExpandedRect = (rect: DOMRect | ClientRect, tol: number): boolean => {
+		return (
+			x >= rect.left - tol &&
+			x <= rect.right + tol &&
+			y >= rect.top - tol &&
+			y <= rect.bottom + tol
+		);
+	};
+
+	let hasMeasuredRect = false;
+
+	try {
+		for (const [start, end] of offsetsToTest) {
+			const char = content.slice(start, end);
+			const range = doc.createRange();
+			range.setStart(textNode, start);
+			range.setEnd(textNode, end);
+
+			const rects: Array<DOMRect | ClientRect> =
+				typeof range.getClientRects === 'function' ? Array.from(range.getClientRects()) : [];
+			if (rects.length === 0 && typeof range.getBoundingClientRect === 'function') {
+				const bRect = range.getBoundingClientRect();
+				if (bRect && (bRect.width > 0 || bRect.height > 0)) {
+					rects.push(bRect);
+				}
+			}
+
+			for (const r of rects) {
+				if (r.width > 0 || r.height > 0) {
+					hasMeasuredRect = true;
+					const tol = /^\s+$/.test(char) ? 1 : tolerance;
+					if (pointInExpandedRect(r, tol)) {
+						return true;
+					}
+				}
+			}
+		}
+	} catch {
+		return false;
+	}
+
+	if (hasMeasuredRect) {
+		return false;
+	}
+
+	return true;
+}
+
+/**
  * Injects CSS to permanently disable native iOS WebKit text selection and callout menu on Mobile.
  */
 function applyDirectSelectionDisablingStyles(doc: Document): void {
@@ -375,6 +591,14 @@ function applyDirectSelectionDisablingStyles(doc: Document): void {
 				-webkit-user-select: none !important;
 				user-select: none !important;
 				-webkit-touch-callout: none !important;
+			}
+			input,
+			textarea,
+			select,
+			[contenteditable="true"] {
+				-webkit-user-select: auto !important;
+				user-select: auto !important;
+				-webkit-touch-callout: default !important;
 			}
 		`;
 		doc.head?.appendChild(styleEl);
@@ -404,11 +628,16 @@ export class MobileDirectSelectionController {
 	// Gesture tracking state
 	private activeDoc: Document | null = null;
 	private activeTracking: FrameTracking | null = null;
+	private activeGestureKind: MobileGestureKind | null = null;
 	private startPoint: { x: number; y: number } | null = null;
 	private anchorPos: { node: Node; offset: number } | null = null;
 	private currentRange: Range | null = null;
 	private isDragging = false;
 	private pendingRafId: number | null = null;
+
+	// Interactive gesture state
+	private interactiveStartPoint: { x: number; y: number } | null = null;
+	private interactiveCancelled = false;
 
 	constructor(options?: MobileDirectSelectionControllerOptions) {
 		this.onStateChange = options?.onStateChange;
@@ -421,6 +650,10 @@ export class MobileDirectSelectionController {
 
 	getSelection(): MobileDirectSelectionContext | null {
 		return this.activeSelection;
+	}
+
+	getActiveGestureKind(): MobileGestureKind | null {
+		return this.activeGestureKind;
 	}
 
 	/**
@@ -518,203 +751,354 @@ export class MobileDirectSelectionController {
 
 		applyDirectSelectionDisablingStyles(doc);
 
-		const onTouchStart = (e: TouchEvent) => {
+		const onTouchStartCapture = (e: TouchEvent) => {
 			if (e.touches.length !== 1) {
+				this.clearActiveGesture();
 				return;
 			}
-			const touch = e.touches[0];
-			this.activeDoc = doc;
-			this.activeTracking = this.trackedFrames.get(doc) || null;
-			this.startPoint = { x: touch.clientX, y: touch.clientY };
-			this.anchorPos = getCaretPositionFromPoint(doc, touch.clientX, touch.clientY);
-			this.isDragging = false;
-			this.currentRange = null;
-			this.mode = 'selecting';
 
-			// If previous selection existed, clear visual overlay for new gesture
+			// Clear previous selection overlay if one was active
 			if (this.activeSelection) {
 				overlay.clear();
+				this.activeSelection = null;
+				this.mode = 'idle';
 			}
-		};
 
-		const onTouchMove = (e: TouchEvent) => {
-			if (!this.anchorPos || !this.startPoint || e.touches.length !== 1) {
+			const touch = e.touches[0];
+			const target = (e.target as Element) || (e.composedPath ? (e.composedPath()[0] as Element) : null);
+
+			// 1. Native controls (input, textarea, select, contenteditable, media)
+			if (isNativeControlTarget(target)) {
+				this.activeGestureKind = 'native-control';
+				this.activeDoc = doc;
 				return;
 			}
-			const touch = e.touches[0];
-			const dist = Math.hypot(touch.clientX - this.startPoint.x, touch.clientY - this.startPoint.y);
 
-			if (!this.isDragging) {
-				if (dist < 5) {
-					return;
-				}
-				this.isDragging = true;
+			// 2. Interactive elements (links, buttons, Note Markers, etc.)
+			if (isInteractiveTarget(target)) {
+				this.activeGestureKind = 'interactive';
+				this.activeDoc = doc;
+				this.interactiveStartPoint = { x: touch.clientX, y: touch.clientY };
+				this.interactiveCancelled = false;
+				return;
 			}
 
-			if (e.cancelable) {
-				e.preventDefault();
-			}
-
-			const clientX = touch.clientX;
-			const clientY = touch.clientY;
-
-			// Throttle overlay update with RAF to prevent any main-thread lag
-			this.scheduleRaf(() => {
-				const focusPos = getCaretPositionFromPoint(doc, clientX, clientY);
-				if (focusPos && this.anchorPos) {
-					const range = buildNormalizedRange(
-						doc,
-						this.anchorPos.node,
-						this.anchorPos.offset,
-						focusPos.node,
-						focusPos.offset
-					);
-					if (range && !range.collapsed) {
-						this.currentRange = range;
-						overlay.render(range);
-					}
-				}
-			});
-		};
-
-		const onTouchEnd = (e: TouchEvent) => {
-			this.cancelPendingRaf();
-
-			if (this.isDragging && this.currentRange && !this.currentRange.collapsed) {
+			// 3. Standalone media (img, svg, canvas not in <a>)
+			if (isBlockedStandaloneMedia(target)) {
+				this.activeGestureKind = 'blocked';
+				this.activeDoc = doc;
 				if (e.cancelable) {
 					e.preventDefault();
 				}
-				const range = this.currentRange;
-				const text = range.toString().trim();
-				const cfiRange = frame.cfiFromRange ? frame.cfiFromRange(range) : null;
-
-				if (text && cfiRange) {
-					const iframe = (doc.defaultView?.frameElement as HTMLElement) || null;
-					const iframeRect = iframe?.getBoundingClientRect() || { left: 0, top: 0 };
-					const bRect = typeof range.getBoundingClientRect === 'function'
-						? range.getBoundingClientRect()
-						: new DOMRect(0, 0, 0, 0);
-					const adjustedRect = new DOMRect(
-						bRect.left + iframeRect.left,
-						bRect.top + iframeRect.top,
-						bRect.width,
-						bRect.height
-					);
-					const rawRects = typeof range.getClientRects === 'function'
-						? Array.from(range.getClientRects())
-						: [];
-					const adjustedRects = rawRects.map(
-						(r) => new DOMRect(r.left + iframeRect.left, r.top + iframeRect.top, r.width, r.height)
-					);
-
-					const selectionContext: MobileDirectSelectionContext = {
-						source: 'mobile-direct',
-						range,
-						text,
-						cfiRange,
-						rect: adjustedRect,
-						rects: adjustedRects.length ? adjustedRects : [adjustedRect],
-						frame,
-						frameDocument: doc,
-						clear: () => this.clearSelection(),
-					};
-
-					this.activeSelection = selectionContext;
-					this.mode = 'selected';
-
-					this.onSelectionComplete?.(selectionContext);
-					this.notifyStateChange();
-
-					logMobileEvent('DirectSelection', 'DragSelected', {
-						length: text.length,
-						cfiRange,
-					});
-
-					this.clearActiveGesture();
-					return;
-				}
+				e.stopPropagation();
+				e.stopImmediatePropagation?.();
+				return;
 			}
 
-			// TAP behavior: if distance < 5px and not dragging, auto-select whole word at tap point
-			if (!this.isDragging && this.anchorPos) {
-				let textNode: Text | null = null;
-				let offset = this.anchorPos.offset;
+			// 4. Caret hit-test for text selection
+			const caretPos = getCaretPositionFromPoint(doc, touch.clientX, touch.clientY);
+			const isOnGlyph = isPointOnTextGlyph(doc, caretPos, touch.clientX, touch.clientY);
 
-				if (domInstanceOf(this.anchorPos.node, Text)) {
-					textNode = this.anchorPos.node;
-				} else if (domInstanceOf(this.anchorPos.node, Element)) {
-					const normalized = normalizeCaretNodeOffset(this.anchorPos.node, offset);
-					if (domInstanceOf(normalized.node, Text)) {
-						textNode = normalized.node;
-						offset = normalized.offset;
+			if (!caretPos || !isOnGlyph) {
+				// Blank area, paragraph margin, empty space
+				this.activeGestureKind = 'blocked';
+				this.activeDoc = doc;
+				if (e.cancelable) {
+					e.preventDefault();
+				}
+				e.stopPropagation();
+				e.stopImmediatePropagation?.();
+				return;
+			}
+
+			// 5. Valid text selection
+			this.activeGestureKind = 'text-selection';
+			if (e.cancelable) {
+				e.preventDefault();
+			}
+			e.stopPropagation();
+			e.stopImmediatePropagation?.();
+
+			this.activeDoc = doc;
+			this.activeTracking = this.trackedFrames.get(doc) || null;
+			this.startPoint = { x: touch.clientX, y: touch.clientY };
+			this.anchorPos = caretPos;
+			this.isDragging = false;
+			this.currentRange = null;
+			this.mode = 'selecting';
+		};
+
+		const onTouchMoveCapture = (e: TouchEvent) => {
+			if (e.touches.length !== 1 || !this.activeGestureKind) {
+				return;
+			}
+
+			const touch = e.touches[0];
+
+			if (this.activeGestureKind === 'native-control') {
+				// Let native control handle its own scrolling/touch, but body bubble stops Foliate
+				return;
+			}
+
+			if (this.activeGestureKind === 'interactive') {
+				if (this.interactiveStartPoint) {
+					const dist = Math.hypot(
+						touch.clientX - this.interactiveStartPoint.x,
+						touch.clientY - this.interactiveStartPoint.y
+					);
+					if (dist >= 8) {
+						this.interactiveCancelled = true;
+						if (e.cancelable) {
+							e.preventDefault();
+						}
+						e.stopPropagation();
+						e.stopImmediatePropagation?.();
+					}
+				}
+				return;
+			}
+
+			if (this.activeGestureKind === 'blocked') {
+				if (e.cancelable) {
+					e.preventDefault();
+				}
+				e.stopPropagation();
+				e.stopImmediatePropagation?.();
+				return;
+			}
+
+			if (this.activeGestureKind === 'text-selection') {
+				if (!this.startPoint) {
+					return;
+				}
+				if (e.cancelable) {
+					e.preventDefault();
+				}
+				e.stopPropagation();
+				e.stopImmediatePropagation?.();
+
+				if (!this.anchorPos) {
+					return;
+				}
+
+				const dist = Math.hypot(touch.clientX - this.startPoint.x, touch.clientY - this.startPoint.y);
+
+				if (!this.isDragging) {
+					if (dist < 5) {
+						return;
+					}
+					this.isDragging = true;
+				}
+
+				const clientX = touch.clientX;
+				const clientY = touch.clientY;
+
+				// Throttle overlay update with RAF to prevent any main-thread lag
+				this.scheduleRaf(() => {
+					const focusPos = getCaretPositionFromPoint(doc, clientX, clientY);
+					if (focusPos && this.anchorPos) {
+						const range = buildNormalizedRange(
+							doc,
+							this.anchorPos.node,
+							this.anchorPos.offset,
+							focusPos.node,
+							focusPos.offset
+						);
+						if (range && !range.collapsed) {
+							this.currentRange = range;
+							overlay.render(range);
+						}
+					}
+				});
+			}
+		};
+
+		const onTouchEndCapture = (e: TouchEvent) => {
+			const kind = this.activeGestureKind;
+
+			if (kind === 'native-control') {
+				this.clearActiveGesture();
+				return;
+			}
+
+			if (kind === 'interactive') {
+				if (this.interactiveCancelled) {
+					// Accidental drag movement >= 8px on interactive element: cancel click, prevent page flip
+					if (e.cancelable) {
+						e.preventDefault();
+					}
+					e.stopPropagation();
+					e.stopImmediatePropagation?.();
+				}
+				// If not cancelled (< 8px), do not preventDefault so native click / Foliate link navigation fires
+				this.clearActiveGesture();
+				return;
+			}
+
+			if (kind === 'blocked') {
+				if (e.cancelable) {
+					e.preventDefault();
+				}
+				e.stopPropagation();
+				e.stopImmediatePropagation?.();
+				this.clearActiveGesture();
+				return;
+			}
+
+			if (kind === 'text-selection') {
+				if (this.startPoint) {
+					if (e.cancelable) {
+						e.preventDefault();
+					}
+					e.stopPropagation();
+					e.stopImmediatePropagation?.();
+				}
+
+				this.cancelPendingRaf();
+
+				if (this.isDragging && this.currentRange && !this.currentRange.collapsed) {
+					const range = this.currentRange;
+					const text = range.toString().trim();
+					const cfiRange = frame.cfiFromRange ? frame.cfiFromRange(range) : null;
+
+					if (text && cfiRange) {
+						const iframe = (doc.defaultView?.frameElement as HTMLElement) || null;
+						const iframeRect = iframe?.getBoundingClientRect() || { left: 0, top: 0 };
+						const bRect = typeof range.getBoundingClientRect === 'function'
+							? range.getBoundingClientRect()
+							: new DOMRect(0, 0, 0, 0);
+						const adjustedRect = new DOMRect(
+							bRect.left + iframeRect.left,
+							bRect.top + iframeRect.top,
+							bRect.width,
+							bRect.height
+						);
+						const rawRects = typeof range.getClientRects === 'function'
+							? Array.from(range.getClientRects())
+							: [];
+						const adjustedRects = rawRects.map(
+							(r) => new DOMRect(r.left + iframeRect.left, r.top + iframeRect.top, r.width, r.height)
+						);
+
+						const selectionContext: MobileDirectSelectionContext = {
+							source: 'mobile-direct',
+							range,
+							text,
+							cfiRange,
+							rect: adjustedRect,
+							rects: adjustedRects.length ? adjustedRects : [adjustedRect],
+							frame,
+							frameDocument: doc,
+							clear: () => this.clearSelection(),
+						};
+
+						this.activeSelection = selectionContext;
+						this.mode = 'selected';
+
+						this.onSelectionComplete?.(selectionContext);
+						this.notifyStateChange();
+
+						logMobileEvent('DirectSelection', 'DragSelected', {
+							length: text.length,
+							cfiRange,
+						});
+
+						this.clearActiveGesture();
+						return;
 					}
 				}
 
-				if (textNode) {
-					const wordResult = extractWordRangeFromTextNode(doc, textNode, offset);
-					if (wordResult && wordResult.text && !wordResult.range.collapsed) {
-						const wordRange = wordResult.range;
-						const wordText = wordResult.text;
-						const cfiRange = frame.cfiFromRange ? frame.cfiFromRange(wordRange) : null;
+				// TAP behavior: if distance < 5px and not dragging, auto-select whole word at tap point
+				if (!this.isDragging && this.anchorPos) {
+					let textNode: Text | null = null;
+					let offset = this.anchorPos.offset;
 
-						if (cfiRange) {
-							overlay.render(wordRange);
+					if (domInstanceOf(this.anchorPos.node, Text)) {
+						textNode = this.anchorPos.node;
+					} else if (domInstanceOf(this.anchorPos.node, Element)) {
+						const normalized = normalizeCaretNodeOffset(this.anchorPos.node, offset);
+						if (domInstanceOf(normalized.node, Text)) {
+							textNode = normalized.node;
+							offset = normalized.offset;
+						}
+					}
 
-							const iframe = (doc.defaultView?.frameElement as HTMLElement) || null;
-							const iframeRect = iframe?.getBoundingClientRect() || { left: 0, top: 0 };
-							const bRect = typeof wordRange.getBoundingClientRect === 'function'
-								? wordRange.getBoundingClientRect()
-								: new DOMRect(0, 0, 0, 0);
-							const adjustedRect = new DOMRect(
-								bRect.left + iframeRect.left,
-								bRect.top + iframeRect.top,
-								bRect.width,
-								bRect.height
-							);
-							const rawRects = typeof wordRange.getClientRects === 'function'
-								? Array.from(wordRange.getClientRects())
-								: [];
-							const adjustedRects = rawRects.map(
-								(r) => new DOMRect(r.left + iframeRect.left, r.top + iframeRect.top, r.width, r.height)
-							);
+					if (textNode) {
+						const wordResult = extractWordRangeFromTextNode(doc, textNode, offset);
+						if (wordResult && wordResult.text && !wordResult.range.collapsed) {
+							const wordRange = wordResult.range;
+							const wordText = wordResult.text;
+							const cfiRange = frame.cfiFromRange ? frame.cfiFromRange(wordRange) : null;
 
-							const selectionContext: MobileDirectSelectionContext = {
-								source: 'mobile-direct',
-								range: wordRange,
-								text: wordText,
-								cfiRange,
-								rect: adjustedRect,
-								rects: adjustedRects.length ? adjustedRects : [adjustedRect],
-								frame,
-								frameDocument: doc,
-								initialWordRange: wordRange.cloneRange(),
-								initialWordText: wordText,
-								clear: () => this.clearSelection(),
-							};
+							if (cfiRange) {
+								overlay.render(wordRange);
 
-							this.activeSelection = selectionContext;
-							this.mode = 'selected';
+								const iframe = (doc.defaultView?.frameElement as HTMLElement) || null;
+								const iframeRect = iframe?.getBoundingClientRect() || { left: 0, top: 0 };
+								const bRect = typeof wordRange.getBoundingClientRect === 'function'
+									? wordRange.getBoundingClientRect()
+									: new DOMRect(0, 0, 0, 0);
+								const adjustedRect = new DOMRect(
+									bRect.left + iframeRect.left,
+									bRect.top + iframeRect.top,
+									bRect.width,
+									bRect.height
+								);
+								const rawRects = typeof wordRange.getClientRects === 'function'
+									? Array.from(wordRange.getClientRects())
+									: [];
+								const adjustedRects = rawRects.map(
+									(r) => new DOMRect(r.left + iframeRect.left, r.top + iframeRect.top, r.width, r.height)
+								);
 
-							this.onSelectionComplete?.(selectionContext);
-							this.notifyStateChange();
+								const selectionContext: MobileDirectSelectionContext = {
+									source: 'mobile-direct',
+									range: wordRange,
+									text: wordText,
+									cfiRange,
+									rect: adjustedRect,
+									rects: adjustedRects.length ? adjustedRects : [adjustedRect],
+									frame,
+									frameDocument: doc,
+									initialWordRange: wordRange.cloneRange(),
+									initialWordText: wordText,
+									clear: () => this.clearSelection(),
+								};
 
-							logMobileEvent('DirectSelection', 'TapWordSelected', {
-								word: wordText,
-								cfiRange,
-							});
+								this.activeSelection = selectionContext;
+								this.mode = 'selected';
 
-							this.clearActiveGesture();
-							return;
+								this.onSelectionComplete?.(selectionContext);
+								this.notifyStateChange();
+
+								logMobileEvent('DirectSelection', 'TapWordSelected', {
+									word: wordText,
+									cfiRange,
+								});
+
+								this.clearActiveGesture();
+								return;
+							}
 						}
 					}
 				}
+
+				this.clearSelection();
+				return;
 			}
 
 			// Empty selection or cancelled tap
 			this.clearSelection();
 		};
 
-		const onTouchCancel = () => {
+		const onTouchCancelCapture = (e?: TouchEvent) => {
+			if (this.activeGestureKind === 'text-selection' || this.activeGestureKind === 'blocked') {
+				if (e?.cancelable) {
+					e.preventDefault();
+				}
+				e?.stopPropagation();
+				e?.stopImmediatePropagation?.();
+			}
 			this.cancelPendingRaf();
 			this.clearSelection();
 		};
@@ -723,19 +1107,38 @@ export class MobileDirectSelectionController {
 			e.preventDefault();
 		};
 
+		// Body bubble guard: prevents interactive & native-control touches from bubbling to document (Foliate paginator)
+		const onBodyTouchBubble = (e: TouchEvent) => {
+			e.stopPropagation();
+		};
+
 		const eventOptions: AddEventListenerOptions = { passive: false, capture: true };
-		doc.addEventListener('touchstart', onTouchStart, { passive: true, capture: true });
-		doc.addEventListener('touchmove', onTouchMove, eventOptions);
-		doc.addEventListener('touchend', onTouchEnd, eventOptions);
-		doc.addEventListener('touchcancel', onTouchCancel, { passive: true, capture: true });
+		doc.addEventListener('touchstart', onTouchStartCapture, eventOptions);
+		doc.addEventListener('touchmove', onTouchMoveCapture, eventOptions);
+		doc.addEventListener('touchend', onTouchEndCapture, eventOptions);
+		doc.addEventListener('touchcancel', onTouchCancelCapture, eventOptions);
 		doc.addEventListener('contextmenu', onContextMenu, { capture: true });
 
+		const body = doc.body;
+		if (body) {
+			body.addEventListener('touchstart', onBodyTouchBubble, false);
+			body.addEventListener('touchmove', onBodyTouchBubble, false);
+			body.addEventListener('touchend', onBodyTouchBubble, false);
+			body.addEventListener('touchcancel', onBodyTouchBubble, false);
+		}
+
 		cleanups.push(() => {
-			doc.removeEventListener('touchstart', onTouchStart, true);
-			doc.removeEventListener('touchmove', onTouchMove, true);
-			doc.removeEventListener('touchend', onTouchEnd, true);
-			doc.removeEventListener('touchcancel', onTouchCancel, true);
+			doc.removeEventListener('touchstart', onTouchStartCapture, true);
+			doc.removeEventListener('touchmove', onTouchMoveCapture, true);
+			doc.removeEventListener('touchend', onTouchEndCapture, true);
+			doc.removeEventListener('touchcancel', onTouchCancelCapture, true);
 			doc.removeEventListener('contextmenu', onContextMenu, true);
+			if (body) {
+				body.removeEventListener('touchstart', onBodyTouchBubble, false);
+				body.removeEventListener('touchmove', onBodyTouchBubble, false);
+				body.removeEventListener('touchend', onBodyTouchBubble, false);
+				body.removeEventListener('touchcancel', onBodyTouchBubble, false);
+			}
 		});
 
 		this.trackedFrames.set(doc, { frame, overlay, cleanups });
@@ -771,10 +1174,13 @@ export class MobileDirectSelectionController {
 	private clearActiveGesture(): void {
 		this.activeDoc = null;
 		this.activeTracking = null;
+		this.activeGestureKind = null;
 		this.startPoint = null;
 		this.anchorPos = null;
 		this.currentRange = null;
 		this.isDragging = false;
+		this.interactiveStartPoint = null;
+		this.interactiveCancelled = false;
 		this.cancelPendingRaf();
 	}
 
@@ -788,6 +1194,7 @@ export class MobileDirectSelectionController {
 		this.onStateChange?.({
 			mode: this.mode,
 			selection: this.activeSelection,
+			gestureKind: this.activeGestureKind,
 		});
 	}
 
