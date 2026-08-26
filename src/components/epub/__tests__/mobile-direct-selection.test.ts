@@ -4,6 +4,7 @@ import {
 	getCaretPositionFromPoint,
 	extractWordRangeFromTextNode,
 	isPointOnTextGlyph,
+	resolveSelectableTextCaret,
 	MobileDirectSelectionOverlay,
 	MobileDirectSelectionController,
 } from '../mobile-direct-selection';
@@ -625,12 +626,11 @@ describe('mobile-direct-selection', () => {
 			controller.dispose();
 		});
 
-		it('11 & 12. paragraph margin tap/drag is blocked: no selection, no page flip', () => {
+		it('11 & 12. body margin / empty container tap is blocked: no selection, no page flip', () => {
 			const controller = new MobileDirectSelectionController();
-			const p = doc.createElement('p');
-			p.style.margin = '40px';
-			p.textContent = 'Paragraph with margins';
-			doc.body.appendChild(p);
+			const emptyDiv = doc.createElement('div');
+			emptyDiv.style.margin = '40px';
+			doc.body.appendChild(emptyDiv);
 
 			const mockFrame: ReaderFrame = {
 				frameDocument: doc,
@@ -639,7 +639,7 @@ describe('mobile-direct-selection', () => {
 			};
 			controller.syncFrames([mockFrame]);
 
-			// Caret lookup returns null or far from glyph
+			// Caret lookup returns null for empty background
 			(doc as any).caretRangeFromPoint = vi.fn().mockReturnValue(null);
 
 			const touchStart = new Event('touchstart', { bubbles: true, cancelable: true });
@@ -648,7 +648,7 @@ describe('mobile-direct-selection', () => {
 			});
 			const preventDefaultStart = vi.spyOn(touchStart, 'preventDefault');
 
-			p.dispatchEvent(touchStart);
+			doc.body.dispatchEvent(touchStart);
 
 			expect(preventDefaultStart).toHaveBeenCalled();
 			expect(controller.getActiveGestureKind()).toBe('blocked');
@@ -658,7 +658,7 @@ describe('mobile-direct-selection', () => {
 				value: [{ clientX: 20, clientY: 5 }],
 			});
 			const preventDefaultMove = vi.spyOn(touchMove, 'preventDefault');
-			p.dispatchEvent(touchMove);
+			doc.body.dispatchEvent(touchMove);
 
 			expect(preventDefaultMove).toHaveBeenCalled();
 			expect(controller.getSelection()).toBeNull();
@@ -694,31 +694,51 @@ describe('mobile-direct-selection', () => {
 			controller.dispose();
 		});
 
-		it('14. caretRangeFromPoint returns TextNode but point is not on glyph rect -> blocked', () => {
-			const text = doc.createTextNode('Short text');
-			doc.body.appendChild(text);
+		it('14. caret on valid TextNode even when isPointOnTextGlyph is false -> still classified as text-selection', () => {
+			const controller = new MobileDirectSelectionController();
+			const p = doc.createElement('p');
+			const text = doc.createTextNode('Standard body paragraph text');
+			p.appendChild(text);
+			doc.body.appendChild(p);
 
-			const caretPos = { node: text, offset: 5 };
+			const mockFrame: ReaderFrame = {
+				frameDocument: doc,
+				window: window,
+				cfiFromRange: vi.fn(),
+			};
+			controller.syncFrames([mockFrame]);
 
-			// Character rect at (10, 10) to (50, 30)
+			const mockRange = doc.createRange();
+			mockRange.setStart(text, 5);
+			mockRange.setEnd(text, 5);
+			(doc as any).caretRangeFromPoint = vi.fn().mockReturnValue(mockRange);
+
+			// Mock char range returning bounding box far away from touch point (simulating iOS column/rect shift)
 			const mockCharRange = {
 				setStart: vi.fn(),
 				setEnd: vi.fn(),
-				getClientRects: () => [{ left: 10, top: 10, right: 50, bottom: 30, width: 40, height: 20 }],
-				getBoundingClientRect: () => ({ left: 10, top: 10, right: 50, bottom: 30, width: 40, height: 20 }),
+				getClientRects: () => [{ left: 500, top: 500, right: 550, bottom: 520, width: 50, height: 20 }],
+				getBoundingClientRect: () => ({ left: 500, top: 500, right: 550, bottom: 520, width: 50, height: 20 }),
 			};
 			const origCreateRange = doc.createRange;
 			doc.createRange = vi.fn().mockReturnValue(mockCharRange);
 
-			// Touch point far away at (300, 300)
-			const isHit = isPointOnTextGlyph(doc, caretPos, 300, 300, 5);
-			expect(isHit).toBe(false);
+			// Touch at (50, 50) - glyph test will return false
+			const glyphHit = isPointOnTextGlyph(doc, { node: text, offset: 5 }, 50, 50, 5);
+			expect(glyphHit).toBe(false);
 
-			// Touch point right on glyph at (20, 20)
-			const isOn = isPointOnTextGlyph(doc, caretPos, 20, 20, 5);
-			expect(isOn).toBe(true);
+			const touchStart = new Event('touchstart', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchStart, 'touches', {
+				value: [{ clientX: 50, clientY: 50 }],
+			});
+			p.dispatchEvent(touchStart);
+
+			// Must STILL be text-selection!
+			expect(controller.getActiveGestureKind()).toBe('text-selection');
+			expect(controller.getMode()).toBe('selecting');
 
 			doc.createRange = origCreateRange;
+			controller.dispose();
 		});
 
 		it('15 & 16. native controls (input/textarea/select/video) are not captured by DirectSelection or Paginator', () => {
@@ -1121,6 +1141,379 @@ describe('mobile-direct-selection', () => {
 			expect(completedSelection?.source).toBe('mobile-direct');
 			expect(controller.getMode()).toBe('selected');
 
+			controller.dispose();
+		});
+	});
+
+	describe('14. Resilient TextNode Caret Resolution & Non-blocking GlyphHit (iPhone Fix)', () => {
+		it('1. resolveSelectableTextCaret successfully resolves non-empty text node and returns null for empty background', () => {
+			const p = doc.createElement('p');
+			const text = doc.createTextNode('Resolved text content');
+			p.appendChild(text);
+			doc.body.appendChild(p);
+
+			const mockRange = doc.createRange();
+			mockRange.setStart(text, 4);
+			mockRange.setEnd(text, 4);
+			(doc as any).caretRangeFromPoint = vi.fn().mockReturnValue(mockRange);
+
+			const res = resolveSelectableTextCaret(doc, p, 10, 10);
+			expect(res).not.toBeNull();
+			expect(res?.textNode).toBe(text);
+			expect(res?.caret.offset).toBe(4);
+
+			// Empty div
+			const emptyDiv = doc.createElement('div');
+			doc.body.appendChild(emptyDiv);
+			(doc as any).caretRangeFromPoint = vi.fn().mockReturnValue(null);
+
+			const resEmpty = resolveSelectableTextCaret(doc, emptyDiv, 5, 5);
+			expect(resEmpty).toBeNull();
+
+			// Direct body click with null caret
+			const resBody = resolveSelectableTextCaret(doc, doc.body, 1, 1);
+			expect(resBody).toBeNull();
+
+			doc.body.removeChild(p);
+			doc.body.removeChild(emptyDiv);
+		});
+
+		it('2. caret falls on non-empty TextNode but isPointOnTextGlyph is false -> gesture is STILL text-selection', () => {
+			const controller = new MobileDirectSelectionController();
+			const p = doc.createElement('p');
+			const text = doc.createTextNode('iPhone EPUB body text');
+			p.appendChild(text);
+			doc.body.appendChild(p);
+
+			const mockFrame: ReaderFrame = {
+				frameDocument: doc,
+				window: window,
+				cfiFromRange: vi.fn(),
+			};
+			controller.syncFrames([mockFrame]);
+
+			const mockRange = doc.createRange();
+			mockRange.setStart(text, 7);
+			mockRange.setEnd(text, 7);
+			(doc as any).caretRangeFromPoint = vi.fn().mockReturnValue(mockRange);
+
+			// Force glyph hit-test to return false (as happens in iOS multi-column / iframe layout)
+			const mockCharRange = {
+				setStart: vi.fn(),
+				setEnd: vi.fn(),
+				getClientRects: () => [{ left: 999, top: 999, right: 1050, bottom: 1020, width: 51, height: 21 }],
+				getBoundingClientRect: () => ({ left: 999, top: 999, right: 1050, bottom: 1020, width: 51, height: 21 }),
+			};
+			const origCreateRange = doc.createRange;
+			doc.createRange = vi.fn().mockReturnValue(mockCharRange);
+
+			const touchStart = new Event('touchstart', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchStart, 'touches', {
+				value: [{ clientX: 25, clientY: 25 }],
+			});
+			p.dispatchEvent(touchStart);
+
+			// Must NOT be blocked; must be text-selection
+			expect(controller.getActiveGestureKind()).toBe('text-selection');
+			expect(controller.getMode()).toBe('selecting');
+
+			doc.createRange = origCreateRange;
+			doc.body.removeChild(p);
+			controller.dispose();
+		});
+
+		it('3. touch on body background with caret null is classified as blocked', () => {
+			const controller = new MobileDirectSelectionController();
+			const mockFrame: ReaderFrame = {
+				frameDocument: doc,
+				window: window,
+				cfiFromRange: vi.fn(),
+			};
+			controller.syncFrames([mockFrame]);
+
+			(doc as any).caretRangeFromPoint = vi.fn().mockReturnValue(null);
+
+			const touchStart = new Event('touchstart', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchStart, 'touches', {
+				value: [{ clientX: 5, clientY: 5 }],
+			});
+			doc.body.dispatchEvent(touchStart);
+
+			expect(controller.getActiveGestureKind()).toBe('blocked');
+			expect(controller.getMode()).toBe('idle');
+			expect(controller.getSelection()).toBeNull();
+
+			controller.dispose();
+		});
+
+		it('4. touch on img is classified as blocked and does not trigger selection or paging', () => {
+			const controller = new MobileDirectSelectionController();
+			const img = doc.createElement('img');
+			img.src = 'illustration.png';
+			doc.body.appendChild(img);
+
+			const mockFrame: ReaderFrame = {
+				frameDocument: doc,
+				window: window,
+				cfiFromRange: vi.fn(),
+			};
+			controller.syncFrames([mockFrame]);
+
+			const touchStart = new Event('touchstart', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchStart, 'touches', {
+				value: [{ clientX: 50, clientY: 50 }],
+			});
+			img.dispatchEvent(touchStart);
+
+			expect(controller.getActiveGestureKind()).toBe('blocked');
+			expect(controller.getSelection()).toBeNull();
+
+			doc.body.removeChild(img);
+			controller.dispose();
+		});
+
+		it('5. Tap on body text extracts whole word when glyphHit is false', () => {
+			let completedSelection: any = null;
+			const controller = new MobileDirectSelectionController({
+				onSelectionComplete: (sel) => {
+					completedSelection = sel;
+				},
+			});
+
+			const p = doc.createElement('p');
+			const text = doc.createTextNode('Resilient selection on mobile devices.');
+			p.appendChild(text);
+			doc.body.appendChild(p);
+
+			const mockFrame: ReaderFrame = {
+				frameDocument: doc,
+				window: window,
+				cfiFromRange: vi.fn().mockReturnValue('epubcfi(/6/2!/4/2/1:0,/4/2/1:9)'),
+			};
+			controller.syncFrames([mockFrame]);
+
+			const mockRange = doc.createRange();
+			mockRange.setStart(text, 3);
+			mockRange.setEnd(text, 3);
+			(doc as any).caretRangeFromPoint = vi.fn().mockReturnValue(mockRange);
+
+			// Start touch
+			const touchStart = new Event('touchstart', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchStart, 'touches', {
+				value: [{ clientX: 30, clientY: 30 }],
+			});
+			p.dispatchEvent(touchStart);
+
+			expect(controller.getActiveGestureKind()).toBe('text-selection');
+
+			// End touch (< 5px) -> triggers tap word extraction
+			const touchEnd = new Event('touchend', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchEnd, 'touches', { value: [] });
+			doc.dispatchEvent(touchEnd);
+
+			expect(completedSelection).not.toBeNull();
+			expect(completedSelection?.text).toBe('Resilient');
+			expect(completedSelection?.source).toBe('mobile-direct');
+
+			doc.body.removeChild(p);
+			controller.dispose();
+		});
+
+		it('6. Drag on body text creates Range and keeps Foliate Paginator calls at 0', () => {
+			let completedSelection: any = null;
+			const controller = new MobileDirectSelectionController({
+				onSelectionComplete: (sel) => {
+					completedSelection = sel;
+				},
+			});
+
+			const p = doc.createElement('p');
+			const text = doc.createTextNode('Direct drag text selection works smoothly.');
+			p.appendChild(text);
+			doc.body.appendChild(p);
+
+			const paginatorDocTouch = vi.fn();
+			doc.addEventListener('touchstart', paginatorDocTouch);
+			doc.addEventListener('touchmove', paginatorDocTouch);
+			doc.addEventListener('touchend', paginatorDocTouch);
+
+			const mockFrame: ReaderFrame = {
+				frameDocument: doc,
+				window: window,
+				cfiFromRange: vi.fn().mockReturnValue('epubcfi(/6/2!/4/2/1:0,/4/2/1:11)'),
+			};
+			controller.syncFrames([mockFrame]);
+
+			const startRange = doc.createRange();
+			startRange.setStart(text, 0);
+			startRange.setEnd(text, 0);
+			(doc as any).caretRangeFromPoint = vi.fn().mockReturnValue(startRange);
+
+			const touchStart = new Event('touchstart', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchStart, 'touches', {
+				value: [{ clientX: 10, clientY: 10 }],
+			});
+			p.dispatchEvent(touchStart);
+
+			// Drag > 5px
+			(controller as any).isDragging = true;
+			const dragRange = buildNormalizedRange(doc, text, 0, text, 11);
+			(controller as any).currentRange = dragRange;
+
+			const touchEnd = new Event('touchend', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchEnd, 'touches', { value: [] });
+			doc.dispatchEvent(touchEnd);
+
+			expect(completedSelection).not.toBeNull();
+			expect(completedSelection?.text).toBe('Direct drag');
+			expect(paginatorDocTouch).not.toHaveBeenCalled();
+
+			doc.removeEventListener('touchstart', paginatorDocTouch);
+			doc.removeEventListener('touchmove', paginatorDocTouch);
+			doc.removeEventListener('touchend', paginatorDocTouch);
+			doc.body.removeChild(p);
+			controller.dispose();
+		});
+
+		it('7. Link and Note Marker remain interactive and isolated from text selection', () => {
+			const controller = new MobileDirectSelectionController();
+			const a = doc.createElement('a');
+			a.href = 'https://example.com';
+			a.textContent = 'External Link';
+			doc.body.appendChild(a);
+
+			const mockFrame: ReaderFrame = {
+				frameDocument: doc,
+				window: window,
+				cfiFromRange: vi.fn(),
+			};
+			controller.syncFrames([mockFrame]);
+
+			const touchStart = new Event('touchstart', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchStart, 'touches', {
+				value: [{ clientX: 20, clientY: 20 }],
+			});
+			a.dispatchEvent(touchStart);
+
+			expect(controller.getActiveGestureKind()).toBe('interactive');
+			expect(controller.getSelection()).toBeNull();
+
+			doc.body.removeChild(a);
+			controller.dispose();
+		});
+
+		it('8. direct text in <body> with target=BODY and glyphHit=false is classified as text-selection', () => {
+			const controller = new MobileDirectSelectionController();
+			const directText = doc.createTextNode('Direct body text without container wrapper');
+			doc.body.appendChild(directText);
+
+			const mockFrame: ReaderFrame = {
+				frameDocument: doc,
+				window: window,
+				cfiFromRange: vi.fn(),
+			};
+			controller.syncFrames([mockFrame]);
+
+			const mockRange = doc.createRange();
+			mockRange.setStart(directText, 7);
+			mockRange.setEnd(directText, 7);
+			(doc as any).caretRangeFromPoint = vi.fn().mockReturnValue(mockRange);
+
+			// Mock glyph measurement returning rect far away (glyphHit = false)
+			const mockCharRange = {
+				setStart: vi.fn(),
+				setEnd: vi.fn(),
+				getClientRects: () => [{ left: 9999, top: 9999, right: 10050, bottom: 10020, width: 50, height: 20 }],
+				getBoundingClientRect: () => ({ left: 9999, top: 9999, right: 10050, bottom: 10020, width: 50, height: 20 }),
+			};
+			const origCreateRange = doc.createRange;
+			doc.createRange = vi.fn().mockReturnValue(mockCharRange);
+
+			// Target is explicitly doc.body
+			const touchStart = new Event('touchstart', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchStart, 'touches', {
+				value: [{ clientX: 30, clientY: 30 }],
+			});
+			doc.body.dispatchEvent(touchStart);
+
+			// Must STILL be text-selection!
+			expect(controller.getActiveGestureKind()).toBe('text-selection');
+			expect(controller.getMode()).toBe('selecting');
+
+			doc.createRange = origCreateRange;
+			doc.body.removeChild(directText);
+			controller.dispose();
+		});
+
+		it('9. direct text in <body> Tap extracts full word and Drag creates continuous Range', () => {
+			let completedSelection: any = null;
+			const controller = new MobileDirectSelectionController({
+				onSelectionComplete: (sel) => {
+					completedSelection = sel;
+				},
+			});
+
+			const directText = doc.createTextNode('Unwrapped body text for gesture testing');
+			doc.body.appendChild(directText);
+
+			const paginatorDocTouch = vi.fn();
+			doc.addEventListener('touchstart', paginatorDocTouch);
+			doc.addEventListener('touchmove', paginatorDocTouch);
+			doc.addEventListener('touchend', paginatorDocTouch);
+
+			const mockFrame: ReaderFrame = {
+				frameDocument: doc,
+				window: window,
+				cfiFromRange: vi.fn().mockReturnValue('epubcfi(/6/2!/4/2/1:0,/4/2/1:9)'),
+			};
+			controller.syncFrames([mockFrame]);
+
+			const mockRange = doc.createRange();
+			mockRange.setStart(directText, 2);
+			mockRange.setEnd(directText, 2);
+			(doc as any).caretRangeFromPoint = vi.fn().mockReturnValue(mockRange);
+
+			// Tap test on body
+			const touchStart = new Event('touchstart', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchStart, 'touches', {
+				value: [{ clientX: 20, clientY: 20 }],
+			});
+			doc.body.dispatchEvent(touchStart);
+
+			expect(controller.getActiveGestureKind()).toBe('text-selection');
+
+			const touchEnd = new Event('touchend', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchEnd, 'touches', { value: [] });
+			doc.body.dispatchEvent(touchEnd);
+
+			expect(completedSelection).not.toBeNull();
+			expect(completedSelection?.text).toBe('Unwrapped');
+			expect(paginatorDocTouch).not.toHaveBeenCalled();
+
+			// Drag test on body
+			completedSelection = null;
+			const touchStart2 = new Event('touchstart', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchStart2, 'touches', {
+				value: [{ clientX: 10, clientY: 10 }],
+			});
+			doc.body.dispatchEvent(touchStart2);
+
+			(controller as any).isDragging = true;
+			const dragRange = buildNormalizedRange(doc, directText, 0, directText, 14);
+			(controller as any).currentRange = dragRange;
+
+			const touchEnd2 = new Event('touchend', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchEnd2, 'touches', { value: [] });
+			doc.body.dispatchEvent(touchEnd2);
+
+			expect(completedSelection).not.toBeNull();
+			expect(completedSelection?.text).toBe('Unwrapped body');
+			expect(paginatorDocTouch).not.toHaveBeenCalled();
+
+			doc.removeEventListener('touchstart', paginatorDocTouch);
+			doc.removeEventListener('touchmove', paginatorDocTouch);
+			doc.removeEventListener('touchend', paginatorDocTouch);
+			doc.body.removeChild(directText);
 			controller.dispose();
 		});
 	});

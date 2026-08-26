@@ -476,6 +476,113 @@ export function isBlockedStandaloneMedia(target: EventTarget | null): boolean {
 }
 
 /**
+ * Resolves a selectable Text node and caret position from coordinates and touch target.
+ * Returns null if the touch is on empty background or no valid non-empty Text node is found.
+ */
+export function resolveSelectableTextCaret(
+	doc: Document,
+	target: EventTarget | null,
+	x: number,
+	y: number
+): { caret: { node: Node; offset: number }; textNode: Text } | null {
+	if (!doc) {
+		return null;
+	}
+
+	// 1. Resolve caret from document coordinates
+	const caret = getCaretPositionFromPoint(doc, x, y);
+	if (caret && caret.node) {
+		let textNode: Text | null = null;
+		let offset = caret.offset;
+
+		if (domInstanceOf(caret.node, Text)) {
+			textNode = caret.node;
+		} else if (domInstanceOf(caret.node, Element)) {
+			const normalized = normalizeCaretNodeOffset(caret.node, offset);
+			if (domInstanceOf(normalized.node, Text)) {
+				textNode = normalized.node;
+				offset = normalized.offset;
+			}
+		}
+
+		if (textNode && textNode.textContent && textNode.textContent.trim().length > 0) {
+			return {
+				caret: {
+					node: textNode,
+					offset: Math.max(0, Math.min(offset, textNode.length)),
+				},
+				textNode,
+			};
+		}
+	}
+
+	// 2. Fallback: if caret is null or landed on an element container, search within target
+	let el: Element | null = null;
+	if (target instanceof Element || (target as any)?.nodeType === Node.ELEMENT_NODE) {
+		el = target as Element;
+	} else if ((target as any)?.parentElement) {
+		el = (target as any).parentElement as Element;
+	}
+
+	if (!el || el === doc.body || el === doc.documentElement) {
+		return null;
+	}
+
+	const walker = doc.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+	let curr = walker.nextNode();
+	while (curr) {
+		if (domInstanceOf(curr, Text) && curr.textContent && curr.textContent.trim().length > 0) {
+			return {
+				caret: {
+					node: curr,
+					offset: 0,
+				},
+				textNode: curr,
+			};
+		}
+		curr = walker.nextNode();
+	}
+
+	return null;
+}
+
+/**
+ * Diagnostic logger for Mobile Direct Selection gesture arbitration.
+ */
+function logDirectSelectionClassification(
+	target: Element | null,
+	x: number,
+	y: number,
+	selectable: { caret: { node: Node; offset: number }; textNode: Text } | null,
+	glyphHit: boolean,
+	gestureKind: MobileGestureKind
+): void {
+	const targetEl = target instanceof Element ? target : (target as any)?.parentElement || null;
+	const targetTag = targetEl?.tagName?.toLowerCase() || 'unknown';
+	const targetClass = typeof targetEl?.className === 'string' ? targetEl.className.slice(0, 50) : '';
+	const caretFound = Boolean(selectable?.caret?.node);
+	const caretNodeType = selectable?.caret?.node?.nodeType ?? null;
+	const fullText = selectable?.textNode?.textContent || '';
+	const caretOffset = selectable?.caret?.offset ?? null;
+	const offset = caretOffset ?? 0;
+	const start = Math.max(0, offset - 10);
+	const caretTextSample = fullText.slice(start, start + 20).trim();
+
+	logMobileEvent('DirectSelection', 'GestureClassified', {
+		targetTag,
+		targetClass,
+		x: Math.round(x),
+		y: Math.round(y),
+		caretFound,
+		caretNodeType,
+		caretTextSample,
+		caretOffset,
+		glyphHit,
+		gestureKind,
+	});
+}
+
+/**
  * Performs a localized glyph bounding-box hit test around the resolved caret position.
  */
 export function isPointOnTextGlyph(
@@ -771,6 +878,7 @@ export class MobileDirectSelectionController {
 			if (isNativeControlTarget(target)) {
 				this.activeGestureKind = 'native-control';
 				this.activeDoc = doc;
+				logDirectSelectionClassification(target, touch.clientX, touch.clientY, null, false, 'native-control');
 				return;
 			}
 
@@ -780,6 +888,7 @@ export class MobileDirectSelectionController {
 				this.activeDoc = doc;
 				this.interactiveStartPoint = { x: touch.clientX, y: touch.clientY };
 				this.interactiveCancelled = false;
+				logDirectSelectionClassification(target, touch.clientX, touch.clientY, null, false, 'interactive');
 				return;
 			}
 
@@ -792,15 +901,16 @@ export class MobileDirectSelectionController {
 				}
 				e.stopPropagation();
 				e.stopImmediatePropagation?.();
+				logDirectSelectionClassification(target, touch.clientX, touch.clientY, null, false, 'blocked');
 				return;
 			}
 
-			// 4. Caret hit-test for text selection
-			const caretPos = getCaretPositionFromPoint(doc, touch.clientX, touch.clientY);
-			const isOnGlyph = isPointOnTextGlyph(doc, caretPos, touch.clientX, touch.clientY);
+			// 4. Resolve selectable text caret
+			const selectable = resolveSelectableTextCaret(doc, target, touch.clientX, touch.clientY);
+			const glyphHit = selectable ? isPointOnTextGlyph(doc, selectable.caret, touch.clientX, touch.clientY) : false;
 
-			if (!caretPos || !isOnGlyph) {
-				// Blank area, paragraph margin, empty space
+			if (!selectable) {
+				// Blank area, empty container, background with no non-empty text node
 				this.activeGestureKind = 'blocked';
 				this.activeDoc = doc;
 				if (e.cancelable) {
@@ -808,6 +918,7 @@ export class MobileDirectSelectionController {
 				}
 				e.stopPropagation();
 				e.stopImmediatePropagation?.();
+				logDirectSelectionClassification(target, touch.clientX, touch.clientY, null, false, 'blocked');
 				return;
 			}
 
@@ -822,10 +933,12 @@ export class MobileDirectSelectionController {
 			this.activeDoc = doc;
 			this.activeTracking = this.trackedFrames.get(doc) || null;
 			this.startPoint = { x: touch.clientX, y: touch.clientY };
-			this.anchorPos = caretPos;
+			this.anchorPos = selectable.caret;
 			this.isDragging = false;
 			this.currentRange = null;
 			this.mode = 'selecting';
+
+			logDirectSelectionClassification(target, touch.clientX, touch.clientY, selectable, glyphHit, 'text-selection');
 		};
 
 		const onTouchMoveCapture = (e: TouchEvent) => {
