@@ -60,11 +60,17 @@
 	}
 
 	function getPrevLabel() {
-		return vertical ? t('epub.bottomNav.prevScreen') : t('epub.bottomNav.prevPage');
+		if (vertical) {
+			return t('epub.bottomNav.prevScreen');
+		}
+		return '‹ ' + (t('epub.bottomNav.prevPage') || '上一页');
 	}
 
 	function getNextLabel() {
-		return vertical ? t('epub.bottomNav.nextScreen') : t('epub.bottomNav.nextPage');
+		if (vertical) {
+			return t('epub.bottomNav.nextScreen');
+		}
+		return (t('epub.bottomNav.nextPage') || '下一页') + ' ›';
 	}
 
 	function canJumpToPage() {

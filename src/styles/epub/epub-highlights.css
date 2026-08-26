@@ -903,28 +903,39 @@ body.is-mobile .workspace-leaf-content[data-type="weave-epub-ai-reader"] .view-h
 	display: none;
 }
 
-/* Mobile: use flex layout so bottom nav does not overlap content */
-body.is-mobile .epub-reader-viewport {
+/* Mobile: fixed single-screen paginated viewport */
+body.is-mobile .epub-reader-viewport,
+body.is-phone .epub-reader-viewport {
 	display: flex;
 	flex-direction: column;
+	height: 100%;
+	max-height: 100dvh;
+	overflow: hidden !important;
 }
 
-body.is-mobile .epub-content-wrapper {
+body.is-mobile .epub-content-wrapper,
+body.is-phone .epub-content-wrapper {
 	flex: 1;
 	min-height: 0;
-	height: auto;
+	height: 100%;
+	max-height: 100%;
+	overflow: hidden !important;
+	overflow-y: hidden !important;
 	padding-top: 0;
 	padding-right: 12px;
 	padding-left: 12px;
+	touch-action: none;
 }
 
-body.is-mobile .epub-reader-root {
+body.is-mobile .epub-reader-root,
+body.is-phone .epub-reader-root {
 	--epub-scrolled-safe-top: 6px;
 	--epub-scrolled-safe-bottom: 10px;
 	--epub-scrolled-side-nav-safe-area: 0px;
 }
 
-body.is-mobile .epub-bottom-nav {
+body.is-mobile .epub-bottom-nav,
+body.is-phone .epub-bottom-nav {
 	position: relative;
 	bottom: auto;
 	left: auto;
@@ -937,11 +948,13 @@ body.is-mobile .epub-bottom-nav {
 	padding: 0;
 }
 
-body.is-mobile .epub-bottom-nav-slot {
+body.is-mobile .epub-bottom-nav-slot,
+body.is-phone .epub-bottom-nav-slot {
 	padding:
 		0
 		12px
-		max(10px, var(--epub-mobile-bottom-clearance));
+		max(10px, var(--epub-mobile-bottom-clearance, env(safe-area-inset-bottom, 10px)));
+	flex-shrink: 0;
 }
 
 body.is-mobile .epub-selected-text-ai-panel-slot {

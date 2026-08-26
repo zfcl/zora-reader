@@ -747,7 +747,14 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 		isVisible = true;
 		await tick();
 
-		if (!toolbarEl) return;
+		if (isMobileToolbar) {
+			toolbarMode = 'docked';
+			posTop = 0;
+			posLeft = 0;
+			isBelowSelection = false;
+			arrowOffset = 0;
+			return;
+		}
 
 		const containerRect = containerEl.getBoundingClientRect();
 		const toRelativeRect = (rect: DOMRect) => ({
@@ -772,9 +779,7 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 			toolbarWidth: toolbarEl.offsetWidth || 296,
 			toolbarHeight: toolbarEl.offsetHeight || 78,
 			mobile: isMobileToolbar,
-			insetBottom: isMobileToolbar
-				? resolveMobileFloatingInsetBottom(mobileDockBottomOffset)
-				: 0,
+			insetBottom: 0,
 		});
 
 		toolbarMode = position.mode;
@@ -1048,7 +1053,11 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 	class:visible={isVisible}
 	class:below-selection={isBelowSelection}
 	class:mobile-docked={toolbarMode === 'docked'}
-	style={`top: ${toolbarMode === 'docked' ? 'auto' : posTop + 'px'}; left: ${posLeft}px; --toolbar-arrow-offset: ${arrowOffset}px; --toolbar-bottom-offset: ${Math.max(0, mobileDockBottomOffset)}px; --epub-mobile-bottom-clearance: ${mobileBottomClearance}px;`}
+	style={`top: ${toolbarMode === 'docked' ? 'auto' : posTop + 'px'}; left: ${toolbarMode === 'docked' ? 'auto' : posLeft + 'px'}; --toolbar-arrow-offset: ${arrowOffset}px; --toolbar-bottom-offset: ${Math.max(0, mobileDockBottomOffset)}px; --epub-mobile-bottom-clearance: ${mobileBottomClearance}px;`}
+	ontouchstart={(e) => e.stopPropagation()}
+	ontouchmove={(e) => e.stopPropagation()}
+	ontouchend={(e) => e.stopPropagation()}
+	onpointerdown={(e) => e.stopPropagation()}
 	bind:this={toolbarEl}
 >
 	<div class="selection-main-row">

@@ -18,7 +18,7 @@
 	import EpubFootnotePreviewPopover from './EpubFootnotePreviewPopover.svelte';
 	import ReferenceDetailModal from './ReferenceDetailModal.svelte';
 	import EpubPremiumFeaturePopover from './EpubPremiumFeaturePopover.svelte';
-	import { MobileTapSelectionController, type MobileTapSelectionContext } from './mobile-tap-selection';
+	import { MobileDirectSelectionController, type MobileDirectSelectionContext } from './mobile-direct-selection';
 	import { getZoraSyncService } from '../../services/sync/ZoraSyncService';
 	import { runZoraSyncV2Migration } from '../../services/sync/zora-sync-migration';
 	import { logMobileEvent } from '../../utils/zora-mobile-logger';
@@ -278,12 +278,10 @@
 		rects: DOMRect[];
 		clear: () => void;
 	} | null>(null);
-	let customMobileSelection = $state<MobileTapSelectionContext | null>(null);
-	let isMobileSelectionArmed = $state(false);
+	let customMobileSelection = $state<MobileDirectSelectionContext | null>(null);
 
-	let mobileSelectionController = untrack(() => new MobileTapSelectionController({
+	let mobileSelectionController = untrack(() => new MobileDirectSelectionController({
 		onStateChange: (state) => {
-			isMobileSelectionArmed = state.mode === 'armed';
 			if (state.selection) {
 				customMobileSelection = state.selection;
 			} else if (state.mode === 'idle') {
@@ -297,21 +295,8 @@
 		},
 	}));
 
-	function toggleMobileSelectionMode() {
-		if (isMobileSelectionArmed) {
-			mobileSelectionController.cancel();
-		} else {
-			if (customMobileSelection) {
-				mobileSelectionController.clearSelection();
-				customMobileSelection = null;
-			}
-			mobileSelectionController.syncFrames(readerService.getVisibleFrames());
-			mobileSelectionController.arm();
-		}
-	}
-
 	function handleCustomSelectionExpand(newRange: Range, newText: string, newCfiRange: string) {
-		mobileSelectionController.updateSelectionRange(newRange, newText, newCfiRange);
+		mobileSelectionController.updateExpandedSelection(newRange, newText, newCfiRange);
 		const current = mobileSelectionController.getSelection();
 		if (current) {
 			customMobileSelection = current;
@@ -3049,10 +3034,14 @@
 	}
 
 	async function handlePrevPage() {
+		mobileSelectionController.clearSelection();
+		customMobileSelection = null;
 		await readerService.prevPage();
 	}
 
 	async function handleNextPage() {
+		mobileSelectionController.clearSelection();
+		customMobileSelection = null;
 		await readerService.nextPage();
 	}
 
@@ -5808,7 +5797,7 @@
 						syncScrolledChapterNavVisibility();
 						scheduleScrolledNavLayoutSync();
 						mobileSelectionController.syncFrames(readerService.getVisibleFrames());
-						if (customMobileSelection && !isMobileSelectionArmed) {
+						if (customMobileSelection) {
 							mobileSelectionController.clearSelection();
 							customMobileSelection = null;
 						}
@@ -5988,21 +5977,6 @@
 				onClose={closeReferencePopover}
 			/>
 
-			{#if isMobileReader() && !settings.paragraphModeEnabled && readerReady}
-				<div class="zora-mobile-selection-control-slot">
-					<button
-						type="button"
-						class="zora-mobile-selection-toggle-btn"
-						class:active={isMobileSelectionArmed}
-						onclick={toggleMobileSelectionMode}
-						title={isMobileSelectionArmed ? "点击取消选取" : "选取"}
-						aria-label={isMobileSelectionArmed ? "选取中…" : "选取"}
-					>
-						<span class="zora-select-btn-icon" use:icon={isMobileSelectionArmed ? 'x' : 'highlighter'}></span>
-						<span class="zora-select-btn-text">{isMobileSelectionArmed ? '选取中…' : '选取'}</span>
-					</button>
-				</div>
-			{/if}
 
 			<SelectionToolbar
 				{app}

@@ -16,8 +16,8 @@ export interface ReaderChapterStylesInput {
 	currentLineHeight: number;
 	currentLetterSpacing: number;
 	currentPageMargin: number;
-	currentWidthMode: EpubWidthMode;
 	colorScheme?: ReaderColorScheme;
+	isMobile?: boolean;
 }
 
 export function buildReaderChapterStyles(input: ReaderChapterStylesInput): string {
@@ -55,6 +55,23 @@ html[data-weave-host-scheme="dark"] body :is(table, thead, tbody, tfoot, tr) {
 	background-color: transparent !important;
 }`
 			: "";
+
+	const isMobile =
+		input.isMobile ??
+		(Boolean(input.styleSource?.ownerDocument?.body?.classList.contains("is-mobile")) ||
+			Boolean(input.styleSource?.ownerDocument?.body?.classList.contains("is-phone")) ||
+			(typeof document !== "undefined" &&
+				(document.body.classList.contains("is-mobile") ||
+					document.body.classList.contains("is-phone"))));
+
+	const mobileSelectionDisablingRules = isMobile
+		? `
+html, body, body * {
+	-webkit-user-select: none !important;
+	user-select: none !important;
+	-webkit-touch-callout: none !important;
+}`
+		: "";
 
 	return `:root {
 	color-scheme: ${colorScheme};
@@ -124,5 +141,5 @@ body .weave-foliate-concealment {
 	fill: ${concealment.base};
 	stroke: ${concealment.border};
 	stroke-width: 1;
-}${darkModeOverrides}`;
+}${darkModeOverrides}${mobileSelectionDisablingRules}`;
 }

@@ -254,7 +254,7 @@ describe('EpubStorageService', () => {
     expect(settings.footnoteClickAction).toBe('preview');
   });
 
-  it('returns scrolled reader defaults on mobile when no reader settings were saved', async () => {
+  it('returns paginated reader defaults on mobile when no reader settings were saved', async () => {
     const { app } = createMemoryApp();
 
     await withPlatformIsMobile(true, async () => {
@@ -265,7 +265,7 @@ describe('EpubStorageService', () => {
       expect(settings.viewportSidePadding).toBe(18);
       expect(settings.widthMode).toBe('full');
       expect(settings.layoutMode).toBe('paginated');
-      expect(settings.flowMode).toBe('scrolled');
+      expect(settings.flowMode).toBe('paginated');
     });
   });
 
@@ -302,7 +302,7 @@ describe('EpubStorageService', () => {
     expect(files.has(LOCAL_EPUB_DATA_PATH)).toBe(true);
     expect(files.has(`${SYNC_EPUB_ROOT}/reader-settings.json`)).toBe(true);
     expect(files.has(`${SYNC_EPUB_ROOT}/reader-settings.mobile.json`)).toBe(false);
-    expect(readLocalEpubData(files).readerSettings.mobile.flowMode).toBe('scrolled');
+    expect(readLocalEpubData(files).readerSettings.mobile.flowMode).toBe('paginated');
     expect(readLocalEpubData(files).readerSettings.mobile.viewportSidePadding).toBe(22);
     expect(JSON.parse(files.get(`${SYNC_EPUB_ROOT}/reader-settings.json`) || '{}').flowMode).toBe('paginated');
   });

@@ -102,4 +102,22 @@ describe("normalizeEpubReaderSettingsForDevice", () => {
 			widthMode: "fit",
 		});
 	});
+
+	it("forces mobile runtime flowMode to paginated even if user had persisted scrolled mode", () => {
+		const result = normalizeEpubReaderSettingsForDevice("mobile", {
+			...DEFAULT_MOBILE_READER_SETTINGS,
+			flowMode: "scrolled",
+			layoutMode: "paginated",
+		});
+		expect(result.flowMode).toBe("paginated");
+		expect(result.layoutMode).toBe("paginated");
+	});
+
+	it("preserves desktop persisted scrolled flowMode", () => {
+		const result = normalizeEpubReaderSettingsForDevice("desktop", {
+			...DEFAULT_READER_SETTINGS,
+			flowMode: "scrolled",
+		});
+		expect(result.flowMode).toBe("scrolled");
+	});
 });

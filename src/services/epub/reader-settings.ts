@@ -28,7 +28,8 @@ export const DEFAULT_MOBILE_READER_SETTINGS: EpubReaderSettings = {
 	pageMargin: 24,
 	viewportSidePadding: 18,
 	widthMode: "full",
-	flowMode: "scrolled",
+	flowMode: "paginated",
+	layoutMode: "paginated",
 };
 
 export function getDefaultEpubReaderSettings(
@@ -101,7 +102,8 @@ export function normalizeEpubReaderSettingsForDevice(
 		),
 	};
 
-	if (deviceKind === "mobile" && normalized.layoutMode === "double") {
+	if (deviceKind === "mobile") {
+		normalized.flowMode = "paginated";
 		normalized.layoutMode = "paginated";
 	}
 
