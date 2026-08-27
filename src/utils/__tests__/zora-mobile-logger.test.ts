@@ -1,0 +1,148 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+	getLogFilePath,
+	ensureLogDirectoryExists,
+	initMobileDiagnostics,
+	logMobileEvent,
+	logMobileError,
+	flushLogWriteQueue,
+} from "../zora-mobile-logger";
+import type { App } from "obsidian";
+
+describe("zora-mobile-logger", () => {
+	let mockAdapter: any;
+	let mockApp: App;
+
+	beforeEach(() => {
+		mockAdapter = {
+			exists: vi.fn(),
+			mkdir: vi.fn(),
+			stat: vi.fn(),
+			read: vi.fn(),
+			write: vi.fn(),
+			append: vi.fn(),
+		};
+		mockApp = {
+			vault: {
+				adapter: mockAdapter,
+				configDir: ".obsidian",
+			},
+		} as unknown as App;
+	});
+
+	it("1. getLogFilePath returns Zora Reader/debug/mobile-debug.log", () => {
+		expect(getLogFilePath()).toBe("Zora Reader/debug/mobile-debug.log");
+	});
+
+	it("2. creates Zora Reader and debug directory if neither exists", async () => {
+		mockAdapter.exists.mockResolvedValue(false);
+		mockAdapter.mkdir.mockResolvedValue(undefined);
+
+		const result = await ensureLogDirectoryExists(mockAdapter);
+
+		expect(result).toBe(true);
+		expect(mockAdapter.exists).toHaveBeenCalledWith("Zora Reader");
+		expect(mockAdapter.mkdir).toHaveBeenCalledWith("Zora Reader");
+		expect(mockAdapter.exists).toHaveBeenCalledWith("Zora Reader/debug");
+		expect(mockAdapter.mkdir).toHaveBeenCalledWith("Zora Reader/debug");
+	});
+
+	it("3. creates only debug directory if Zora Reader already exists", async () => {
+		mockAdapter.exists.mockImplementation((path: string) => {
+			if (path === "Zora Reader") return Promise.resolve(true);
+			if (path === "Zora Reader/debug") return Promise.resolve(false);
+			return Promise.resolve(false);
+		});
+		mockAdapter.mkdir.mockResolvedValue(undefined);
+
+		const result = await ensureLogDirectoryExists(mockAdapter);
+
+		expect(result).toBe(true);
+		expect(mockAdapter.mkdir).not.toHaveBeenCalledWith("Zora Reader");
+		expect(mockAdapter.mkdir).toHaveBeenCalledWith("Zora Reader/debug");
+	});
+
+	it("4. does not call mkdir if both directories already exist", async () => {
+		mockAdapter.exists.mockResolvedValue(true);
+
+		const result = await ensureLogDirectoryExists(mockAdapter);
+
+		expect(result).toBe(true);
+		expect(mockAdapter.mkdir).not.toHaveBeenCalled();
+	});
+
+	it("5. safe failover if mkdir throws error", async () => {
+		mockAdapter.exists.mockResolvedValue(false);
+		mockAdapter.mkdir.mockRejectedValue(new Error("Permission denied"));
+
+		const result = await ensureLogDirectoryExists(mockAdapter);
+
+		expect(result).toBe(false);
+	});
+
+	it("6. writeLogEntry writes to Zora Reader/debug/mobile-debug.log when file does not exist", async () => {
+		mockAdapter.exists.mockImplementation((path: string) => {
+			if (path === "Zora Reader" || path === "Zora Reader/debug") return Promise.resolve(true);
+			if (path === "Zora Reader/debug/mobile-debug.log") return Promise.resolve(false);
+			return Promise.resolve(false);
+		});
+		mockAdapter.write.mockResolvedValue(undefined);
+
+		initMobileDiagnostics(mockApp);
+		await flushLogWriteQueue();
+		mockAdapter.write.mockClear();
+
+		logMobileEvent("DirectSelection", "GestureClassified", { targetTag: "p", gestureKind: "text-selection" });
+		await flushLogWriteQueue();
+
+		expect(mockAdapter.write).toHaveBeenCalled();
+		const writtenPath = mockAdapter.write.mock.calls[0][0];
+		const writtenContent = mockAdapter.write.mock.calls[0][1];
+
+		expect(writtenPath).toBe("Zora Reader/debug/mobile-debug.log");
+		expect(writtenContent).toContain("[DirectSelection] GestureClassified");
+		expect(writtenContent).toContain('"gestureKind":"text-selection"');
+	});
+
+	it("7. writeLogEntry appends to existing log file under 500KB limit", async () => {
+		mockAdapter.exists.mockResolvedValue(true);
+		mockAdapter.stat.mockResolvedValue({ size: 1024 });
+		mockAdapter.append.mockResolvedValue(undefined);
+
+		initMobileDiagnostics(mockApp);
+		await flushLogWriteQueue();
+		mockAdapter.append.mockClear();
+
+		logMobileEvent("Reader", "PageTurn", { direction: "next" });
+		await flushLogWriteQueue();
+
+		expect(mockAdapter.append).toHaveBeenCalled();
+		const appendPath = mockAdapter.append.mock.calls[0][0];
+		const appendContent = mockAdapter.append.mock.calls[0][1];
+
+		expect(appendPath).toBe("Zora Reader/debug/mobile-debug.log");
+		expect(appendContent).toContain("[Reader] PageTurn");
+	});
+
+	it("8. rotates log file when size exceeds 500KB limit", async () => {
+		mockAdapter.exists.mockResolvedValue(true);
+		mockAdapter.stat.mockResolvedValue({ size: 600 * 1024 }); // > 500KB
+		mockAdapter.read.mockResolvedValue("Previous long log content...\nLine 1\nLine 2\n");
+		mockAdapter.write.mockResolvedValue(undefined);
+
+		initMobileDiagnostics(mockApp);
+		await flushLogWriteQueue();
+		mockAdapter.write.mockClear();
+
+		logMobileError("EpubEngine", new Error("Parse error"));
+		await flushLogWriteQueue();
+
+		expect(mockAdapter.write).toHaveBeenCalled();
+		const writePath = mockAdapter.write.mock.calls[0][0];
+		const writeContent = mockAdapter.write.mock.calls[0][1];
+
+		expect(writePath).toBe("Zora Reader/debug/mobile-debug.log");
+		expect(writeContent).toContain("--- Log rotated ---");
+		expect(writeContent).toContain("Parse error");
+	});
+});

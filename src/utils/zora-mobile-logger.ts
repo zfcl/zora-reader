@@ -79,9 +79,35 @@ function resolvePlatformString(): string {
 	return "Unknown";
 }
 
-function getLogFilePath(): string {
-	const configDir = activeApp?.vault.configDir || ".obsidian";
-	return normalizePath(`${configDir}/plugins/${logPluginId}/mobile-debug.log`);
+export function getLogFilePath(): string {
+	return normalizePath("Zora Reader/debug/mobile-debug.log");
+}
+
+export async function ensureLogDirectoryExists(adapter: App["vault"]["adapter"]): Promise<boolean> {
+	if (!adapter) return false;
+	try {
+		const rootDir = normalizePath("Zora Reader");
+		const debugDir = normalizePath("Zora Reader/debug");
+
+		const rootExists = await adapter.exists(rootDir);
+		if (!rootExists) {
+			await adapter.mkdir(rootDir);
+		}
+
+		const debugExists = await adapter.exists(debugDir);
+		if (!debugExists) {
+			await adapter.mkdir(debugDir);
+		}
+
+		return true;
+	} catch {
+		// Directory creation failure must fail safely without breaking plugin
+		return false;
+	}
+}
+
+export function flushLogWriteQueue(): Promise<void> {
+	return logWriteQueue;
 }
 
 async function writeLogEntry(entry: SanitizedLogPayload): Promise<void> {
@@ -96,6 +122,11 @@ async function writeLogEntry(entry: SanitizedLogPayload): Promise<void> {
 	}${entry.error ? ` | ERROR: ${JSON.stringify(entry.error)}` : ""}\n`;
 
 	try {
+		const dirReady = await ensureLogDirectoryExists(adapter);
+		if (!dirReady) {
+			return;
+		}
+
 		const exists = await adapter.exists(logPath);
 		if (exists) {
 			const stat = await adapter.stat(logPath);

@@ -49,6 +49,7 @@ export default defineConfig({
       'src/utils/__tests__/epub-author-color-sanitizer.test.ts',
       'src/utils/__tests__/i18n-locales.test.ts',
       'src/utils/__tests__/locale-resolver.test.ts',
+      'src/utils/__tests__/zora-mobile-logger.test.ts',
       'src/services/epub/__tests__/epub-premium-i18n.test.ts',
       'src/services/obsidian/__tests__/**/*.{test,spec}.{js,ts}'
     ],
