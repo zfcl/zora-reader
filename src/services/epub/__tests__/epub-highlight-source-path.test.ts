@@ -32,5 +32,14 @@ describe("epub-highlight-source-path", () => {
 		expect(
 			isEphemeralEditorHighlightSourcePath(app, "Books/demo.epub")
 		).toBe(false);
+		expect(
+			isEphemeralEditorHighlightSourcePath(app, "Zora Reader/debug/mobile-debug.log")
+		).toBe(true);
+		expect(
+			isEphemeralEditorHighlightSourcePath(app, "Zora Reader/debug/test.log")
+		).toBe(false);
+		expect(
+			isEphemeralEditorHighlightSourcePath(app, "Zora Reader/debug/gesture-debug.json")
+		).toBe(false);
 	});
 });

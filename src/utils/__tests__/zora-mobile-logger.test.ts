@@ -145,4 +145,76 @@ describe("zora-mobile-logger", () => {
 		expect(writeContent).toContain("--- Log rotated ---");
 		expect(writeContent).toContain("Parse error");
 	});
+
+	it("9. logs VAULT_EVENT for normal vault files but completely drops VAULT_EVENT for mobile-debug.log", async () => {
+		mockAdapter.exists.mockResolvedValue(true);
+		mockAdapter.stat.mockResolvedValue({ size: 1024 });
+		mockAdapter.append.mockResolvedValue(undefined);
+
+		initMobileDiagnostics(mockApp);
+		await flushLogWriteQueue();
+		mockAdapter.append.mockClear();
+
+		// 1) Normal vault file modify -> should write
+		logMobileEvent("VAULT_EVENT", "modify", { path: "Notes/ReadingNote.md", triggeredRescan: true });
+		await flushLogWriteQueue();
+
+		expect(mockAdapter.append).toHaveBeenCalledTimes(1);
+		expect(mockAdapter.append.mock.calls[0][1]).toContain("Notes/ReadingNote.md");
+		mockAdapter.append.mockClear();
+
+		// 2) Other debug directory files -> SHOULD write (only mobile-debug.log is filtered)
+		logMobileEvent("VAULT_EVENT", "modify", { path: "Zora Reader/debug/test.log", triggeredRescan: false });
+		await flushLogWriteQueue();
+
+		expect(mockAdapter.append).toHaveBeenCalledTimes(1);
+		expect(mockAdapter.append.mock.calls[0][1]).toContain("Zora Reader/debug/test.log");
+		mockAdapter.append.mockClear();
+
+		logMobileEvent("VAULT_EVENT", "create", { path: "Zora Reader/debug/gesture-debug.json", triggeredRescan: false });
+		await flushLogWriteQueue();
+
+		expect(mockAdapter.append).toHaveBeenCalledTimes(1);
+		expect(mockAdapter.append.mock.calls[0][1]).toContain("Zora Reader/debug/gesture-debug.json");
+		mockAdapter.append.mockClear();
+
+		// 3) Exact self log file modify -> MUST BE DROPPED (0 writes)
+		logMobileEvent("VAULT_EVENT", "modify", { path: "Zora Reader/debug/mobile-debug.log", triggeredRescan: false });
+		await flushLogWriteQueue();
+
+		expect(mockAdapter.append).not.toHaveBeenCalled();
+
+		// 4) Other event on exact log path with filePath property -> MUST BE DROPPED (0 writes)
+		logMobileEvent("VAULT_EVENT", "create", { filePath: "Zora Reader/debug/mobile-debug.log" });
+		await flushLogWriteQueue();
+
+		expect(mockAdapter.append).not.toHaveBeenCalled();
+	});
+
+	it("10. writing log does not trigger second append when simulated vault modify fires on debug log", async () => {
+		mockAdapter.exists.mockResolvedValue(true);
+		mockAdapter.stat.mockResolvedValue({ size: 1024 });
+
+		let appendCount = 0;
+		mockAdapter.append.mockImplementation(async (path: string) => {
+			appendCount++;
+			if (path === "Zora Reader/debug/mobile-debug.log") {
+				// Simulates Obsidian vault listener firing 'modify' event when log file is written
+				logMobileEvent("VAULT_EVENT", "modify", { path, triggeredRescan: false });
+			}
+		});
+
+		initMobileDiagnostics(mockApp);
+		await flushLogWriteQueue();
+		mockAdapter.append.mockClear();
+		appendCount = 0;
+
+		// Initial user event
+		logMobileEvent("DirectSelection", "TapWordSelected", { word: "hello" });
+		await flushLogWriteQueue();
+
+		// MUST ONLY BE 1 APPEND! Recursion was stopped dead at layer 2!
+		expect(appendCount).toBe(1);
+		expect(mockAdapter.append).toHaveBeenCalledTimes(1);
+	});
 });

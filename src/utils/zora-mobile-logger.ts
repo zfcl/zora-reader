@@ -110,8 +110,35 @@ export function flushLogWriteQueue(): Promise<void> {
 	return logWriteQueue;
 }
 
+/**
+ * Hard filter to prevent self-recursive logging loops where writing to mobile-debug.log
+ * triggers vault create/modify/delete/rename events on the log file itself.
+ */
+export function isSelfLogVaultEvent(category: string, details?: unknown): boolean {
+	if (category !== "VAULT_EVENT") {
+		return false;
+	}
+	if (!details || typeof details !== "object") {
+		return false;
+	}
+	const obj = details as Record<string, unknown>;
+	const pathVal = obj.path ?? obj.filePath ?? obj.file ?? obj.oldPath;
+	if (typeof pathVal === "string") {
+		const normalized = normalizePath(pathVal.trim());
+		const logPath = getLogFilePath();
+		if (normalized === logPath) {
+			return true;
+		}
+	}
+	return false;
+}
+
 async function writeLogEntry(entry: SanitizedLogPayload): Promise<void> {
 	if (!activeApp?.vault?.adapter) {
+		return;
+	}
+
+	if (isSelfLogVaultEvent(entry.category, entry.details)) {
 		return;
 	}
 
@@ -193,6 +220,10 @@ export function logMobileEvent(
 	event: string,
 	details?: Record<string, unknown>
 ): void {
+	if (isSelfLogVaultEvent(category, details)) {
+		return;
+	}
+
 	const payload: SanitizedLogPayload = {
 		timestamp: new Date().toISOString(),
 		platform: resolvePlatformString(),

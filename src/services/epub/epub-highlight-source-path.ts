@@ -60,6 +60,10 @@ export function isEphemeralEditorHighlightSourcePath(
 		return true;
 	}
 
+	if (normalizedPath === normalizePath("Zora Reader/debug/mobile-debug.log")) {
+		return true;
+	}
+
 	return false;
 }
 
