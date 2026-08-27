@@ -30,6 +30,21 @@ export interface MobileDirectSelectionState {
 	gestureKind?: MobileGestureKind | null;
 }
 
+export type CaretSourceKind = 'native-position' | 'native-range' | 'geometry' | 'none';
+
+export interface CaretPositionResult {
+	node: Node;
+	offset: number;
+	source?: CaretSourceKind;
+}
+
+export interface SelectableTextCaretResult {
+	caret: { node: Node; offset: number };
+	textNode: Text;
+	caretSource: CaretSourceKind;
+	hitElementTag?: string;
+}
+
 /**
  * Resolves character position from touch coordinates in a document viewport.
  * Prefers standard caretPositionFromPoint with fallback to WebKit caretRangeFromPoint.
@@ -38,7 +53,7 @@ export function getCaretPositionFromPoint(
 	doc: Document,
 	x: number,
 	y: number
-): { node: Node; offset: number } | null {
+): CaretPositionResult | null {
 	if (!doc) {
 		return null;
 	}
@@ -48,7 +63,12 @@ export function getCaretPositionFromPoint(
 		try {
 			const pos = (doc as any).caretPositionFromPoint(x, y);
 			if (pos && pos.offsetNode) {
-				return normalizeCaretNodeOffset(pos.offsetNode, pos.offset);
+				const normalized = normalizeCaretNodeOffset(pos.offsetNode, pos.offset);
+				return {
+					node: normalized.node,
+					offset: normalized.offset,
+					source: 'native-position',
+				};
 			}
 		} catch {
 			/* fallback */
@@ -60,7 +80,12 @@ export function getCaretPositionFromPoint(
 		try {
 			const range = doc.caretRangeFromPoint(x, y);
 			if (range && range.startContainer) {
-				return normalizeCaretNodeOffset(range.startContainer, range.startOffset);
+				const normalized = normalizeCaretNodeOffset(range.startContainer, range.startOffset);
+				return {
+					node: normalized.node,
+					offset: normalized.offset,
+					source: 'native-range',
+				};
 			}
 		} catch {
 			/* fallback */
@@ -476,20 +501,316 @@ export function isBlockedStandaloneMedia(target: EventTarget | null): boolean {
 }
 
 /**
+ * Accurately finds character offset within a TextNode using character/range geometry.
+ * Uses binary search across character positions to avoid full linear scans.
+ */
+export function findAccurateTextOffset(
+	doc: Document,
+	textNode: Text,
+	x: number,
+	y: number
+): number {
+	const len = textNode.length;
+	if (len <= 0) return 0;
+
+	// Binary search to find character offset
+	let low = 0;
+	let high = len;
+	let iterations = 0;
+	const maxIterations = 32;
+
+	while (low < high && iterations++ < maxIterations) {
+		if (high - low === 1) {
+			try {
+				const r = doc.createRange();
+				r.setStart(textNode, low);
+				r.setEnd(textNode, high);
+				const rect = typeof r.getBoundingClientRect === 'function' ? r.getBoundingClientRect() : null;
+				if (rect && rect.width > 0) {
+					return x > rect.left + rect.width / 2 ? high : low;
+				}
+			} catch {
+				/* fallback */
+			}
+			return low;
+		}
+
+		const mid = Math.floor((low + high) / 2);
+		try {
+			const r = doc.createRange();
+			r.setStart(textNode, low);
+			r.setEnd(textNode, mid);
+			const rects = typeof r.getClientRects === 'function' ? Array.from(r.getClientRects()) : [];
+			const lastRect = rects.length > 0
+				? rects[rects.length - 1]
+				: (typeof r.getBoundingClientRect === 'function' ? r.getBoundingClientRect() : null);
+
+			if (!lastRect || (lastRect.width <= 0 && lastRect.height <= 0)) {
+				return mid;
+			}
+
+			const lineToleranceY = 4;
+			if (y < lastRect.top - lineToleranceY) {
+				// Touch is vertically above the last measured line rect
+				high = mid;
+			} else if (y > lastRect.bottom + lineToleranceY) {
+				// Touch is vertically below the last measured line rect
+				low = mid;
+			} else {
+				// Touch is on the same line as lastRect
+				if (x <= lastRect.right) {
+					high = mid;
+				} else {
+					low = mid;
+				}
+			}
+		} catch {
+			return mid;
+		}
+	}
+
+	return Math.max(0, Math.min(low, len));
+}
+
+/**
+ * Reliable geometry fallback to resolve TextNode and accurate character offset when
+ * native caretPositionFromPoint / caretRangeFromPoint fail on iOS / Safari.
+ */
+export function resolveTextCaretByGeometry(
+	doc: Document,
+	target: EventTarget | null,
+	x: number,
+	y: number
+): SelectableTextCaretResult | null {
+	if (!doc) {
+		return null;
+	}
+
+	// 1. Identify elements under point & hit element tag
+	const elementsUnderPoint: Element[] = [];
+	if (typeof doc.elementsFromPoint === 'function') {
+		try {
+			const els = doc.elementsFromPoint(x, y);
+			if (els && els.length > 0) {
+				elementsUnderPoint.push(...els);
+			}
+		} catch {
+			/* ignore */
+		}
+	}
+
+	if (elementsUnderPoint.length === 0 && typeof doc.elementFromPoint === 'function') {
+		try {
+			const el = doc.elementFromPoint(x, y);
+			if (el) {
+				elementsUnderPoint.push(el);
+			}
+		} catch {
+			/* ignore */
+		}
+	}
+
+	let targetEl: Element | null = null;
+	if (target instanceof Element || (target as any)?.nodeType === Node.ELEMENT_NODE) {
+		targetEl = target as Element;
+	} else if ((target as any)?.parentElement) {
+		targetEl = (target as any).parentElement as Element;
+	}
+
+	if (targetEl && !elementsUnderPoint.includes(targetEl)) {
+		elementsUnderPoint.push(targetEl);
+	}
+
+	const directHitEl = elementsUnderPoint[0] || targetEl || null;
+	const hitElementTag = directHitEl?.tagName?.toLowerCase() || 'unknown';
+
+	// 2. Filter out non-content containers (overlays, styles, scripts)
+	const isExcludedContainer = (el: Element) => {
+		if (!el) return true;
+		const tag = el.tagName?.toLowerCase();
+		if (
+			tag === 'script' ||
+			tag === 'style' ||
+			tag === 'noscript' ||
+			tag === 'head' ||
+			tag === 'meta' ||
+			tag === 'link'
+		) {
+			return true;
+		}
+		if (
+			el.classList?.contains('zora-mobile-selection-overlay') ||
+			el.classList?.contains('zora-custom-selection-overlay-layer')
+		) {
+			return true;
+		}
+		return false;
+	};
+
+	const candidateElements: Element[] = elementsUnderPoint.filter((el) => !isExcludedContainer(el));
+
+	// 3. Gather candidate text nodes
+	const candidateTextNodes: Text[] = [];
+	const seenTextNodes = new Set<Text>();
+
+	const addTextNodesFromElement = (el: Element) => {
+		if (isExcludedContainer(el)) return;
+
+		// Check direct child nodes first for direct text
+		for (let i = 0; i < el.childNodes.length; i++) {
+			const child = el.childNodes[i];
+			if (domInstanceOf(child, Text) && child.textContent && child.textContent.trim().length > 0) {
+				if (!seenTextNodes.has(child)) {
+					seenTextNodes.add(child);
+					candidateTextNodes.push(child);
+				}
+			}
+		}
+
+		// Traverse descendants
+		try {
+			const walker = doc.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+			let curr = walker.nextNode();
+			while (curr) {
+				if (domInstanceOf(curr, Text) && curr.textContent && curr.textContent.trim().length > 0) {
+					if (!seenTextNodes.has(curr)) {
+						seenTextNodes.add(curr);
+						candidateTextNodes.push(curr);
+					}
+				}
+				curr = walker.nextNode();
+			}
+		} catch {
+			/* fallback */
+		}
+	};
+
+	// Add text nodes from elements under point (most specific elements first)
+	for (const el of candidateElements) {
+		if (el !== doc.body && el !== doc.documentElement) {
+			addTextNodesFromElement(el);
+		}
+	}
+
+	// If no text nodes found from specific elements under point (e.g. target is BODY or elementsFromPoint only had BODY/HTML):
+	if (candidateTextNodes.length === 0) {
+		const root = doc.body || doc.documentElement;
+		if (root) {
+			const children = Array.from(root.children);
+			for (const child of children) {
+				if (isExcludedContainer(child)) continue;
+				if (typeof child.getBoundingClientRect === 'function') {
+					const b = child.getBoundingClientRect();
+					if (b && (b.width > 0 || b.height > 0)) {
+						// Only consider elements within 20px vertically of the touch point
+						if (y >= b.top - 20 && y <= b.bottom + 20) {
+							addTextNodesFromElement(child);
+						}
+					} else {
+						addTextNodesFromElement(child);
+					}
+				} else {
+					addTextNodesFromElement(child);
+				}
+			}
+			// Also add direct text nodes of body/root
+			addTextNodesFromElement(root);
+		}
+	}
+
+	if (candidateTextNodes.length === 0) {
+		return null;
+	}
+
+	// 4. Line geometry matching: find candidate text node whose line rect contains or is closest to (x, y)
+	interface MatchedCandidate {
+		textNode: Text;
+		matchedLineRect: DOMRect | ClientRect;
+		dist: number;
+		isExactInside: boolean;
+	}
+
+	let bestMatch: MatchedCandidate | null = null;
+	const maxAllowedDist = 25; // Maximum distance to consider text hit (prevents blank margins from matching)
+
+	for (const textNode of candidateTextNodes) {
+		try {
+			const range = doc.createRange();
+			range.setStart(textNode, 0);
+			range.setEnd(textNode, textNode.length);
+
+			let rects: Array<DOMRect | ClientRect> =
+				typeof range.getClientRects === 'function' ? Array.from(range.getClientRects()) : [];
+			if (rects.length === 0 && typeof range.getBoundingClientRect === 'function') {
+				const b = range.getBoundingClientRect();
+				if (b && (b.width > 0 || b.height > 0)) {
+					rects.push(b);
+				}
+			}
+
+			if (rects.length === 0) {
+				continue;
+			}
+
+			for (const rect of rects) {
+				if (rect.width <= 0 && rect.height <= 0) continue;
+
+				const dx = Math.max(0, rect.left - x, x - rect.right);
+				const dy = Math.max(0, rect.top - y, y - rect.bottom);
+				const dist = Math.hypot(dx, dy);
+
+				const isExactInside = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+
+				if (dist <= maxAllowedDist) {
+					if (!bestMatch || (isExactInside && !bestMatch.isExactInside) || dist < bestMatch.dist) {
+						bestMatch = {
+							textNode,
+							matchedLineRect: rect,
+							dist,
+							isExactInside,
+						};
+					}
+				}
+			}
+		} catch {
+			/* continue */
+		}
+	}
+
+	if (!bestMatch) {
+		return null;
+	}
+
+	// 5. Compute accurate offset within the matched text node
+	const offset = findAccurateTextOffset(doc, bestMatch.textNode, x, y);
+
+	return {
+		caret: {
+			node: bestMatch.textNode,
+			offset: Math.max(0, Math.min(offset, bestMatch.textNode.length)),
+		},
+		textNode: bestMatch.textNode,
+		caretSource: 'geometry',
+		hitElementTag,
+	};
+}
+
+/**
  * Resolves a selectable Text node and caret position from coordinates and touch target.
- * Returns null if the touch is on empty background or no valid non-empty Text node is found.
+ * Order: native caretPositionFromPoint -> native caretRangeFromPoint -> geometry fallback.
+ * Returns null if the touch is on empty background/margins or no valid non-empty Text node is found.
  */
 export function resolveSelectableTextCaret(
 	doc: Document,
 	target: EventTarget | null,
 	x: number,
 	y: number
-): { caret: { node: Node; offset: number }; textNode: Text } | null {
+): SelectableTextCaretResult | null {
 	if (!doc) {
 		return null;
 	}
 
-	// 1. Resolve caret from document coordinates
+	// 1. Resolve caret from document coordinates via native APIs
 	const caret = getCaretPositionFromPoint(doc, x, y);
 	if (caret && caret.node) {
 		let textNode: Text | null = null;
@@ -506,44 +827,26 @@ export function resolveSelectableTextCaret(
 		}
 
 		if (textNode && textNode.textContent && textNode.textContent.trim().length > 0) {
+			let targetEl: Element | null = null;
+			if (target instanceof Element || (target as any)?.nodeType === Node.ELEMENT_NODE) {
+				targetEl = target as Element;
+			} else if ((target as any)?.parentElement) {
+				targetEl = (target as any).parentElement as Element;
+			}
 			return {
 				caret: {
 					node: textNode,
 					offset: Math.max(0, Math.min(offset, textNode.length)),
 				},
 				textNode,
+				caretSource: caret.source || 'native-range',
+				hitElementTag: targetEl?.tagName?.toLowerCase() || textNode.parentElement?.tagName?.toLowerCase() || 'unknown',
 			};
 		}
 	}
 
-	// 2. Fallback: if caret is null or landed on an element container, search within target
-	let el: Element | null = null;
-	if (target instanceof Element || (target as any)?.nodeType === Node.ELEMENT_NODE) {
-		el = target as Element;
-	} else if ((target as any)?.parentElement) {
-		el = (target as any).parentElement as Element;
-	}
-
-	if (!el || el === doc.body || el === doc.documentElement) {
-		return null;
-	}
-
-	const walker = doc.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
-	let curr = walker.nextNode();
-	while (curr) {
-		if (domInstanceOf(curr, Text) && curr.textContent && curr.textContent.trim().length > 0) {
-			return {
-				caret: {
-					node: curr,
-					offset: 0,
-				},
-				textNode: curr,
-			};
-		}
-		curr = walker.nextNode();
-	}
-
-	return null;
+	// 2. Geometry fallback when native APIs fail or return non-text
+	return resolveTextCaretByGeometry(doc, target, x, y);
 }
 
 /**
@@ -553,9 +856,11 @@ function logDirectSelectionClassification(
 	target: Element | null,
 	x: number,
 	y: number,
-	selectable: { caret: { node: Node; offset: number }; textNode: Text } | null,
+	selectable: SelectableTextCaretResult | null,
 	glyphHit: boolean,
-	gestureKind: MobileGestureKind
+	gestureKind: MobileGestureKind,
+	caretSourceOverride?: CaretSourceKind,
+	hitElementTagOverride?: string
 ): void {
 	const targetEl = target instanceof Element ? target : (target as any)?.parentElement || null;
 	const targetTag = targetEl?.tagName?.toLowerCase() || 'unknown';
@@ -567,6 +872,8 @@ function logDirectSelectionClassification(
 	const offset = caretOffset ?? 0;
 	const start = Math.max(0, offset - 10);
 	const caretTextSample = fullText.slice(start, start + 20).trim();
+	const caretSource: CaretSourceKind = caretSourceOverride || selectable?.caretSource || (caretFound ? 'geometry' : 'none');
+	const hitElementTag = hitElementTagOverride || selectable?.hitElementTag || targetTag;
 
 	logMobileEvent('DirectSelection', 'GestureClassified', {
 		targetTag,
@@ -579,6 +886,8 @@ function logDirectSelectionClassification(
 		caretOffset,
 		glyphHit,
 		gestureKind,
+		caretSource,
+		hitElementTag,
 	});
 }
 
@@ -1008,7 +1317,8 @@ export class MobileDirectSelectionController {
 
 				// Throttle overlay update with RAF to prevent any main-thread lag
 				this.scheduleRaf(() => {
-					const focusPos = getCaretPositionFromPoint(doc, clientX, clientY);
+					const focusResult = resolveSelectableTextCaret(doc, null, clientX, clientY);
+					const focusPos = focusResult ? focusResult.caret : null;
 					if (focusPos && this.anchorPos) {
 						const range = buildNormalizedRange(
 							doc,

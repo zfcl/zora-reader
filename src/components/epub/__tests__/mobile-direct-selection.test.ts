@@ -3,11 +3,14 @@ import {
 	buildNormalizedRange,
 	getCaretPositionFromPoint,
 	extractWordRangeFromTextNode,
+	findAccurateTextOffset,
+	resolveTextCaretByGeometry,
 	isPointOnTextGlyph,
 	resolveSelectableTextCaret,
 	MobileDirectSelectionOverlay,
 	MobileDirectSelectionController,
 } from '../mobile-direct-selection';
+import * as mobileLogger from '../../../utils/zora-mobile-logger';
 import type { ReaderFrame } from '../../../services/epub/reader-engine-types';
 
 describe('mobile-direct-selection', () => {
@@ -1514,6 +1517,521 @@ describe('mobile-direct-selection', () => {
 			doc.removeEventListener('touchmove', paginatorDocTouch);
 			doc.removeEventListener('touchend', paginatorDocTouch);
 			doc.body.removeChild(directText);
+			controller.dispose();
+		});
+	});
+
+	describe('15. Geometry Fallback Caret Resolution & Dragging (iPhone iOS Fix)', () => {
+		it('1. when caretPositionFromPoint and caretRangeFromPoint are null, resolves caret via geometry on SPAN text', () => {
+			const span = doc.createElement('span');
+			const textNode = doc.createTextNode('Geometry span test string');
+			span.appendChild(textNode);
+			doc.body.appendChild(span);
+
+			// Both native caret APIs return null (iOS WebKit behavior)
+			(doc as any).caretPositionFromPoint = undefined;
+			(doc as any).caretRangeFromPoint = vi.fn().mockReturnValue(null);
+
+			// Mock elementsFromPoint returning span
+			(doc as any).elementsFromPoint = vi.fn().mockReturnValue([span, doc.body, doc.documentElement]);
+
+			// Mock Range getClientRects for span's textNode
+			const origCreateRange = doc.createRange;
+			doc.createRange = vi.fn(() => {
+				const r = origCreateRange.call(doc);
+				r.getClientRects = vi.fn(() => [
+					{ left: 20, top: 50, right: 220, bottom: 70, width: 200, height: 20 } as DOMRect,
+				]);
+				r.getBoundingClientRect = vi.fn(() => ({
+					left: 20,
+					top: 50,
+					right: 220,
+					bottom: 70,
+					width: 200,
+					height: 20,
+				} as DOMRect));
+				return r;
+			});
+
+			const res = resolveSelectableTextCaret(doc, span, 40, 60);
+
+			expect(res).not.toBeNull();
+			expect(res?.textNode).toBe(textNode);
+			expect(res?.caret.node).toBe(textNode);
+			expect(res?.caretSource).toBe('geometry');
+			expect(res?.hitElementTag).toBe('span');
+
+			doc.createRange = origCreateRange;
+			doc.body.removeChild(span);
+		});
+
+		it('2. when native caret APIs are null and touch target is BODY, resolves Text caret on visible text inside body', () => {
+			const p = doc.createElement('p');
+			const textNode = doc.createTextNode('Paragraph inside body for geometry test');
+			p.appendChild(textNode);
+			doc.body.appendChild(p);
+
+			(doc as any).caretPositionFromPoint = undefined;
+			(doc as any).caretRangeFromPoint = vi.fn().mockReturnValue(null);
+			(doc as any).elementsFromPoint = vi.fn().mockReturnValue([doc.body, doc.documentElement]);
+
+			p.getBoundingClientRect = vi.fn(() => ({
+				left: 20,
+				top: 50,
+				right: 300,
+				bottom: 70,
+				width: 280,
+				height: 20,
+			} as DOMRect));
+
+			const origCreateRange = doc.createRange;
+			doc.createRange = vi.fn(() => {
+				const r = origCreateRange.call(doc);
+				r.getClientRects = vi.fn(() => [
+					{ left: 20, top: 50, right: 300, bottom: 70, width: 280, height: 20 } as DOMRect,
+				]);
+				r.getBoundingClientRect = vi.fn(() => ({
+					left: 20,
+					top: 50,
+					right: 300,
+					bottom: 70,
+					width: 280,
+					height: 20,
+				} as DOMRect));
+				return r;
+			});
+
+			// Touch at (60, 60) directly on body
+			const res = resolveSelectableTextCaret(doc, doc.body, 60, 60);
+
+			expect(res).not.toBeNull();
+			expect(res?.textNode).toBe(textNode);
+			expect(res?.caret.node).toBe(textNode);
+			expect(res?.caretSource).toBe('geometry');
+			expect(res?.hitElementTag).toBe('body');
+
+			doc.createRange = origCreateRange;
+			doc.body.removeChild(p);
+		});
+
+		it('3. when touch lands on true blank page margin, returns null and classifies as blocked', () => {
+			const p = doc.createElement('p');
+			const textNode = doc.createTextNode('Text far from margin');
+			p.appendChild(textNode);
+			doc.body.appendChild(p);
+
+			(doc as any).caretPositionFromPoint = undefined;
+			(doc as any).caretRangeFromPoint = vi.fn().mockReturnValue(null);
+			(doc as any).elementsFromPoint = vi.fn().mockReturnValue([doc.body, doc.documentElement]);
+
+			const origCreateRange = doc.createRange;
+			doc.createRange = vi.fn(() => {
+				const r = origCreateRange.call(doc);
+				// Text is located far down at (100, 200)
+				r.getClientRects = vi.fn(() => [
+					{ left: 100, top: 200, right: 300, bottom: 220, width: 200, height: 20 } as DOMRect,
+				]);
+				r.getBoundingClientRect = vi.fn(() => ({
+					left: 100,
+					top: 200,
+					right: 300,
+					bottom: 220,
+					width: 200,
+					height: 20,
+				} as DOMRect));
+				return r;
+			});
+
+			// Touch at margin (5, 5) - far from text
+			const res = resolveSelectableTextCaret(doc, doc.body, 5, 5);
+			expect(res).toBeNull();
+
+			// Controller classifies as blocked
+			const controller = new MobileDirectSelectionController();
+			const mockFrame: ReaderFrame = {
+				frameDocument: doc,
+				window: window,
+				cfiFromRange: vi.fn(),
+			};
+			controller.syncFrames([mockFrame]);
+
+			const touchStart = new Event('touchstart', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchStart, 'touches', {
+				value: [{ clientX: 5, clientY: 5 }],
+			});
+			doc.body.dispatchEvent(touchStart);
+
+			expect(controller.getActiveGestureKind()).toBe('blocked');
+			expect(controller.getMode()).toBe('idle');
+			expect(controller.getSelection()).toBeNull();
+
+			doc.createRange = origCreateRange;
+			doc.body.removeChild(p);
+			controller.dispose();
+		});
+
+		it('4. findAccurateTextOffset accurately computes middle-of-word offset instead of always returning 0', () => {
+			const textNode = doc.createTextNode('0123456789');
+			doc.body.appendChild(textNode);
+
+			const origCreateRange = doc.createRange;
+			doc.createRange = vi.fn(() => {
+				const r = origCreateRange.call(doc);
+				r.getClientRects = vi.fn(() => {
+					const start = r.startOffset;
+					const end = r.endOffset;
+					return [
+						{
+							left: start * 10,
+							right: end * 10,
+							top: 10,
+							bottom: 30,
+							width: (end - start) * 10,
+							height: 20,
+						} as DOMRect,
+					];
+				});
+				r.getBoundingClientRect = vi.fn(() => {
+					const start = r.startOffset;
+					const end = r.endOffset;
+					return {
+						left: start * 10,
+						right: end * 10,
+						top: 10,
+						bottom: 30,
+						width: (end - start) * 10,
+						height: 20,
+					} as DOMRect;
+				});
+				return r;
+			});
+
+			// Touch at x=45 (character '4' spans 40..50, mid is 45) -> offset 4 or 5
+			const offsetMiddle = findAccurateTextOffset(doc, textNode, 45, 20);
+			expect(offsetMiddle).toBeGreaterThanOrEqual(4);
+			expect(offsetMiddle).toBeLessThanOrEqual(5);
+
+			// Touch at x=78 (character '7' spans 70..80, x=78 > 75) -> offset 8
+			const offsetSeven = findAccurateTextOffset(doc, textNode, 78, 20);
+			expect(offsetSeven).toBe(8);
+
+			// Touch at x=12 (character '1' spans 10..20, x=12 <= 15) -> offset 1
+			const offsetOne = findAccurateTextOffset(doc, textNode, 12, 20);
+			expect(offsetOne).toBe(1);
+
+			doc.createRange = origCreateRange;
+			doc.body.removeChild(textNode);
+		});
+
+		it('5. touchstart enters text-selection and logs GestureClassified with caretSource=geometry and hitElementTag', () => {
+			const logSpy = vi.spyOn(mobileLogger, 'logMobileEvent');
+
+			const span = doc.createElement('span');
+			const textNode = doc.createTextNode('Logged selection test text');
+			span.appendChild(textNode);
+			doc.body.appendChild(span);
+
+			(doc as any).caretPositionFromPoint = undefined;
+			(doc as any).caretRangeFromPoint = vi.fn().mockReturnValue(null);
+			(doc as any).elementsFromPoint = vi.fn().mockReturnValue([span, doc.body, doc.documentElement]);
+
+			const origCreateRange = doc.createRange;
+			doc.createRange = vi.fn(() => {
+				const r = origCreateRange.call(doc);
+				r.getClientRects = vi.fn(() => [
+					{ left: 10, top: 10, right: 200, bottom: 30, width: 190, height: 20 } as DOMRect,
+				]);
+				r.getBoundingClientRect = vi.fn(() => ({
+					left: 10,
+					top: 10,
+					right: 200,
+					bottom: 30,
+					width: 190,
+					height: 20,
+				} as DOMRect));
+				return r;
+			});
+
+			const controller = new MobileDirectSelectionController();
+			const mockFrame: ReaderFrame = {
+				frameDocument: doc,
+				window: window,
+				cfiFromRange: vi.fn().mockReturnValue('epubcfi(/6/2!/4/2/1:0,/4/2/1:6)'),
+			};
+			controller.syncFrames([mockFrame]);
+
+			const touchStart = new Event('touchstart', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchStart, 'touches', {
+				value: [{ clientX: 20, clientY: 20 }],
+			});
+			span.dispatchEvent(touchStart);
+
+			expect(controller.getMode()).toBe('selecting');
+			expect(controller.getActiveGestureKind()).toBe('text-selection');
+
+			// Check logMobileEvent call
+			const classificationCalls = logSpy.mock.calls.filter(
+				(call) => call[0] === 'DirectSelection' && call[1] === 'GestureClassified'
+			);
+			expect(classificationCalls.length).toBeGreaterThanOrEqual(1);
+			const lastPayload = classificationCalls[classificationCalls.length - 1][2] as any;
+			expect(lastPayload.caretSource).toBe('geometry');
+			expect(lastPayload.hitElementTag).toBe('span');
+			expect(lastPayload.caretFound).toBe(true);
+
+			doc.createRange = origCreateRange;
+			doc.body.removeChild(span);
+			controller.dispose();
+			logSpy.mockRestore();
+		});
+
+		it('6. touchmove when native caret APIs are null resolves focus via geometry fallback and updates selection overlay', () => {
+			const p = doc.createElement('p');
+			const textNode = doc.createTextNode('Start of drag and focus end of drag');
+			p.appendChild(textNode);
+			doc.body.appendChild(p);
+
+			(doc as any).caretPositionFromPoint = undefined;
+			(doc as any).caretRangeFromPoint = vi.fn().mockReturnValue(null);
+			(doc as any).elementsFromPoint = vi.fn().mockReturnValue([p, doc.body, doc.documentElement]);
+
+			const origCreateRange = doc.createRange;
+			doc.createRange = vi.fn(() => {
+				const r = origCreateRange.call(doc);
+				r.getClientRects = vi.fn(() => {
+					const start = r.startOffset;
+					const end = r.endOffset;
+					return [
+						{
+							left: start * 10,
+							right: end * 10,
+							top: 20,
+							bottom: 40,
+							width: Math.max(10, (end - start) * 10),
+							height: 20,
+						} as DOMRect,
+					];
+				});
+				r.getBoundingClientRect = vi.fn(() => {
+					const start = r.startOffset;
+					const end = r.endOffset;
+					return {
+						left: start * 10,
+						right: end * 10,
+						top: 20,
+						bottom: 40,
+						width: Math.max(10, (end - start) * 10),
+						height: 20,
+					} as DOMRect;
+				});
+				return r;
+			});
+
+			const controller = new MobileDirectSelectionController();
+			const win = doc.defaultView || window;
+			const origRaf = win.requestAnimationFrame;
+			win.requestAnimationFrame = vi.fn((cb) => {
+				cb(0);
+				return 1 as any;
+			});
+
+			const mockFrame: ReaderFrame = {
+				frameDocument: doc,
+				window: win,
+				cfiFromRange: vi.fn().mockReturnValue('epubcfi(/6/2!/4/2/1:0,/4/2/1:15)'),
+			};
+			controller.syncFrames([mockFrame]);
+
+			// Start touch at offset 0 (x=5, y=30)
+			const touchStart = new Event('touchstart', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchStart, 'touches', {
+				value: [{ clientX: 5, clientY: 30 }],
+			});
+			p.dispatchEvent(touchStart);
+
+			expect(controller.getMode()).toBe('selecting');
+
+			// Move touch to offset ~15 (x=155, y=30)
+			const touchMove = new Event('touchmove', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchMove, 'touches', {
+				value: [{ clientX: 155, clientY: 30 }],
+			});
+			p.dispatchEvent(touchMove);
+
+			const touchEnd = new Event('touchend', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchEnd, 'touches', { value: [] });
+			p.dispatchEvent(touchEnd);
+
+			const sel = controller.getSelection();
+			expect(sel).not.toBeNull();
+			expect(sel?.source).toBe('mobile-direct');
+			expect(sel?.text.length).toBeGreaterThan(0);
+
+			win.requestAnimationFrame = origRaf;
+			doc.createRange = origCreateRange;
+			doc.body.removeChild(p);
+			controller.dispose();
+		});
+
+		it('7. reverse drag (right-to-left) with geometry fallback builds normalized Range', () => {
+			const textNode = doc.createTextNode('Reverse drag geometry selection.');
+			doc.body.appendChild(textNode);
+
+			const range = buildNormalizedRange(doc, textNode, 24, textNode, 0);
+			expect(range).not.toBeNull();
+			expect(range?.startOffset).toBe(0);
+			expect(range?.endOffset).toBe(24);
+			expect(range?.toString()).toBe('Reverse drag geometry se');
+
+			doc.body.removeChild(textNode);
+		});
+
+		it('8. cross-line drag with geometry fallback builds cross-line Range', () => {
+			const p1 = doc.createElement('p');
+			const t1 = doc.createTextNode('Geometry Line 1. ');
+			p1.appendChild(t1);
+
+			const p2 = doc.createElement('p');
+			const t2 = doc.createTextNode('Geometry Line 2.');
+			p2.appendChild(t2);
+
+			doc.body.appendChild(p1);
+			doc.body.appendChild(p2);
+
+			const range = buildNormalizedRange(doc, t1, 9, t2, 8);
+			expect(range).not.toBeNull();
+			expect(range?.startContainer).toBe(t1);
+			expect(range?.startOffset).toBe(9);
+			expect(range?.endContainer).toBe(t2);
+			expect(range?.endOffset).toBe(8);
+			expect(range?.toString()).toContain('Line 1. Geometry');
+
+			doc.body.removeChild(p1);
+			doc.body.removeChild(p2);
+		});
+
+		it('9. interactive links, footnotes, note markers do not regress and remain interactive', () => {
+			const controller = new MobileDirectSelectionController();
+			const a = doc.createElement('a');
+			a.href = '#footnote-geometry';
+			a.textContent = '[Footnote 1]';
+			doc.body.appendChild(a);
+
+			const mockFrame: ReaderFrame = {
+				frameDocument: doc,
+				window: window,
+				cfiFromRange: vi.fn(),
+			};
+			controller.syncFrames([mockFrame]);
+
+			const touchStart = new Event('touchstart', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchStart, 'touches', {
+				value: [{ clientX: 50, clientY: 50 }],
+			});
+			const preventDefaultStart = vi.spyOn(touchStart, 'preventDefault');
+
+			a.dispatchEvent(touchStart);
+
+			expect(preventDefaultStart).not.toHaveBeenCalled();
+			expect(controller.getActiveGestureKind()).toBe('interactive');
+			expect(controller.getSelection()).toBeNull();
+
+			doc.body.removeChild(a);
+			controller.dispose();
+		});
+
+		it('10. Paginator receives 0 touch events during text-selection and dragging', () => {
+			const controller = new MobileDirectSelectionController();
+			const p = doc.createElement('p');
+			const textNode = doc.createTextNode('Paginator isolation geometry test.');
+			p.appendChild(textNode);
+			doc.body.appendChild(p);
+
+			const paginatorTouchStart = vi.fn();
+			const paginatorTouchMove = vi.fn();
+			const paginatorTouchEnd = vi.fn();
+			doc.addEventListener('touchstart', paginatorTouchStart);
+			doc.addEventListener('touchmove', paginatorTouchMove);
+			doc.addEventListener('touchend', paginatorTouchEnd);
+
+			const mockFrame: ReaderFrame = {
+				frameDocument: doc,
+				window: window,
+				cfiFromRange: vi.fn().mockReturnValue('epubcfi(/6/2!/4/2/1:0,/4/2/1:9)'),
+			};
+			controller.syncFrames([mockFrame]);
+
+			const mockRange = doc.createRange();
+			mockRange.setStart(textNode, 0);
+			mockRange.setEnd(textNode, 0);
+			(doc as any).caretRangeFromPoint = vi.fn().mockReturnValue(mockRange);
+
+			const touchStart = new Event('touchstart', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchStart, 'touches', {
+				value: [{ clientX: 20, clientY: 20 }],
+			});
+			p.dispatchEvent(touchStart);
+
+			const touchMove = new Event('touchmove', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchMove, 'touches', {
+				value: [{ clientX: 60, clientY: 20 }],
+			});
+			p.dispatchEvent(touchMove);
+
+			const touchEnd = new Event('touchend', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchEnd, 'touches', { value: [] });
+			p.dispatchEvent(touchEnd);
+
+			expect(paginatorTouchStart).not.toHaveBeenCalled();
+			expect(paginatorTouchMove).not.toHaveBeenCalled();
+			expect(paginatorTouchEnd).not.toHaveBeenCalled();
+
+			doc.removeEventListener('touchstart', paginatorTouchStart);
+			doc.removeEventListener('touchmove', paginatorTouchMove);
+			doc.removeEventListener('touchend', paginatorTouchEnd);
+			doc.body.removeChild(p);
+			controller.dispose();
+		});
+
+		it('11. does not call WebKit native Selection API (window.getSelection().addRange)', () => {
+			const controller = new MobileDirectSelectionController();
+			const addRangeSpy = vi.fn();
+			const win = doc.defaultView || window;
+			(win as any).getSelection = vi.fn().mockReturnValue({
+				addRange: addRangeSpy,
+				removeAllRanges: vi.fn(),
+			});
+
+			const p = doc.createElement('p');
+			const textNode = doc.createTextNode('No WebKit addRange call');
+			p.appendChild(textNode);
+			doc.body.appendChild(p);
+
+			const mockFrame: ReaderFrame = {
+				frameDocument: doc,
+				window: win,
+				cfiFromRange: vi.fn().mockReturnValue('epubcfi(/6/2!/4/2/1:0,/4/2/1:2)'),
+			};
+			controller.syncFrames([mockFrame]);
+
+			const mockRange = doc.createRange();
+			mockRange.setStart(textNode, 1);
+			mockRange.setEnd(textNode, 1);
+			(doc as any).caretRangeFromPoint = vi.fn().mockReturnValue(mockRange);
+
+			const touchStart = new Event('touchstart', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchStart, 'touches', {
+				value: [{ clientX: 10, clientY: 10 }],
+			});
+			p.dispatchEvent(touchStart);
+
+			const touchEnd = new Event('touchend', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchEnd, 'touches', { value: [] });
+			p.dispatchEvent(touchEnd);
+
+			expect(addRangeSpy).not.toHaveBeenCalled();
+
+			doc.body.removeChild(p);
 			controller.dispose();
 		});
 	});
