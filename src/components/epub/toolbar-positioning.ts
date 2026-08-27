@@ -444,7 +444,7 @@ export function getEventTargetNode(target: unknown): Node | null {
 	return typeof node.nodeType === "number" ? node : null;
 }
 
-function getEventTargetElement(target: unknown): Element | null {
+export function getEventTargetElement(target: unknown): Element | null {
 	const node = getEventTargetNode(target);
 	if (!node) {
 		return null;

@@ -27,6 +27,8 @@ import type { ReaderAnchorPoint, ReaderViewportRect } from '../../services/epub/
 		computeToolbarPosition,
 		createEventBinder,
 		getEventTargetNode,
+		getEventTargetElement,
+		isEventInsideObsidianFloatingUi,
 		shouldDismissToolbarOnPointerDown,
 		resolveMobileFloatingInsetBottom,
 	} from './toolbar-positioning';
@@ -295,6 +297,12 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 		activeToolbarMenu = null;
 	}
 
+	function clearPopoverState() {
+		lookupSelection = null;
+		lookupViewportEl = null;
+		activePopoverType = null;
+	}
+
 	function hideToolbar() {
 		clearPendingCollapsedHide();
 		dismissActiveToolbarMenu();
@@ -311,9 +319,6 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 		activeInitialWordRange = null;
 		activeInitialWordText = null;
 		activeGranularity = 'word';
-		lookupSelection = null;
-		lookupViewportEl = null;
-		activePopoverType = null;
 		stopPositionTracking();
 	}
 
@@ -324,6 +329,7 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 		} else if (iframeDoc) {
 			iframeDoc.getSelection()?.removeAllRanges();
 		}
+		clearPopoverState();
 		hideToolbar();
 	}
 
@@ -517,9 +523,7 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 	}
 
 	function closePopover() {
-		lookupSelection = null;
-		lookupViewportEl = null;
-		activePopoverType = null;
+		clearPopoverState();
 		clearAndHide();
 	}
 
@@ -684,6 +688,82 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 		menu.showAtMouseEvent(event);
 	}
 
+	let mobileHostTouchStartPoint: { x: number; y: number } | null = null;
+
+	function handleMobileHostTouchStart(event: TouchEvent) {
+		if (event.touches.length !== 1) {
+			mobileHostTouchStartPoint = null;
+			return;
+		}
+		const touch = event.touches[0];
+		mobileHostTouchStartPoint = { x: touch.clientX, y: touch.clientY };
+	}
+
+	function handleMobileHostTouchEnd(event: TouchEvent) {
+		if (!mobileHostTouchStartPoint) return;
+		const touch = event.changedTouches[0] || (event as any).touches?.[0];
+		if (!touch) {
+			mobileHostTouchStartPoint = null;
+			return;
+		}
+
+		const dist = Math.hypot(
+			touch.clientX - mobileHostTouchStartPoint.x,
+			touch.clientY - mobileHostTouchStartPoint.y
+		);
+		mobileHostTouchStartPoint = null;
+
+		const target = getEventTargetNode(event.target);
+		const targetEl = getEventTargetElement(event.target);
+
+		const insideToolbar = Boolean(target && toolbarEl?.contains(target));
+		const insidePopover = Boolean(targetEl?.closest('.zora-lookup-popover'));
+		const insideFloatingUi = isEventInsideObsidianFloatingUi(event);
+		const insideChapterIframe = Boolean(targetEl?.closest('iframe') || (targetEl && targetEl.ownerDocument !== activeDocument));
+
+		const viewportEl = boundsEl || (activeDocument.querySelector('.epub-reader-viewport') as HTMLElement | null);
+		const insideReaderViewport = Boolean(viewportEl && target && viewportEl.contains(target));
+
+		const isTap = dist < 8;
+		let dismissed = false;
+		let reason = 'none';
+
+		if (!isTap) {
+			reason = 'drag-exceeded';
+		} else if (insideToolbar) {
+			reason = 'inside-toolbar';
+		} else if (insidePopover) {
+			reason = 'inside-popover';
+		} else if (insideFloatingUi) {
+			reason = 'inside-floating-ui';
+		} else if (insideChapterIframe) {
+			reason = 'inside-chapter-iframe';
+		} else if (insideReaderViewport || isVisible || lookupSelection || activeCustomRange) {
+			if (isVisible || lookupSelection || activeCustomRange) {
+				clearPopoverState();
+				clearAndHide();
+				dismissed = true;
+				reason = 'host-blank-tap';
+				if (event.cancelable) {
+					event.preventDefault();
+				}
+				event.stopPropagation();
+			}
+		}
+
+		logMobileEvent('MobileSelectionDismiss', 'HostTap', {
+			targetTag: targetEl?.tagName || 'UNKNOWN',
+			targetClass: targetEl?.className || '',
+			insideToolbar,
+			insidePopover,
+			insideReaderViewport,
+			insideChapterIframe,
+			tapDistance: Math.round(dist),
+			dismissed,
+			reason,
+		});
+	}
+
 	function handlePointerDownOutside(event: Event) {
 		if (!shouldDismissToolbarOnPointerDown(toolbarEl, event)) {
 			const target = getEventTargetNode(event.target);
@@ -776,56 +856,48 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 				: undefined,
 			containerWidth: containerEl.clientWidth,
 			containerHeight: containerEl.clientHeight,
-			toolbarWidth: toolbarEl.offsetWidth || 296,
-			toolbarHeight: toolbarEl.offsetHeight || 78,
-			mobile: isMobileToolbar,
+			toolbarWidth: toolbarEl?.offsetWidth || 420,
+			toolbarHeight: toolbarEl?.offsetHeight || 96,
+			mobile: false,
 			insetBottom: 0,
 		});
 
-		toolbarMode = position.mode;
 		posTop = position.top;
 		posLeft = position.left;
+		toolbarMode = position.mode;
 		isBelowSelection = position.isBelowAnchor;
 		arrowOffset = position.arrowOffset;
 	}
 
-	function scheduleActiveSync() {
-		if (!activeFrame) return;
-		const frame = activeFrame;
-		const trackedCfiRange = currentCfiRange;
-		clearPendingSync();
-		pendingSyncFrame = window.requestAnimationFrame(() => {
-			pendingSyncFrame = null;
-			void syncSelection(frame, trackedCfiRange || undefined);
-		});
-	}
-
 	function startPositionTracking(frame: ReaderFrame) {
-		if (activeFrame === frame && teardownPositionTracking) {
-			return;
-		}
-
 		stopPositionTracking();
-		activeFrame = frame;
+		const binder = createEventBinder();
+		const updateGeometry = () => {
+			if (!isVisible || !currentCfiRange || !activeFrame) {
+				return;
+			}
+			const frameWindow = activeFrame.window || activeFrame.frameDocument?.defaultView;
+			const selection = frameWindow?.getSelection();
+			if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+				return;
+			}
+			const geometry = resolveSelectionGeometry(currentCfiRange, activeFrame, selection);
+			const viewportEl = getViewportContainer(activeFrame);
+			if (geometry && viewportEl) {
+				void positionToolbar(geometry.rect, viewportEl, geometry.rects, geometry.anchorPoint);
+			}
+		};
 
 		const iframeWindow = frame.window || frame.frameDocument?.defaultView;
-		const iframeDocument = iframeWindow?.document;
-		const scrollHost = getScrollTrackingHost(frame);
-		const visualViewport = window.visualViewport;
-		const binder = createEventBinder();
-
-		binder.bind(scrollHost, 'scroll', scheduleActiveSync, { passive: true });
-		binder.bind(iframeWindow, 'scroll', scheduleActiveSync, { passive: true });
-		binder.bind(iframeWindow, 'resize', scheduleActiveSync);
-		binder.bind(iframeDocument, 'selectionchange', scheduleActiveSync);
-		if (!isMobileToolbar) {
-			binder.bind(iframeDocument, 'mousedown', handlePointerDownOutside, { capture: true });
-			binder.bind(activeDocument, 'mousedown', handlePointerDownOutside, { capture: true });
+		if (iframeWindow) {
+			binder.add(iframeWindow, 'scroll', updateGeometry, { passive: true });
+			binder.add(iframeWindow, 'resize', updateGeometry, { passive: true });
 		}
-		binder.bind(window, 'resize', scheduleActiveSync);
-		binder.bind(window, 'orientationchange', scheduleActiveSync);
-		binder.bind(visualViewport, 'resize', scheduleActiveSync);
-		binder.bind(visualViewport, 'scroll', scheduleActiveSync);
+
+		const viewportContainer = getViewportContainer(frame);
+		if (viewportContainer) {
+			binder.add(viewportContainer, 'scroll', updateGeometry, { passive: true });
+		}
 
 		teardownPositionTracking = () => {
 			binder.dispose();
@@ -980,6 +1052,12 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 	$effect(() => {
 		const selection = externalSelection;
 		if (!selection) {
+			if (isMobileToolbar) {
+				clearPendingExternalSelectionHide();
+				clearPopoverState();
+				hideToolbar();
+				return;
+			}
 			const hasActiveClearSelection = untrack(() => Boolean(activeClearSelection));
 			if (hasActiveClearSelection) {
 				clearPendingExternalSelectionHide();
@@ -1031,11 +1109,17 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 	});
 
 	onMount(() => {
-		if (!isMobileToolbar) {
+		if (isMobileToolbar) {
+			activeDocument.addEventListener('touchstart', handleMobileHostTouchStart, { capture: true, passive: true });
+			activeDocument.addEventListener('touchend', handleMobileHostTouchEnd, { capture: true });
+		} else {
 			activeDocument.addEventListener('mousedown', handlePointerDownOutside, { capture: true });
 		}
 		return () => {
-			if (!isMobileToolbar) {
+			if (isMobileToolbar) {
+				activeDocument.removeEventListener('touchstart', handleMobileHostTouchStart, { capture: true } as any);
+				activeDocument.removeEventListener('touchend', handleMobileHostTouchEnd, { capture: true });
+			} else {
 				activeDocument.removeEventListener('mousedown', handlePointerDownOutside, { capture: true });
 			}
 			teardownReaderTracking?.();

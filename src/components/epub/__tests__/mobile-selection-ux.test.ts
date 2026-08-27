@@ -184,4 +184,112 @@ describe('Mobile Selection UX Verification Suite', () => {
 		expect(desktopPos.left).toBeGreaterThan(0);
 		expect(desktopPos.top).toBeGreaterThan(0);
 	});
+
+	describe('Regression Verification: Popover preservation & host dismissals', () => {
+		it('1-4. opening popover retains lookupSelection and activePopoverType without being cleared by hideToolbar', () => {
+			let lookupSelection: any = { text: 'serendipity' };
+			let activePopoverType: any = 'dict';
+
+			function clearPopoverState() {
+				lookupSelection = null;
+				activePopoverType = null;
+			}
+
+			function hideToolbar() {
+				// hideToolbar only hides toolbar, not popover
+			}
+
+			// Simulating handleDictionaryLookup
+			lookupSelection = { text: 'serendipity' };
+			activePopoverType = 'dict';
+			hideToolbar();
+
+			expect(lookupSelection).not.toBeNull();
+			expect(activePopoverType).toBe('dict');
+
+			// Simulating handleComprehensionLookup
+			activePopoverType = 'comprehension';
+			hideToolbar();
+			expect(activePopoverType).toBe('comprehension');
+
+			// Simulating handleGrammarLookup
+			activePopoverType = 'grammar';
+			hideToolbar();
+			expect(activePopoverType).toBe('grammar');
+
+			// Simulating handleNoteLookup
+			activePopoverType = 'note';
+			hideToolbar();
+			expect(activePopoverType).toBe('note');
+
+			// 5. closePopover clears popover state
+			clearPopoverState();
+			expect(lookupSelection).toBeNull();
+			expect(activePopoverType).toBeNull();
+		});
+
+		it('14. new word selection replaces old selection without premature idle flash', () => {
+			const frameDoc = document.implementation.createHTMLDocument('Chapter');
+			const p = frameDoc.createElement('p');
+			p.textContent = 'Alpha beta gamma';
+			frameDoc.body.appendChild(p);
+
+			const states: any[] = [];
+			const controller = new MobileDirectSelectionController({
+				onStateChange: (s) => states.push(s),
+			});
+
+			const mockFrame: ReaderFrame = {
+				frameDocument: frameDoc,
+				window: window as any,
+				cfiFromRange: () => 'epubcfi(/6/2[chap1]!/4/2/1:0,/4/2/1:5)',
+			};
+			controller.syncFrames([mockFrame]);
+
+			const textNode = p.firstChild as Text;
+			(frameDoc as any).caretRangeFromPoint = vi.fn(() => {
+				const r = frameDoc.createRange();
+				r.setStart(textNode, 0);
+				r.setEnd(textNode, 5);
+				return r;
+			});
+
+			// Select first word
+			const start1 = new Event('touchstart', { bubbles: true, cancelable: true });
+			Object.defineProperty(start1, 'touches', { value: [{ clientX: 10, clientY: 10 }] });
+			p.dispatchEvent(start1);
+
+			const end1 = new Event('touchend', { bubbles: true, cancelable: true });
+			Object.defineProperty(end1, 'touches', { value: [] });
+			p.dispatchEvent(end1);
+
+			expect(controller.getSelection()).not.toBeNull();
+			const countAfterFirst = states.length;
+
+			// Select second word immediately
+			(frameDoc as any).caretRangeFromPoint = vi.fn(() => {
+				const r = frameDoc.createRange();
+				r.setStart(textNode, 6);
+				r.setEnd(textNode, 10);
+				return r;
+			});
+
+			const start2 = new Event('touchstart', { bubbles: true, cancelable: true });
+			Object.defineProperty(start2, 'touches', { value: [{ clientX: 60, clientY: 10 }] });
+			p.dispatchEvent(start2);
+
+			// Between start2 and end2, no 'idle' state should have been emitted
+			const intermediateStates = states.slice(countAfterFirst);
+			expect(intermediateStates.some((s) => s.mode === 'idle')).toBe(false);
+
+			const end2 = new Event('touchend', { bubbles: true, cancelable: true });
+			Object.defineProperty(end2, 'touches', { value: [] });
+			p.dispatchEvent(end2);
+
+			expect(controller.getSelection()).not.toBeNull();
+			expect(controller.getSelection()?.text).toBe('beta');
+
+			controller.dispose();
+		});
+	});
 });

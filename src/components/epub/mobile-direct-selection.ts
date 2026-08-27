@@ -1215,6 +1215,15 @@ export class MobileDirectSelectionController {
 		}
 	}
 
+	/**
+	 * Clears the visual selection overlay without notifying an intermediate 'idle' state.
+	 * Used when starting a new gesture to prevent UI flash before the new selection completes.
+	 */
+	private clearVisualSelectionForReplacement(): void {
+		this.clearOverlays();
+		this.currentRange = null;
+	}
+
 	private attachFrame(frame: ReaderFrame): void {
 		const doc = frame.frameDocument;
 		const overlay = new MobileDirectSelectionOverlay(doc);
@@ -1228,9 +1237,9 @@ export class MobileDirectSelectionController {
 				return;
 			}
 
-			// Clear previous selection overlay and notify state if one was active
+			// Clear visual overlay and range without notifying premature idle state
 			if (this.activeSelection) {
-				this.clearSelection();
+				this.clearVisualSelectionForReplacement();
 			}
 
 			const touch = e.touches[0];
@@ -1238,6 +1247,9 @@ export class MobileDirectSelectionController {
 
 			// 1. Native controls (input, textarea, select, contenteditable, media)
 			if (isNativeControlTarget(target)) {
+				if (this.activeSelection) {
+					this.clearSelection();
+				}
 				this.activeGestureKind = 'native-control';
 				this.activeDoc = doc;
 				logDirectSelectionClassification(target, touch.clientX, touch.clientY, null, false, 'native-control');
@@ -1246,6 +1258,9 @@ export class MobileDirectSelectionController {
 
 			// 2. Interactive elements (links, buttons, Note Markers, etc.)
 			if (isInteractiveTarget(target)) {
+				if (this.activeSelection) {
+					this.clearSelection();
+				}
 				this.activeGestureKind = 'interactive';
 				this.activeDoc = doc;
 				this.interactiveStartPoint = { x: touch.clientX, y: touch.clientY };
