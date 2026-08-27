@@ -1,6 +1,33 @@
 import type { ReaderFrame } from '../../services/epub/reader-engine-types';
-import { domInstanceOf } from '../../utils/dom-instance-of';
 import { logMobileEvent } from '../../utils/zora-mobile-logger';
+
+/**
+ * Realm-safe Text node check (avoids `node instanceof window.Text` failing across iframe boundaries).
+ */
+export function isTextNode(node: unknown, doc?: Document | null): node is Text {
+	if (!node || typeof node !== 'object') {
+		return false;
+	}
+	const nodeType = (node as Node).nodeType;
+	if (nodeType !== 3 && nodeType !== (typeof Node !== 'undefined' ? Node.TEXT_NODE : 3)) {
+		return false;
+	}
+	if (doc && (node as Node).ownerDocument && (node as Node).ownerDocument !== doc) {
+		return false;
+	}
+	return true;
+}
+
+/**
+ * Realm-safe Element node check (avoids `node instanceof window.Element` failing across iframe boundaries).
+ */
+export function isElementNode(node: unknown): node is Element {
+	if (!node || typeof node !== 'object') {
+		return false;
+	}
+	const nodeType = (node as Node).nodeType;
+	return nodeType === 1 || nodeType === (typeof Node !== 'undefined' ? Node.ELEMENT_NODE : 1);
+}
 
 export type MobileDirectSelectionMode = 'idle' | 'selecting' | 'selected';
 
@@ -96,31 +123,31 @@ export function getCaretPositionFromPoint(
 }
 
 export function normalizeCaretNodeOffset(node: Node, offset: number): { node: Node; offset: number } {
-	if (domInstanceOf(node, Text)) {
+	if (isTextNode(node)) {
 		return {
 			node,
 			offset: Math.max(0, Math.min(offset, node.length)),
 		};
 	}
 
-	if (domInstanceOf(node, Element)) {
+	if (isElementNode(node)) {
 		const childNodes = Array.from(node.childNodes);
 		if (childNodes.length === 0) {
 			return { node, offset: 0 };
 		}
 		if (offset < childNodes.length) {
 			const child = childNodes[offset];
-			if (domInstanceOf(child, Text)) {
+			if (isTextNode(child)) {
 				return { node: child, offset: 0 };
 			}
 			const walker = node.ownerDocument?.createTreeWalker(child, NodeFilter.SHOW_TEXT, null);
 			const firstText = walker?.nextNode();
-			if (firstText && domInstanceOf(firstText, Text)) {
+			if (firstText && isTextNode(firstText)) {
 				return { node: firstText, offset: 0 };
 			}
 		} else {
 			const lastChild = childNodes[childNodes.length - 1];
-			if (domInstanceOf(lastChild, Text)) {
+			if (isTextNode(lastChild)) {
 				return { node: lastChild, offset: lastChild.length };
 			}
 			const walker = node.ownerDocument?.createTreeWalker(lastChild, NodeFilter.SHOW_TEXT, null);
@@ -130,7 +157,7 @@ export function normalizeCaretNodeOffset(node: Node, offset: number): { node: No
 				lastText = current;
 				current = walker?.nextNode();
 			}
-			if (lastText && domInstanceOf(lastText, Text)) {
+			if (lastText && isTextNode(lastText)) {
 				return { node: lastText, offset: lastText.length };
 			}
 		}
@@ -399,9 +426,9 @@ export function isInteractiveTarget(target: EventTarget | null): boolean {
 		return false;
 	}
 	let el: Element | null = null;
-	if (target instanceof Element || (target as any).nodeType === Node.ELEMENT_NODE) {
+	if (isElementNode(target)) {
 		el = target as Element;
-	} else if ((target as any).parentElement) {
+	} else if ((target as any)?.parentElement) {
 		el = (target as any).parentElement as Element;
 	}
 	if (!el || typeof el.closest !== 'function') {
@@ -455,9 +482,9 @@ export function isNativeControlTarget(target: EventTarget | null): boolean {
 		return false;
 	}
 	let el: Element | null = null;
-	if (target instanceof Element || (target as any).nodeType === Node.ELEMENT_NODE) {
+	if (isElementNode(target)) {
 		el = target as Element;
-	} else if ((target as any).parentElement) {
+	} else if ((target as any)?.parentElement) {
 		el = (target as any).parentElement as Element;
 	}
 	if (!el || typeof el.closest !== 'function') {
@@ -485,9 +512,9 @@ export function isBlockedStandaloneMedia(target: EventTarget | null): boolean {
 		return false;
 	}
 	let el: Element | null = null;
-	if (target instanceof Element || (target as any).nodeType === Node.ELEMENT_NODE) {
+	if (isElementNode(target)) {
 		el = target as Element;
-	} else if ((target as any).parentElement) {
+	} else if ((target as any)?.parentElement) {
 		el = (target as any).parentElement as Element;
 	}
 	if (!el || typeof el.closest !== 'function') {
@@ -580,7 +607,8 @@ export function resolveTextCaretByGeometry(
 	doc: Document,
 	target: EventTarget | null,
 	x: number,
-	y: number
+	y: number,
+	logFailure = false
 ): SelectableTextCaretResult | null {
 	if (!doc) {
 		return null;
@@ -611,7 +639,7 @@ export function resolveTextCaretByGeometry(
 	}
 
 	let targetEl: Element | null = null;
-	if (target instanceof Element || (target as any)?.nodeType === Node.ELEMENT_NODE) {
+	if (isElementNode(target)) {
 		targetEl = target as Element;
 	} else if ((target as any)?.parentElement) {
 		targetEl = (target as any).parentElement as Element;
@@ -659,7 +687,7 @@ export function resolveTextCaretByGeometry(
 		// Check direct child nodes first for direct text
 		for (let i = 0; i < el.childNodes.length; i++) {
 			const child = el.childNodes[i];
-			if (domInstanceOf(child, Text) && child.textContent && child.textContent.trim().length > 0) {
+			if (isTextNode(child, doc) && child.textContent && child.textContent.trim().length > 0) {
 				if (!seenTextNodes.has(child)) {
 					seenTextNodes.add(child);
 					candidateTextNodes.push(child);
@@ -672,7 +700,7 @@ export function resolveTextCaretByGeometry(
 			const walker = doc.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
 			let curr = walker.nextNode();
 			while (curr) {
-				if (domInstanceOf(curr, Text) && curr.textContent && curr.textContent.trim().length > 0) {
+				if (isTextNode(curr, doc) && curr.textContent && curr.textContent.trim().length > 0) {
 					if (!seenTextNodes.has(curr)) {
 						seenTextNodes.add(curr);
 						candidateTextNodes.push(curr);
@@ -719,6 +747,19 @@ export function resolveTextCaretByGeometry(
 	}
 
 	if (candidateTextNodes.length === 0) {
+		if (logFailure) {
+			const targetNode = target as Node | null;
+			const targetNodeType = targetNode?.nodeType ?? null;
+			const targetOwnerDocumentMatched = targetNode?.ownerDocument ? targetNode.ownerDocument === doc : true;
+			logMobileEvent('DirectSelection', 'GeometryFallbackFailed', {
+				targetTag: hitElementTag,
+				elementsUnderPointCount: elementsUnderPoint.length,
+				candidateElementCount: candidateElements.length,
+				candidateTextNodeCount: candidateTextNodes.length,
+				targetNodeType,
+				targetOwnerDocumentMatched,
+			});
+		}
 		return null;
 	}
 
@@ -778,6 +819,19 @@ export function resolveTextCaretByGeometry(
 	}
 
 	if (!bestMatch) {
+		if (logFailure) {
+			const targetNode = target as Node | null;
+			const targetNodeType = targetNode?.nodeType ?? null;
+			const targetOwnerDocumentMatched = targetNode?.ownerDocument ? targetNode.ownerDocument === doc : true;
+			logMobileEvent('DirectSelection', 'GeometryFallbackFailed', {
+				targetTag: hitElementTag,
+				elementsUnderPointCount: elementsUnderPoint.length,
+				candidateElementCount: candidateElements.length,
+				candidateTextNodeCount: candidateTextNodes.length,
+				targetNodeType,
+				targetOwnerDocumentMatched,
+			});
+		}
 		return null;
 	}
 
@@ -804,7 +858,8 @@ export function resolveSelectableTextCaret(
 	doc: Document,
 	target: EventTarget | null,
 	x: number,
-	y: number
+	y: number,
+	logFailure = false
 ): SelectableTextCaretResult | null {
 	if (!doc) {
 		return null;
@@ -816,11 +871,11 @@ export function resolveSelectableTextCaret(
 		let textNode: Text | null = null;
 		let offset = caret.offset;
 
-		if (domInstanceOf(caret.node, Text)) {
+		if (isTextNode(caret.node, doc)) {
 			textNode = caret.node;
-		} else if (domInstanceOf(caret.node, Element)) {
+		} else if (isElementNode(caret.node)) {
 			const normalized = normalizeCaretNodeOffset(caret.node, offset);
-			if (domInstanceOf(normalized.node, Text)) {
+			if (isTextNode(normalized.node, doc)) {
 				textNode = normalized.node;
 				offset = normalized.offset;
 			}
@@ -828,7 +883,7 @@ export function resolveSelectableTextCaret(
 
 		if (textNode && textNode.textContent && textNode.textContent.trim().length > 0) {
 			let targetEl: Element | null = null;
-			if (target instanceof Element || (target as any)?.nodeType === Node.ELEMENT_NODE) {
+			if (isElementNode(target)) {
 				targetEl = target as Element;
 			} else if ((target as any)?.parentElement) {
 				targetEl = (target as any).parentElement as Element;
@@ -846,7 +901,7 @@ export function resolveSelectableTextCaret(
 	}
 
 	// 2. Geometry fallback when native APIs fail or return non-text
-	return resolveTextCaretByGeometry(doc, target, x, y);
+	return resolveTextCaretByGeometry(doc, target, x, y, logFailure);
 }
 
 /**
@@ -862,7 +917,7 @@ function logDirectSelectionClassification(
 	caretSourceOverride?: CaretSourceKind,
 	hitElementTagOverride?: string
 ): void {
-	const targetEl = target instanceof Element ? target : (target as any)?.parentElement || null;
+	const targetEl = isElementNode(target) ? target : (target as any)?.parentElement || null;
 	const targetTag = targetEl?.tagName?.toLowerCase() || 'unknown';
 	const targetClass = typeof targetEl?.className === 'string' ? targetEl.className.slice(0, 50) : '';
 	const caretFound = Boolean(selectable?.caret?.node);
@@ -908,11 +963,11 @@ export function isPointOnTextGlyph(
 	let textNode: Text | null = null;
 	let offset = caretPos.offset;
 
-	if (domInstanceOf(caretPos.node, Text)) {
+	if (isTextNode(caretPos.node, doc)) {
 		textNode = caretPos.node;
-	} else if (domInstanceOf(caretPos.node, Element)) {
+	} else if (isElementNode(caretPos.node)) {
 		const normalized = normalizeCaretNodeOffset(caretPos.node, offset);
-		if (domInstanceOf(normalized.node, Text)) {
+		if (isTextNode(normalized.node, doc)) {
 			textNode = normalized.node;
 			offset = normalized.offset;
 		}
@@ -1215,7 +1270,7 @@ export class MobileDirectSelectionController {
 			}
 
 			// 4. Resolve selectable text caret
-			const selectable = resolveSelectableTextCaret(doc, target, touch.clientX, touch.clientY);
+			const selectable = resolveSelectableTextCaret(doc, target, touch.clientX, touch.clientY, true);
 			const glyphHit = selectable ? isPointOnTextGlyph(doc, selectable.caret, touch.clientX, touch.clientY) : false;
 
 			if (!selectable) {
@@ -1290,25 +1345,23 @@ export class MobileDirectSelectionController {
 			}
 
 			if (this.activeGestureKind === 'text-selection') {
-				if (!this.startPoint) {
-					return;
-				}
+				// Text selection active: stop propagation to prevent Foliate turn / scroll
 				if (e.cancelable) {
 					e.preventDefault();
 				}
 				e.stopPropagation();
 				e.stopImmediatePropagation?.();
 
-				if (!this.anchorPos) {
+				if (!this.startPoint) {
 					return;
 				}
 
-				const dist = Math.hypot(touch.clientX - this.startPoint.x, touch.clientY - this.startPoint.y);
+				const moveDist = Math.hypot(
+					touch.clientX - this.startPoint.x,
+					touch.clientY - this.startPoint.y
+				);
 
-				if (!this.isDragging) {
-					if (dist < 5) {
-						return;
-					}
+				if (moveDist >= 5) {
 					this.isDragging = true;
 				}
 
@@ -1337,14 +1390,18 @@ export class MobileDirectSelectionController {
 		};
 
 		const onTouchEndCapture = (e: TouchEvent) => {
-			const kind = this.activeGestureKind;
+			this.cancelPendingRaf();
 
-			if (kind === 'native-control') {
+			if (!this.activeGestureKind) {
+				return;
+			}
+
+			if (this.activeGestureKind === 'native-control') {
 				this.clearActiveGesture();
 				return;
 			}
 
-			if (kind === 'interactive') {
+			if (this.activeGestureKind === 'interactive') {
 				if (this.interactiveCancelled) {
 					// Accidental drag movement >= 8px on interactive element: cancel click, prevent page flip
 					if (e.cancelable) {
@@ -1358,7 +1415,7 @@ export class MobileDirectSelectionController {
 				return;
 			}
 
-			if (kind === 'blocked') {
+			if (this.activeGestureKind === 'blocked') {
 				if (e.cancelable) {
 					e.preventDefault();
 				}
@@ -1368,27 +1425,22 @@ export class MobileDirectSelectionController {
 				return;
 			}
 
-			if (kind === 'text-selection') {
-				if (this.startPoint) {
-					if (e.cancelable) {
-						e.preventDefault();
-					}
-					e.stopPropagation();
-					e.stopImmediatePropagation?.();
+			if (this.activeGestureKind === 'text-selection') {
+				if (e.cancelable) {
+					e.preventDefault();
 				}
+				e.stopPropagation();
+				e.stopImmediatePropagation?.();
 
-				this.cancelPendingRaf();
-
+				// Drag selection completion
 				if (this.isDragging && this.currentRange && !this.currentRange.collapsed) {
-					const range = this.currentRange;
-					const text = range.toString().trim();
-					const cfiRange = frame.cfiFromRange ? frame.cfiFromRange(range) : null;
-
-					if (text && cfiRange) {
+					const text = this.currentRange.toString();
+					const cfiRange = frame.cfiFromRange ? frame.cfiFromRange(this.currentRange) : null;
+					if (cfiRange && text.trim().length > 0) {
 						const iframe = (doc.defaultView?.frameElement as HTMLElement) || null;
 						const iframeRect = iframe?.getBoundingClientRect() || { left: 0, top: 0 };
-						const bRect = typeof range.getBoundingClientRect === 'function'
-							? range.getBoundingClientRect()
+						const bRect = typeof this.currentRange.getBoundingClientRect === 'function'
+							? this.currentRange.getBoundingClientRect()
 							: new DOMRect(0, 0, 0, 0);
 						const adjustedRect = new DOMRect(
 							bRect.left + iframeRect.left,
@@ -1396,31 +1448,37 @@ export class MobileDirectSelectionController {
 							bRect.width,
 							bRect.height
 						);
-						const rawRects = typeof range.getClientRects === 'function'
-							? Array.from(range.getClientRects())
-							: [];
+
+						const rawRects = typeof this.currentRange.getClientRects === 'function'
+							? Array.from(this.currentRange.getClientRects())
+							: [adjustedRect];
 						const adjustedRects = rawRects.map(
-							(r) => new DOMRect(r.left + iframeRect.left, r.top + iframeRect.top, r.width, r.height)
+							(r) =>
+								new DOMRect(
+									r.left + iframeRect.left,
+									r.top + iframeRect.top,
+									r.width,
+									r.height
+								)
 						);
 
-						const selectionContext: MobileDirectSelectionContext = {
+						this.activeSelection = {
 							source: 'mobile-direct',
-							range,
+							range: this.currentRange,
 							text,
 							cfiRange,
 							rect: adjustedRect,
-							rects: adjustedRects.length ? adjustedRects : [adjustedRect],
+							rects: adjustedRects,
 							frame,
 							frameDocument: doc,
-							clear: () => this.clearSelection(),
+							clear: () => {
+								this.clearSelection();
+							},
 						};
-
-						this.activeSelection = selectionContext;
 						this.mode = 'selected';
 
-						this.onSelectionComplete?.(selectionContext);
+						this.onSelectionComplete?.(this.activeSelection);
 						this.notifyStateChange();
-
 						logMobileEvent('DirectSelection', 'DragSelected', {
 							length: text.length,
 							cfiRange,
@@ -1436,11 +1494,11 @@ export class MobileDirectSelectionController {
 					let textNode: Text | null = null;
 					let offset = this.anchorPos.offset;
 
-					if (domInstanceOf(this.anchorPos.node, Text)) {
+					if (isTextNode(this.anchorPos.node, doc)) {
 						textNode = this.anchorPos.node;
-					} else if (domInstanceOf(this.anchorPos.node, Element)) {
+					} else if (isElementNode(this.anchorPos.node)) {
 						const normalized = normalizeCaretNodeOffset(this.anchorPos.node, offset);
-						if (domInstanceOf(normalized.node, Text)) {
+						if (isTextNode(normalized.node, doc)) {
 							textNode = normalized.node;
 							offset = normalized.offset;
 						}

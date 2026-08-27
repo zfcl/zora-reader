@@ -7,6 +7,8 @@ import {
 	resolveTextCaretByGeometry,
 	isPointOnTextGlyph,
 	resolveSelectableTextCaret,
+	isTextNode,
+	isElementNode,
 	MobileDirectSelectionOverlay,
 	MobileDirectSelectionController,
 } from '../mobile-direct-selection';
@@ -2033,6 +2035,356 @@ describe('mobile-direct-selection', () => {
 
 			doc.body.removeChild(p);
 			controller.dispose();
+		});
+	});
+
+	describe('16. Cross-Realm iframe Document & Diagnostic Logging (iOS Real Device Root Cause Fix)', () => {
+		let iframe: HTMLIFrameElement;
+		let frameDoc: Document;
+		let frameWin: Window;
+
+		beforeEach(() => {
+			iframe = document.createElement('iframe');
+			document.body.appendChild(iframe);
+			frameDoc = iframe.contentDocument || iframe.contentWindow!.document;
+			frameWin = iframe.contentWindow!;
+		});
+
+		afterEach(() => {
+			if (iframe.parentNode) {
+				iframe.parentNode.removeChild(iframe);
+			}
+		});
+
+		it('realm-safe helper identifies iframe TextNode and ElementNode correctly', () => {
+			const text = frameDoc.createTextNode('Cross realm text');
+			const span = frameDoc.createElement('span');
+			span.appendChild(text);
+			frameDoc.body.appendChild(span);
+
+			expect(isTextNode(text)).toBe(true);
+			expect(isTextNode(text, frameDoc)).toBe(true);
+			expect(isTextNode(text, document)).toBe(false); // ownerDocument check
+			expect(isElementNode(span)).toBe(true);
+			expect(isElementNode(frameDoc.body)).toBe(true);
+			expect(isTextNode(span)).toBe(false);
+		});
+
+		it('A. iframe TextNode + native caret null -> geometry succeeds with caretSource=geometry', () => {
+			const p = frameDoc.createElement('p');
+			const textNode = frameDoc.createTextNode('Hello from iframe realm');
+			p.appendChild(textNode);
+			frameDoc.body.appendChild(p);
+
+			(frameDoc as any).caretRangeFromPoint = vi.fn().mockReturnValue(null);
+			(frameDoc as any).caretPositionFromPoint = undefined;
+
+			const origCreateRange = frameDoc.createRange;
+			frameDoc.createRange = vi.fn(() => {
+				const r = origCreateRange.call(frameDoc);
+				r.getClientRects = vi.fn(() => [
+					{
+						left: 10,
+						right: 200,
+						top: 20,
+						bottom: 40,
+						width: 190,
+						height: 20,
+					} as DOMRect,
+				]);
+				return r;
+			});
+
+			const result = resolveSelectableTextCaret(frameDoc, p, 50, 30);
+			expect(result).not.toBeNull();
+			expect(result?.caretSource).toBe('geometry');
+			expect(result?.textNode).toBe(textNode);
+			expect(result?.caret.node).toBe(textNode);
+
+			frameDoc.createRange = origCreateRange;
+		});
+
+		it('B. iframe BODY target -> resolves body text TextNode successfully', () => {
+			const p = frameDoc.createElement('p');
+			const textNode = frameDoc.createTextNode('Body target iframe text');
+			p.appendChild(textNode);
+			frameDoc.body.appendChild(p);
+
+			(frameDoc as any).caretRangeFromPoint = vi.fn().mockReturnValue(null);
+			(frameDoc as any).caretPositionFromPoint = undefined;
+
+			const origCreateRange = frameDoc.createRange;
+			frameDoc.createRange = vi.fn(() => {
+				const r = origCreateRange.call(frameDoc);
+				r.getClientRects = vi.fn(() => [
+					{
+						left: 20,
+						right: 250,
+						top: 30,
+						bottom: 50,
+						width: 230,
+						height: 20,
+					} as DOMRect,
+				]);
+				return r;
+			});
+
+			const result = resolveSelectableTextCaret(frameDoc, frameDoc.body, 60, 40);
+			expect(result).not.toBeNull();
+			expect(result?.caretSource).toBe('geometry');
+			expect(result?.textNode).toBe(textNode);
+
+			frameDoc.createRange = origCreateRange;
+		});
+
+		it('C. iframe SPAN target -> resolves span text TextNode successfully', () => {
+			const span = frameDoc.createElement('span');
+			const textNode = frameDoc.createTextNode('Span target iframe text');
+			span.appendChild(textNode);
+			frameDoc.body.appendChild(span);
+
+			(frameDoc as any).caretRangeFromPoint = vi.fn().mockReturnValue(null);
+			(frameDoc as any).caretPositionFromPoint = undefined;
+
+			const origCreateRange = frameDoc.createRange;
+			frameDoc.createRange = vi.fn(() => {
+				const r = origCreateRange.call(frameDoc);
+				r.getClientRects = vi.fn(() => [
+					{
+						left: 10,
+						right: 150,
+						top: 10,
+						bottom: 30,
+						width: 140,
+						height: 20,
+					} as DOMRect,
+				]);
+				return r;
+			});
+
+			const result = resolveSelectableTextCaret(frameDoc, span, 40, 20);
+			expect(result).not.toBeNull();
+			expect(result?.caretSource).toBe('geometry');
+			expect(result?.textNode).toBe(textNode);
+
+			frameDoc.createRange = origCreateRange;
+		});
+
+		it('D. iframe geometry offset is calculated accurately (not hardcoded 0)', () => {
+			const p = frameDoc.createElement('p');
+			const textNode = frameDoc.createTextNode('WordOne WordTwo WordThree');
+			p.appendChild(textNode);
+			frameDoc.body.appendChild(p);
+
+			const origCreateRange = frameDoc.createRange;
+			frameDoc.createRange = vi.fn(() => {
+				const r = origCreateRange.call(frameDoc);
+				r.getClientRects = vi.fn(() => {
+					const start = r.startOffset;
+					const end = r.endOffset;
+					return [
+						{
+							left: start * 10,
+							right: end * 10,
+							top: 10,
+							bottom: 30,
+							width: Math.max(10, (end - start) * 10),
+							height: 20,
+						} as DOMRect,
+					];
+				});
+				return r;
+			});
+
+			const offset = findAccurateTextOffset(frameDoc, textNode, 95, 20);
+			expect(offset).toBeGreaterThan(5);
+			expect(offset).toBeLessThan(15);
+
+			frameDoc.createRange = origCreateRange;
+		});
+
+		it('E. iframe touchstart classifies as text-selection', () => {
+			const controller = new MobileDirectSelectionController();
+			const p = frameDoc.createElement('p');
+			const textNode = frameDoc.createTextNode('Touchstart cross-realm text');
+			p.appendChild(textNode);
+			frameDoc.body.appendChild(p);
+
+			const mockFrame: ReaderFrame = {
+				frameDocument: frameDoc,
+				window: frameWin,
+				cfiFromRange: vi.fn().mockReturnValue('epubcfi(/6/2!/4/2/1:0,/4/2/1:10)'),
+			};
+			controller.syncFrames([mockFrame]);
+
+			(frameDoc as any).caretRangeFromPoint = vi.fn().mockReturnValue(null);
+			(frameDoc as any).caretPositionFromPoint = undefined;
+
+			const origCreateRange = frameDoc.createRange;
+			frameDoc.createRange = vi.fn(() => {
+				const r = origCreateRange.call(frameDoc);
+				r.getClientRects = vi.fn(() => [
+					{
+						left: 0,
+						right: 200,
+						top: 10,
+						bottom: 30,
+						width: 200,
+						height: 20,
+					} as DOMRect,
+				]);
+				return r;
+			});
+
+			const touchStart = new Event('touchstart', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchStart, 'touches', {
+				value: [{ clientX: 50, clientY: 20 }],
+			});
+			p.dispatchEvent(touchStart);
+
+			expect(controller.getMode()).toBe('selecting');
+			expect(controller.getActiveGestureKind()).toBe('text-selection');
+
+			frameDoc.createRange = origCreateRange;
+			controller.dispose();
+		});
+
+		it('F. iframe touchmove builds Range and updates selection', () => {
+			const controller = new MobileDirectSelectionController();
+			const origRaf = frameWin.requestAnimationFrame;
+			frameWin.requestAnimationFrame = vi.fn((cb) => {
+				cb(0);
+				return 1 as any;
+			});
+
+			const p = frameDoc.createElement('p');
+			const textNode = frameDoc.createTextNode('Iframe touchmove range test');
+			p.appendChild(textNode);
+			frameDoc.body.appendChild(p);
+
+			const mockFrame: ReaderFrame = {
+				frameDocument: frameDoc,
+				window: frameWin,
+				cfiFromRange: vi.fn().mockReturnValue('epubcfi(/6/2!/4/2/1:0,/4/2/1:15)'),
+			};
+			controller.syncFrames([mockFrame]);
+
+			(frameDoc as any).caretRangeFromPoint = vi.fn().mockReturnValue(null);
+			(frameDoc as any).caretPositionFromPoint = undefined;
+
+			const origCreateRange = frameDoc.createRange;
+			frameDoc.createRange = vi.fn(() => {
+				const r = origCreateRange.call(frameDoc);
+				r.getClientRects = vi.fn(() => {
+					const start = r.startOffset;
+					const end = r.endOffset;
+					return [
+						{
+							left: start * 10,
+							right: end * 10,
+							top: 10,
+							bottom: 30,
+							width: Math.max(10, (end - start) * 10),
+							height: 20,
+						} as DOMRect,
+					];
+				});
+				return r;
+			});
+
+			const touchStart = new Event('touchstart', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchStart, 'touches', {
+				value: [{ clientX: 10, clientY: 20 }],
+			});
+			p.dispatchEvent(touchStart);
+
+			const touchMove = new Event('touchmove', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchMove, 'touches', {
+				value: [{ clientX: 120, clientY: 20 }],
+			});
+			p.dispatchEvent(touchMove);
+
+			const touchEnd = new Event('touchend', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchEnd, 'touches', { value: [] });
+			p.dispatchEvent(touchEnd);
+
+			const sel = controller.getSelection();
+			expect(sel).not.toBeNull();
+			expect(sel?.source).toBe('mobile-direct');
+			expect(sel?.text.length).toBeGreaterThan(0);
+
+			frameWin.requestAnimationFrame = origRaf;
+			frameDoc.createRange = origCreateRange;
+			controller.dispose();
+		});
+
+		it('G. iframe blank margin classifies as blocked', () => {
+			const controller = new MobileDirectSelectionController();
+			const p = frameDoc.createElement('p');
+			const textNode = frameDoc.createTextNode('Iframe text margin');
+			p.appendChild(textNode);
+			frameDoc.body.appendChild(p);
+
+			const mockFrame: ReaderFrame = {
+				frameDocument: frameDoc,
+				window: frameWin,
+				cfiFromRange: vi.fn(),
+			};
+			controller.syncFrames([mockFrame]);
+
+			(frameDoc as any).caretRangeFromPoint = vi.fn().mockReturnValue(null);
+			(frameDoc as any).caretPositionFromPoint = undefined;
+
+			const origCreateRange = frameDoc.createRange;
+			frameDoc.createRange = vi.fn(() => {
+				const r = origCreateRange.call(frameDoc);
+				r.getClientRects = vi.fn(() => [
+					{
+						left: 50,
+						right: 200,
+						top: 100,
+						bottom: 120,
+						width: 150,
+						height: 20,
+					} as DOMRect,
+				]);
+				return r;
+			});
+
+			const touchStart = new Event('touchstart', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchStart, 'touches', {
+				value: [{ clientX: 500, clientY: 500 }],
+			});
+			frameDoc.body.dispatchEvent(touchStart);
+
+			expect(controller.getActiveGestureKind()).toBe('blocked');
+			expect(controller.getSelection()).toBeNull();
+
+			frameDoc.createRange = origCreateRange;
+			controller.dispose();
+		});
+
+		it('logs GeometryFallbackFailed with diagnostic fields when touchstart geometry fails', () => {
+			const logSpy = vi.spyOn(mobileLogger, 'logMobileEvent');
+			(frameDoc as any).caretRangeFromPoint = vi.fn().mockReturnValue(null);
+			(frameDoc as any).caretPositionFromPoint = undefined;
+
+			const result = resolveSelectableTextCaret(frameDoc, frameDoc.body, 100, 100, true);
+			expect(result).toBeNull();
+
+			expect(logSpy).toHaveBeenCalledWith(
+				'DirectSelection',
+				'GeometryFallbackFailed',
+				expect.objectContaining({
+					targetTag: expect.any(String),
+					elementsUnderPointCount: expect.any(Number),
+					candidateElementCount: expect.any(Number),
+					candidateTextNodeCount: expect.any(Number),
+					targetNodeType: expect.any(Number),
+					targetOwnerDocumentMatched: true,
+				})
+			);
+			logSpy.mockRestore();
 		});
 	});
 });
