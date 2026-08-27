@@ -1,4 +1,5 @@
 import { domInstanceOf } from "../../utils/dom-instance-of";
+import { getWorkspaceBounds } from "../../utils/mobile-modal-bounds";
 
 export type ToolbarMode = "floating" | "docked";
 
@@ -486,4 +487,115 @@ export function shouldDismissToolbarOnPointerDown(
 		return false;
 	}
 	return true;
+}
+
+let sessionMobilePopoverPos: { left: number; top: number } | null = null;
+
+export function getSessionMobilePopoverPosition(): { left: number; top: number } | null {
+	return sessionMobilePopoverPos;
+}
+
+export function setSessionMobilePopoverPosition(pos: { left: number; top: number } | null): void {
+	sessionMobilePopoverPos = pos;
+}
+
+export function getMobileSafeBounds(viewportEl: HTMLElement): {
+	minLeft: number;
+	maxRight: number;
+	minTop: number;
+	maxBottom: number;
+	availableWidth: number;
+	availableHeight: number;
+} {
+	const wsBounds = getWorkspaceBounds();
+	const containerRect = viewportEl.getBoundingClientRect();
+	const vv = typeof window !== "undefined" ? window.visualViewport : null;
+	const vvWidth = vv?.width ?? (typeof window !== "undefined" ? window.innerWidth : containerRect.width);
+	const vvHeight = vv?.height ?? (typeof window !== "undefined" ? window.innerHeight : containerRect.height);
+	const vvLeft = vv?.offsetLeft ?? 0;
+	const vvTop = vv?.offsetTop ?? 0;
+
+	const safeLeft = 12;
+	const safeRight = 12;
+	const safeTop = wsBounds.top || 12;
+	const safeBottom = wsBounds.bottom || 12;
+
+	const globalMinLeft = vvLeft + safeLeft;
+	const globalMaxRight = vvLeft + vvWidth - safeRight;
+	const globalMinTop = vvTop + safeTop;
+	const globalMaxBottom = vvTop + vvHeight - safeBottom;
+
+	const minLeft = Math.max(8, globalMinLeft - containerRect.left);
+	const maxRight = Math.min(containerRect.width - 8, globalMaxRight - containerRect.left);
+	const minTop = Math.max(8, globalMinTop - containerRect.top);
+	const maxBottom = Math.min(containerRect.height - 8, globalMaxBottom - containerRect.top);
+
+	const availableWidth = Math.max(160, maxRight - minLeft);
+	const availableHeight = Math.max(160, maxBottom - minTop);
+
+	return {
+		minLeft,
+		maxRight,
+		minTop,
+		maxBottom,
+		availableWidth,
+		availableHeight,
+	};
+}
+
+export function clampPopoverPosition(
+	pos: { left: number; top: number },
+	popoverWidth: number,
+	popoverHeight: number,
+	viewportEl: HTMLElement,
+	isMobile: boolean
+): { left: number; top: number } {
+	if (isMobile) {
+		const bounds = getMobileSafeBounds(viewportEl);
+		const clampMinLeft = bounds.minLeft;
+		const clampMaxLeft = Math.max(bounds.minLeft, bounds.maxRight - popoverWidth);
+		const clampMinTop = bounds.minTop;
+		const clampMaxTop = Math.max(bounds.minTop, bounds.maxBottom - popoverHeight);
+
+		return {
+			left: Math.round(clamp(pos.left, clampMinLeft, clampMaxLeft)),
+			top: Math.round(clamp(pos.top, clampMinTop, clampMaxTop)),
+		};
+	}
+
+	const vpWidth = viewportEl.clientWidth || (typeof window !== "undefined" ? window.innerWidth : 500);
+	const vpHeight = viewportEl.clientHeight || (typeof window !== "undefined" ? window.innerHeight : 500);
+
+	return {
+		left: Math.round(clamp(pos.left, 0, Math.max(0, vpWidth - popoverWidth))),
+		top: Math.round(clamp(pos.top, 0, Math.max(0, vpHeight - popoverHeight))),
+	};
+}
+
+export function computeMobilePopoverCenterPosition(
+	popoverWidth: number,
+	popoverHeight: number,
+	viewportEl: HTMLElement
+): { left: number; top: number; maxHeight: number; maxWidth: number } {
+	const bounds = getMobileSafeBounds(viewportEl);
+	const actualWidth = Math.min(popoverWidth, bounds.availableWidth);
+	const actualHeight = Math.min(popoverHeight, bounds.availableHeight);
+
+	const centerLeft = bounds.minLeft + (bounds.availableWidth - actualWidth) / 2;
+	const centerTop = bounds.minTop + (bounds.availableHeight - actualHeight) / 2;
+
+	const clamped = clampPopoverPosition(
+		{ left: centerLeft, top: centerTop },
+		actualWidth,
+		actualHeight,
+		viewportEl,
+		true
+	);
+
+	return {
+		left: clamped.left,
+		top: clamped.top,
+		maxHeight: bounds.availableHeight,
+		maxWidth: bounds.availableWidth,
+	};
 }

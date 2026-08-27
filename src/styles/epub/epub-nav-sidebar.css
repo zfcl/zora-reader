@@ -1645,12 +1645,41 @@ body.is-phone .epub-highlight-toolbar .highlight-actions-row::-webkit-scrollbar 
 	padding-top: 0;
 }
 
+.epub-selection-toolbar.mobile-docked .selection-actions-shell,
+.epub-highlight-toolbar.mobile-docked .highlight-actions-shell {
+	max-width: 100%;
+	overflow-x: auto;
+	-webkit-overflow-scrolling: touch;
+	scrollbar-width: none;
+}
+
+.epub-selection-toolbar.mobile-docked .selection-actions-shell::-webkit-scrollbar,
+.epub-highlight-toolbar.mobile-docked .highlight-actions-shell::-webkit-scrollbar {
+	display: none;
+}
+
 .epub-selection-toolbar.mobile-docked .actions-row,
 .epub-highlight-toolbar.mobile-docked .actions-row {
-	flex-wrap: wrap;
-	justify-content: center;
-	row-gap: 6px;
+	flex-wrap: nowrap;
+	overflow-x: auto;
+	-webkit-overflow-scrolling: touch;
+	scrollbar-width: none;
+	justify-content: flex-start;
 	padding: 8px 8px 6px;
+	gap: 6px;
+	width: 100%;
+	max-width: 100%;
+}
+
+.epub-selection-toolbar.mobile-docked .actions-row::-webkit-scrollbar,
+.epub-highlight-toolbar.mobile-docked .actions-row::-webkit-scrollbar {
+	display: none;
+}
+
+.epub-selection-toolbar.mobile-docked .actions-row .action-item,
+.epub-highlight-toolbar.mobile-docked .actions-row .action-item {
+	flex-shrink: 0;
+	white-space: nowrap;
 }
 
 .epub-selection-toolbar.mobile-docked .selection-primary-row {
@@ -1687,12 +1716,10 @@ body.is-phone .epub-highlight-toolbar .highlight-actions-row::-webkit-scrollbar 
 .epub-selection-toolbar.mobile-docked .selection-actions-row,
 .epub-highlight-toolbar.mobile-docked .actions-row {
 	width: 100%;
-	justify-content: center;
 }
 
 .epub-highlight-toolbar.mobile-docked .highlight-actions-row {
 	width: 100%;
-	justify-content: center;
 }
 
 .epub-selection-toolbar.mobile-docked .row-divider,

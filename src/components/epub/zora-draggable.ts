@@ -8,6 +8,7 @@
  */
 
 import { Platform } from "obsidian";
+import { getMobileSafeBounds, setSessionMobilePopoverPosition } from "./toolbar-positioning";
 
 export interface ZoraDraggableOptions {
   /** Returns the popover element to be moved */
@@ -28,7 +29,7 @@ export interface ZoraDraggableOptions {
 
 export interface ZoraDraggableController {
   /** Pointerdown / mousedown event listener to attach to the draggable header */
-  handleHeaderPointerDown: (e: PointerEvent | MouseEvent) => void;
+  handleHeaderPointerDown: (e: PointerEvent | MouseEvent | TouchEvent) => void;
   /** Clean up any active drag listeners / frames */
   destroy: () => void;
 }
@@ -50,13 +51,19 @@ export function createZoraDraggable(options: ZoraDraggableOptions): ZoraDraggabl
     isDragging = false;
   }
 
-  function handleHeaderPointerDown(e: PointerEvent | MouseEvent) {
-    if (e.button !== 0) return;
-
-    // Mobile: disable popover dragging (use fixed Bottom Sheet layout)
-    if (Platform.isMobile || (typeof document !== "undefined" && (document.body.classList.contains("is-mobile") || document.body.classList.contains("is-phone")))) {
-      return;
+  function getCoords(evt: PointerEvent | MouseEvent | TouchEvent): { clientX: number; clientY: number } {
+    if ("touches" in evt && evt.touches.length > 0) {
+      return { clientX: evt.touches[0].clientX, clientY: evt.touches[0].clientY };
     }
+    if ("changedTouches" in evt && evt.changedTouches.length > 0) {
+      return { clientX: evt.changedTouches[0].clientX, clientY: evt.changedTouches[0].clientY };
+    }
+    return { clientX: (evt as MouseEvent).clientX, clientY: (evt as MouseEvent).clientY };
+  }
+
+  function handleHeaderPointerDown(e: PointerEvent | MouseEvent | TouchEvent) {
+    if ("button" in e && e.button !== 0) return;
+    if ("touches" in e && e.touches.length > 1) return;
 
     // Ignore clicks originating on interactive elements (buttons, links, inputs, icons)
     const target = e.target as HTMLElement | null;
@@ -68,7 +75,9 @@ export function createZoraDraggable(options: ZoraDraggableOptions): ZoraDraggabl
     const viewportEl = options.getViewportEl();
     if (!popoverEl || !viewportEl) return;
 
-    e.preventDefault();
+    if ("cancelable" in e && e.cancelable) {
+      e.preventDefault();
+    }
     e.stopPropagation();
 
     // Pointer capture
@@ -84,22 +93,37 @@ export function createZoraDraggable(options: ZoraDraggableOptions): ZoraDraggabl
 
     options.onDragStart?.();
 
-    // One-time measurement at pointerdown - pre-cache boundaries
-    const startPointerX = e.clientX;
-    const startPointerY = e.clientY;
+    const isMobile = Platform.isMobile || (typeof document !== "undefined" && (document.body.classList.contains("is-mobile") || document.body.classList.contains("is-phone")));
+
+    const startCoords = getCoords(e);
+    const startPointerX = startCoords.clientX;
+    const startPointerY = startCoords.clientY;
     const currentPos = options.getPos();
     const startLeft = currentPos.left;
     const startTop = currentPos.top;
 
     const popoverWidth = popoverEl.offsetWidth || 500;
     const popoverHeight = popoverEl.offsetHeight || 440;
-    const viewportWidth = viewportEl.clientWidth || window.innerWidth;
-    const viewportHeight = viewportEl.clientHeight || window.innerHeight;
 
-    const minLeft = 0;
-    const maxLeft = Math.max(0, viewportWidth - popoverWidth);
-    const minTop = 0;
-    const maxTop = Math.max(0, viewportHeight - popoverHeight);
+    let minLeft = 0;
+    let maxLeft = 0;
+    let minTop = 0;
+    let maxTop = 0;
+
+    if (isMobile) {
+      const bounds = getMobileSafeBounds(viewportEl);
+      minLeft = bounds.minLeft;
+      maxLeft = Math.max(bounds.minLeft, bounds.maxRight - popoverWidth);
+      minTop = bounds.minTop;
+      maxTop = Math.max(bounds.minTop, bounds.maxBottom - popoverHeight);
+    } else {
+      const viewportWidth = viewportEl.clientWidth || window.innerWidth;
+      const viewportHeight = viewportEl.clientHeight || window.innerHeight;
+      minLeft = 0;
+      maxLeft = Math.max(0, viewportWidth - popoverWidth);
+      minTop = 0;
+      maxTop = Math.max(0, viewportHeight - popoverHeight);
+    }
 
     isDragging = true;
     options.onDragStateChange?.(true);
@@ -112,13 +136,16 @@ export function createZoraDraggable(options: ZoraDraggableOptions): ZoraDraggabl
     let latestTargetLeft = startLeft;
     let latestTargetTop = startTop;
 
-    const handlePointerMove = (moveEvt: PointerEvent | MouseEvent) => {
+    const handlePointerMove = (moveEvt: PointerEvent | MouseEvent | TouchEvent) => {
       if (!isDragging) return;
-      moveEvt.preventDefault();
+      if ("cancelable" in moveEvt && moveEvt.cancelable) {
+        moveEvt.preventDefault();
+      }
       moveEvt.stopPropagation();
 
-      const rawDx = moveEvt.clientX - startPointerX;
-      const rawDy = moveEvt.clientY - startPointerY;
+      const moveCoords = getCoords(moveEvt);
+      const rawDx = moveCoords.clientX - startPointerX;
+      const rawDy = moveCoords.clientY - startPointerY;
 
       // Pure numerical clamp - O(1)
       latestTargetLeft = Math.max(minLeft, Math.min(maxLeft, startLeft + rawDx));
@@ -137,7 +164,7 @@ export function createZoraDraggable(options: ZoraDraggableOptions): ZoraDraggabl
       }
     };
 
-    const handlePointerUp = (upEvt?: PointerEvent | MouseEvent) => {
+    const handlePointerUp = (upEvt?: PointerEvent | MouseEvent | TouchEvent) => {
       if (!isDragging) return;
       isDragging = false;
 
@@ -173,6 +200,10 @@ export function createZoraDraggable(options: ZoraDraggableOptions): ZoraDraggabl
       const finalPos = { left: latestTargetLeft, top: latestTargetTop };
       options.onDragEnd(finalPos);
 
+      if (isMobile) {
+        setSessionMobilePopoverPosition(finalPos);
+      }
+
       // Persist position ONLY ONCE at drag end
       options.onPersistPosition?.(finalPos);
     };
@@ -181,15 +212,21 @@ export function createZoraDraggable(options: ZoraDraggableOptions): ZoraDraggabl
       window.removeEventListener("pointermove", handlePointerMove, { capture: true });
       window.removeEventListener("pointerup", handlePointerUp, { capture: true });
       window.removeEventListener("pointercancel", handlePointerUp, { capture: true });
+      window.removeEventListener("touchmove", handlePointerMove, { capture: true });
+      window.removeEventListener("touchend", handlePointerUp, { capture: true });
+      window.removeEventListener("touchcancel", handlePointerUp, { capture: true });
       window.removeEventListener("mousemove", handlePointerMove, { capture: true });
       window.removeEventListener("mouseup", handlePointerUp, { capture: true });
     };
 
     cleanupListeners = removeListeners;
 
-    window.addEventListener("pointermove", handlePointerMove, { capture: true });
+    window.addEventListener("pointermove", handlePointerMove, { capture: true, passive: false });
     window.addEventListener("pointerup", handlePointerUp, { capture: true });
     window.addEventListener("pointercancel", handlePointerUp, { capture: true });
+    window.addEventListener("touchmove", handlePointerMove, { capture: true, passive: false });
+    window.addEventListener("touchend", handlePointerUp, { capture: true });
+    window.addEventListener("touchcancel", handlePointerUp, { capture: true });
     window.addEventListener("mousemove", handlePointerMove, { capture: true });
     window.addEventListener("mouseup", handlePointerUp, { capture: true });
   }

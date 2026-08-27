@@ -311,6 +311,9 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 		activeInitialWordRange = null;
 		activeInitialWordText = null;
 		activeGranularity = 'word';
+		lookupSelection = null;
+		lookupViewportEl = null;
+		activePopoverType = null;
 		stopPositionTracking();
 	}
 
@@ -692,9 +695,6 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 
 		dismissActiveToolbarMenu();
 		if (isVisible) {
-			if (isMobileToolbar) {
-				return;
-			}
 			clearAndHide();
 		}
 	}
@@ -1104,18 +1104,6 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 					<span class="action-icon" use:icon={'search'}></span>
 					<span class="action-label">{t('epub.selectionToolbar.vaultSearch')}</span>
 				</button>
-
-				{#if isMobileToolbar}
-					<button class="clickable-icon action-item granularity-action" class:active={activeGranularity === 'word'} onclick={() => handleGranularityChange('word')} title="选取当前单词" aria-label="词">
-						<span class="action-label">词</span>
-					</button>
-					<button class="clickable-icon action-item granularity-action" class:active={activeGranularity === 'sentence'} onclick={() => handleGranularityChange('sentence')} title="扩展至当前完整句" aria-label="句">
-						<span class="action-label">句</span>
-					</button>
-					<button class="clickable-icon action-item granularity-action" class:active={activeGranularity === 'paragraph'} onclick={() => handleGranularityChange('paragraph')} title="扩展至当前段落" aria-label="段">
-						<span class="action-label">段</span>
-					</button>
-				{/if}
 
 				{#if translationSettings?.enabled !== false}
 					<button class="clickable-icon action-item accent" onclick={handleDictionaryLookup} title={isDictionaryLookupCandidate(selectedText) ? '词义' : '翻译'} aria-label={isDictionaryLookupCandidate(selectedText) ? '词义' : '翻译'}>

@@ -2386,5 +2386,139 @@ describe('mobile-direct-selection', () => {
 			);
 			logSpy.mockRestore();
 		});
+
+		describe('Margin & Blank area tap cancellation', () => {
+			it('1. left margin tap clears existing active selection and notifies state change without page flip', () => {
+				const stateChanges: any[] = [];
+				const controller = new MobileDirectSelectionController({
+					onStateChange: (state) => stateChanges.push(state),
+				});
+
+				const p = frameDoc.createElement('p');
+				p.textContent = 'Hello world margin test';
+				frameDoc.body.appendChild(p);
+
+				const mockFrame: ReaderFrame = {
+					frameDocument: frameDoc,
+					window: (frameDoc.defaultView || window) as any,
+					cfiFromRange: () => 'epubcfi(/6/2[chapter1]!/4/2/1:0,/4/2/1:5)',
+				};
+				controller.syncFrames([mockFrame]);
+
+				// Step 1: Create an active selection
+				const textNode = p.firstChild as Text;
+				(frameDoc as any).caretRangeFromPoint = vi.fn((x: number, y: number) => {
+					const r = frameDoc.createRange();
+					r.setStart(textNode, 0);
+					r.setEnd(textNode, 0);
+					return r;
+				});
+
+				const startEvt = new Event('touchstart', { bubbles: true, cancelable: true });
+				Object.defineProperty(startEvt, 'touches', { value: [{ clientX: 20, clientY: 20 }] });
+				p.dispatchEvent(startEvt);
+
+				const endEvt = new Event('touchend', { bubbles: true, cancelable: true });
+				Object.defineProperty(endEvt, 'touches', { value: [] });
+				p.dispatchEvent(endEvt);
+
+				expect(controller.getSelection()).not.toBeNull();
+				expect(stateChanges.length).toBeGreaterThan(0);
+				const lastState = stateChanges[stateChanges.length - 1];
+				expect(lastState.selection).not.toBeNull();
+
+				// Step 2: Tap left margin (blocked / non-text area at x=2, y=50)
+				(frameDoc as any).caretRangeFromPoint = vi.fn().mockReturnValue(null);
+				(frameDoc as any).caretPositionFromPoint = undefined;
+
+				const marginStartEvt = new Event('touchstart', { bubbles: true, cancelable: true });
+				Object.defineProperty(marginStartEvt, 'touches', { value: [{ clientX: 2, clientY: 50 }] });
+				const preventDefaultStart = vi.spyOn(marginStartEvt, 'preventDefault');
+				const stopPropagationStart = vi.spyOn(marginStartEvt, 'stopPropagation');
+				frameDoc.body.dispatchEvent(marginStartEvt);
+
+				expect(controller.getActiveGestureKind()).toBe('blocked');
+				expect(preventDefaultStart).toHaveBeenCalled();
+				expect(stopPropagationStart).toHaveBeenCalled();
+
+				const marginEndEvt = new Event('touchend', { bubbles: true, cancelable: true });
+				Object.defineProperty(marginEndEvt, 'touches', { value: [] });
+				const preventDefaultEnd = vi.spyOn(marginEndEvt, 'preventDefault');
+				const stopPropagationEnd = vi.spyOn(marginEndEvt, 'stopPropagation');
+				frameDoc.body.dispatchEvent(marginEndEvt);
+
+				expect(preventDefaultEnd).toHaveBeenCalled();
+				expect(stopPropagationEnd).toHaveBeenCalled();
+				expect(controller.getSelection()).toBeNull();
+
+				const finalState = stateChanges[stateChanges.length - 1];
+				expect(finalState.mode).toBe('idle');
+				expect(finalState.selection).toBeNull();
+
+				controller.dispose();
+			});
+
+			it('2. right margin tap clears selection and prevents Foliate page turn', () => {
+				const stateChanges: any[] = [];
+				const controller = new MobileDirectSelectionController({
+					onStateChange: (state) => stateChanges.push(state),
+				});
+
+				const mockFrame: ReaderFrame = {
+					frameDocument: frameDoc,
+					window: (frameDoc.defaultView || window) as any,
+					cfiFromRange: () => 'epubcfi(/6/2[chapter1]!/4/2/1:0,/4/2/1:5)',
+				};
+				controller.syncFrames([mockFrame]);
+
+				// Tap right margin at x=390 (screen width 400), non-text area
+				(frameDoc as any).caretRangeFromPoint = vi.fn().mockReturnValue(null);
+				(frameDoc as any).caretPositionFromPoint = undefined;
+
+				const marginStartEvt = new Event('touchstart', { bubbles: true, cancelable: true });
+				Object.defineProperty(marginStartEvt, 'touches', { value: [{ clientX: 390, clientY: 200 }] });
+				const preventDefaultStart = vi.spyOn(marginStartEvt, 'preventDefault');
+				frameDoc.body.dispatchEvent(marginStartEvt);
+
+				expect(controller.getActiveGestureKind()).toBe('blocked');
+				expect(preventDefaultStart).toHaveBeenCalled();
+
+				const marginEndEvt = new Event('touchend', { bubbles: true, cancelable: true });
+				Object.defineProperty(marginEndEvt, 'touches', { value: [] });
+				const preventDefaultEnd = vi.spyOn(marginEndEvt, 'preventDefault');
+				frameDoc.body.dispatchEvent(marginEndEvt);
+
+				expect(preventDefaultEnd).toHaveBeenCalled();
+				expect(controller.getSelection()).toBeNull();
+
+				controller.dispose();
+			});
+
+			it('3. top blank area tap clears selection and prevents default', () => {
+				const controller = new MobileDirectSelectionController();
+				const mockFrame: ReaderFrame = {
+					frameDocument: frameDoc,
+					window: (frameDoc.defaultView || window) as any,
+					cfiFromRange: () => 'epubcfi(/6/2[chapter1]!/4/2/1:0,/4/2/1:5)',
+				};
+				controller.syncFrames([mockFrame]);
+
+				(frameDoc as any).caretRangeFromPoint = vi.fn().mockReturnValue(null);
+				(frameDoc as any).caretPositionFromPoint = undefined;
+
+				const startEvt = new Event('touchstart', { bubbles: true, cancelable: true });
+				Object.defineProperty(startEvt, 'touches', { value: [{ clientX: 150, clientY: 5 }] });
+				frameDoc.body.dispatchEvent(startEvt);
+
+				expect(controller.getActiveGestureKind()).toBe('blocked');
+
+				const endEvt = new Event('touchend', { bubbles: true, cancelable: true });
+				Object.defineProperty(endEvt, 'touches', { value: [] });
+				frameDoc.body.dispatchEvent(endEvt);
+
+				expect(controller.getSelection()).toBeNull();
+				controller.dispose();
+			});
+		});
 	});
 });

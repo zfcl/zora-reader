@@ -1228,11 +1228,9 @@ export class MobileDirectSelectionController {
 				return;
 			}
 
-			// Clear previous selection overlay if one was active
+			// Clear previous selection overlay and notify state if one was active
 			if (this.activeSelection) {
-				overlay.clear();
-				this.activeSelection = null;
-				this.mode = 'idle';
+				this.clearSelection();
 			}
 
 			const touch = e.touches[0];
@@ -1421,7 +1419,7 @@ export class MobileDirectSelectionController {
 				}
 				e.stopPropagation();
 				e.stopImmediatePropagation?.();
-				this.clearActiveGesture();
+				this.clearSelection();
 				return;
 			}
 

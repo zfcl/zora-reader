@@ -11,7 +11,12 @@
     type ZoraGrammarComplexity,
   } from "../../services/ai/zora/zora-grammar-service";
   import { appendGrammarStudyNote } from "../../services/ai/zora/zora-study-note-service";
-  import { computeToolbarPosition } from "./toolbar-positioning";
+  import {
+    computeToolbarPosition,
+    computeMobilePopoverCenterPosition,
+    clampPopoverPosition,
+    getSessionMobilePopoverPosition,
+  } from "./toolbar-positioning";
   import { createZoraDraggable } from "./zora-draggable";
   import { logMobileEvent, logMobileError } from "../../utils/zora-mobile-logger";
 
@@ -110,7 +115,7 @@
     if (parts.length > 1) {
       return parts;
     }
-    return [raw];
+    return [];
   });
 
   function toRelativeRect(rect: DOMRect | ReaderViewportRect) {
@@ -126,17 +131,31 @@
   }
 
   async function positionPopover() {
-    if (userDragged) return;
     const isMobile = Platform.isMobile || (typeof document !== "undefined" && (document.body.classList.contains("is-mobile") || document.body.classList.contains("is-phone")));
-    if (isMobile) {
-      posTop = 0;
-      posLeft = 0;
-      isDocked = true;
-      return;
-    }
     await tick();
     const el = popoverEl;
     if (!el) return;
+
+    if (isMobile) {
+      const targetWidth = el.offsetWidth || (widthTier === "tier-compact" ? 480 : widthTier === "tier-normal" ? 560 : 660);
+      const targetHeight = el.offsetHeight || 440;
+      const center = computeMobilePopoverCenterPosition(targetWidth, targetHeight, viewportEl);
+      const sessionPos = getSessionMobilePopoverPosition();
+
+      if (userDragged || sessionPos) {
+        const basePos = userDragged ? { left: posLeft, top: posTop } : sessionPos!;
+        const clamped = clampPopoverPosition(basePos, targetWidth, targetHeight, viewportEl, true);
+        posLeft = clamped.left;
+        posTop = clamped.top;
+      } else {
+        posLeft = center.left;
+        posTop = center.top;
+      }
+      isDocked = false;
+      return;
+    }
+
+    if (userDragged) return;
     const containerRect = viewportEl.getBoundingClientRect();
     const targetWidth = widthTier === "tier-compact" ? 480 : widthTier === "tier-normal" ? 560 : 660;
     const position = computeToolbarPosition({
@@ -200,11 +219,25 @@
     if (event.key === "Escape") onClose();
   }
 
+  function handleViewportResize() {
+    if (!popoverEl || !viewportEl) return;
+    const isMobile = Platform.isMobile || (typeof document !== "undefined" && (document.body.classList.contains("is-mobile") || document.body.classList.contains("is-phone")));
+    if (!isMobile) return;
+    const width = popoverEl.offsetWidth || 560;
+    const height = popoverEl.offsetHeight || 440;
+    const clamped = clampPopoverPosition({ left: posLeft, top: posTop }, width, height, viewportEl, true);
+    posLeft = clamped.left;
+    posTop = clamped.top;
+  }
+
   onMount(() => {
     const isMobile = Platform.isMobile || (typeof document !== "undefined" && (document.body.classList.contains("is-mobile") || document.body.classList.contains("is-phone")));
     activeDocument.addEventListener("mousedown", handlePointerDown, { capture: true });
     activeDocument.addEventListener("touchstart", handlePointerDown, true);
     window.addEventListener("keydown", handleKeydown);
+    window.visualViewport?.addEventListener("resize", handleViewportResize);
+    window.addEventListener("resize", handleViewportResize);
+    window.addEventListener("orientationchange", handleViewportResize);
     if (!isMobile) {
       viewportEl.addEventListener("scroll", onClose, { passive: true });
     }
@@ -214,6 +247,9 @@
       activeDocument.removeEventListener("mousedown", handlePointerDown, { capture: true });
       activeDocument.removeEventListener("touchstart", handlePointerDown, true);
       window.removeEventListener("keydown", handleKeydown);
+      window.visualViewport?.removeEventListener("resize", handleViewportResize);
+      window.removeEventListener("resize", handleViewportResize);
+      window.removeEventListener("orientationchange", handleViewportResize);
       if (!isMobile) {
         viewportEl.removeEventListener("scroll", onClose);
       }
