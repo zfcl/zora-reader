@@ -1,0 +1,140 @@
+name: Zora v0.2.15 selection and note release
+
+on:
+  push:
+    branches:
+      - personal
+    paths:
+      - ".github/workflows/zora-v0.2.15-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: zora-v0.2.15-release
+  cancel-in-progress: false
+
+jobs:
+  verify-and-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact personal head
+        uses: actions/checkout@v4
+        with:
+          ref: personal
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Safety gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_PARENT="e7e2bff1df2383a79b9792cf6e2e966eae09b5e5"
+          CURRENT="$(git rev-parse HEAD)"
+          PARENT="$(git rev-parse HEAD^)"
+          SUBJECT="$(git log -1 --pretty=%s)"
+
+          test "$PARENT" = "$EXPECTED_PARENT"
+          test "$SUBJECT" = "fix(epub): restore selection and popover note markers"
+          test "$(node -p "require('./manifest.json').version")" = "0.2.15"
+          test "$(node -p "require('./package.json').version")" = "0.2.15"
+          test "$(node -p "require('./package-lock.json').version")" = "0.2.15"
+
+          cat > /tmp/expected-files <<'EOF'
+          .github/workflows/zora-v0.2.15-release.yml
+          manifest.json
+          package-lock.json
+          package.json
+          src/components/epub/EpubReaderApp.svelte
+          src/components/epub/SelectionDictionaryPopover.svelte
+          src/components/epub/SelectionToolbar.svelte
+          src/components/epub/__tests__/mobile-direct-selection.test.ts
+          src/components/epub/__tests__/zora-popover-lifecycle.test.ts
+          src/components/epub/__tests__/zora-targeted-regressions.test.ts
+          src/components/epub/mobile-direct-selection.ts
+          src/components/epub/zora-popover-lifecycle.ts
+          src/services/ai/zora/__tests__/zora-study-note-service.test.ts
+          src/services/ai/zora/zora-study-note-service.ts
+          src/services/epub/__tests__/EpubBacklinkHighlightService.test.ts
+          src/services/epub/__tests__/zora-study-note-service.test.ts
+          versions.json
+          EOF
+          git diff --name-only HEAD^ HEAD | sort > /tmp/actual-files
+          sort -o /tmp/expected-files /tmp/expected-files
+          diff -u /tmp/expected-files /tmp/actual-files
+
+          if git ls-remote --exit-code --tags origin refs/tags/v0.2.15 >/dev/null 2>&1; then
+            echo "::error::Tag v0.2.15 already exists."
+            exit 1
+          fi
+
+          echo "Verified release commit $CURRENT"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Targeted selection, portal, and Marker tests
+        run: |
+          npx vitest run \
+            src/components/epub/__tests__/mobile-direct-selection.test.ts \
+            src/components/epub/__tests__/zora-popover-lifecycle.test.ts \
+            src/components/epub/__tests__/zora-targeted-regressions.test.ts \
+            src/services/epub/__tests__/EpubBacklinkHighlightService.test.ts \
+            src/services/epub/__tests__/zora-study-note-service.test.ts \
+            src/services/epub/__tests__/reader-annotation-overlayer.test.ts
+
+      - name: Full test suite
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+      - name: Verify release assets
+        run: npm run verify:release
+
+      - name: Tag tested commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Zora Release Action"
+          git config user.email "zora-release@users.noreply.github.com"
+          git tag -a v0.2.15 -m "Zora Reader v0.2.15"
+          git push origin refs/tags/v0.2.15
+
+      - name: Package release
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp dist/main.js dist/manifest.json dist/styles.css ./
+          zip -q zora-reader-v0.2.15.zip \
+            main.js manifest.json styles.css LICENSE NOTICE.md
+
+      - name: Publish and verify GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          HEAD_SHA="$(git rev-parse HEAD)"
+          gh release create v0.2.15 \
+            main.js \
+            manifest.json \
+            styles.css \
+            zora-reader-v0.2.15.zip \
+            --target "$HEAD_SHA" \
+            --title "Zora Reader v0.2.15" \
+            --notes "Restores native desktop EPUB text selection, eliminates the remaining iPhone popover dismissal flash, keeps mobile lookup and note popovers open when the live selection collapses, and persists translation study notes through the purple Reading Note Marker pipeline."
+
+          mapfile -t ASSETS < <(gh release view v0.2.15 --json assets --jq '.assets[].name' | sort)
+          printf '%s\n' "${ASSETS[@]}" > /tmp/release-assets
+          printf '%s\n' main.js manifest.json styles.css zora-reader-v0.2.15.zip | sort > /tmp/expected-assets
+          diff -u /tmp/expected-assets /tmp/release-assets
+          gh release view v0.2.15 --json url --jq .url

@@ -304,6 +304,15 @@
 			customMobileSelection = current;
 		}
 	}
+
+	function syncMobileSelectionFrames(): void {
+		if (!isMobileReader()) {
+			mobileSelectionController.syncFrames([]);
+			customMobileSelection = null;
+			return;
+		}
+		mobileSelectionController.syncFrames(readerService.getVisibleFrames());
+	}
 	let paragraphModeLocation = $state<{ paragraphs: ReaderParagraph[]; currentIndex: number } | null>(null);
 	let paragraphModeBusy = $state(false);
 	let paragraphModeImmersive = $state(false);
@@ -5807,7 +5816,7 @@
 						});
 						syncScrolledChapterNavVisibility();
 						scheduleScrolledNavLayoutSync();
-						mobileSelectionController.syncFrames(readerService.getVisibleFrames());
+						syncMobileSelectionFrames();
 						if (customMobileSelection) {
 							mobileSelectionController.clearSelection();
 							customMobileSelection = null;
@@ -5834,7 +5843,7 @@
 						}
 						syncScrolledChapterNavVisibility();
 						onChapterTitleChange?.(String(title || '').trim());
-						mobileSelectionController.syncFrames(readerService.getVisibleFrames());
+						syncMobileSelectionFrames();
 						if (customMobileSelection) {
 							mobileSelectionController.clearSelection();
 							customMobileSelection = null;
@@ -5843,7 +5852,7 @@
 					onReaderReady={() => {
 						readerVersion++;
 						readerReady = true;
-						mobileSelectionController.syncFrames(readerService.getVisibleFrames());
+						syncMobileSelectionFrames();
 						if (pendingLoadedHighlights) {
 							void readerService.applyHighlights(pendingLoadedHighlights).then(() => {
 								if (pendingLoadedHighlights && pendingLoadedHighlights.length > 0) {

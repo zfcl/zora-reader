@@ -254,6 +254,9 @@ describe('mobile-direct-selection', () => {
 			expect(addRangeSpy).not.toHaveBeenCalled();
 
 			controller.dispose();
+			expect(doc.getElementById('zora-direct-selection-style')).toBeNull();
+			expect(doc.documentElement.classList.contains('zora-direct-selection-enabled')).toBe(false);
+			expect(doc.body.classList.contains('zora-direct-selection-enabled')).toBe(false);
 		});
 	});
 

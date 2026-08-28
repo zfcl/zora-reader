@@ -4,6 +4,7 @@ import {
   dismissSelectionUiFirst,
   hideMobilePopoverDom,
   mountMobilePopoverPortal,
+  shouldPreserveMobilePopoverOnSelectionLoss,
 } from "../zora-popover-lifecycle";
 
 describe("zora popover lifecycle", () => {
@@ -70,5 +71,12 @@ describe("zora popover lifecycle", () => {
     expect(popover.style.visibility).toBe("hidden");
     expect(popover.style.opacity).toBe("0");
     expect(popover.style.pointerEvents).toBe("none");
+    expect(popover.isConnected).toBe(false);
+  });
+
+  it("preserves an open mobile popover when the live selection collapses", () => {
+    expect(shouldPreserveMobilePopoverOnSelectionLoss(true, true)).toBe(true);
+    expect(shouldPreserveMobilePopoverOnSelectionLoss(true, false)).toBe(false);
+    expect(shouldPreserveMobilePopoverOnSelectionLoss(false, true)).toBe(false);
   });
 });

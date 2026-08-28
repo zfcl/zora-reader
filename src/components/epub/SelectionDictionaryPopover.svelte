@@ -26,9 +26,10 @@
     anchorRects?: DOMRect[];
     anchorPoint?: ReaderAnchorPoint;
     viewportEl: HTMLElement;
+    onStudyNoteSaved?: (sourcePath: string) => void | Promise<void>;
     onClose: () => void;
   }
-  let { app, settings, selection, anchorRect, anchorRects = [], anchorPoint, viewportEl, onClose }: Props = $props();
+  let { app, settings, selection, anchorRect, anchorRects = [], anchorPoint, viewportEl, onStudyNoteSaved, onClose }: Props = $props();
   let popoverEl = $state<HTMLDivElement | null>(null);
   let status = $state<"loading" | "success" | "error">("loading");
   let error = $state("");
@@ -215,8 +216,9 @@
     studyNoteState = "saving";
     studyNoteMessage = "";
     try {
+      let sourcePath: string;
       if (result.kind === "word") {
-        await appendVocabularyStudyNote(app, {
+        sourcePath = await appendVocabularyStudyNote(app, {
           word: result.lemma || result.surfaceForm || selection.text,
           partOfSpeech: result.partOfSpeech || (result.contextPartOfSpeech ? contextPosLabel(result.contextPartOfSpeech) : undefined),
           contextMeaning: result.currentMeaning || result.translation,
@@ -227,7 +229,7 @@
           cfiRange: selection.cfiRange,
         });
       } else {
-        await appendVocabularyStudyNote(app, {
+        sourcePath = await appendVocabularyStudyNote(app, {
           word: selection.text,
           contextMeaning: result.translation,
           sentence: selection.context,
@@ -236,6 +238,7 @@
           cfiRange: selection.cfiRange,
         });
       }
+      await onStudyNoteSaved?.(sourcePath);
       studyNoteState = "saved";
       setTimeout(() => {
         if (studyNoteState === "saved") {

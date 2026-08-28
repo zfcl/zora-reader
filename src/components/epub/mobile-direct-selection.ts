@@ -1078,6 +1078,12 @@ function applyDirectSelectionDisablingStyles(doc: Document): void {
 	doc.body?.classList.add('zora-direct-selection-enabled');
 }
 
+function removeDirectSelectionDisablingStyles(doc: Document): void {
+	doc.getElementById('zora-direct-selection-style')?.remove();
+	doc.documentElement?.classList.remove('zora-direct-selection-enabled');
+	doc.body?.classList.remove('zora-direct-selection-enabled');
+}
+
 interface FrameTracking {
 	frame: ReaderFrame;
 	overlay: MobileDirectSelectionOverlay;
@@ -1643,6 +1649,7 @@ export class MobileDirectSelectionController {
 		for (const cleanup of tracking.cleanups) {
 			cleanup();
 		}
+		removeDirectSelectionDisablingStyles(doc);
 		this.trackedFrames.delete(doc);
 	}
 

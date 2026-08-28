@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 const toolbarSource = readFileSync("src/components/epub/SelectionToolbar.svelte", "utf8");
 const notePopoverSource = readFileSync("src/components/epub/SelectionNotePopover.svelte", "utf8");
+const dictionaryPopoverSource = readFileSync("src/components/epub/SelectionDictionaryPopover.svelte", "utf8");
 const readerAppSource = readFileSync("src/components/epub/EpubReaderApp.svelte", "utf8");
 const welcomeSource = readFileSync("src/components/epub/EpubWelcome.svelte", "utf8");
 const comprehensionSource = readFileSync(
@@ -22,6 +23,23 @@ describe("targeted reader regressions", () => {
     expect(notePopoverSource).toContain("await onSaved?.({");
     expect(readerAppSource).toContain("onReadingNoteSaved={reloadHighlightsAfterExcerptMutation}");
     expect(readerAppSource).toContain("return reloadHighlights({ incremental: true })");
+  });
+
+  it("refreshes the same persisted Marker pipeline after a translation study note is saved", () => {
+    expect(dictionaryPopoverSource).toContain("await onStudyNoteSaved?.(sourcePath)");
+    expect(toolbarSource).toContain("onStudyNoteSaved={handleStudyNoteSaved}");
+    expect(toolbarSource).toContain("await onReadingNoteSaved?.(sourcePath)");
+  });
+
+  it("never attaches the iOS direct-selection controller to desktop EPUB frames", () => {
+    const syncHelper = readerAppSource.slice(
+      readerAppSource.indexOf("function syncMobileSelectionFrames"),
+      readerAppSource.indexOf("let paragraphModeLocation")
+    );
+    expect(syncHelper).toContain("if (!isMobileReader())");
+    expect(syncHelper).toContain("mobileSelectionController.syncFrames([])");
+    expect(syncHelper).toContain("mobileSelectionController.syncFrames(readerService.getVisibleFrames())");
+    expect(readerAppSource.match(/syncMobileSelectionFrames\(\)/g)?.length).toBe(4);
   });
 
   it("uses a compact first-open Zora Reader welcome instead of opening the tutorial", () => {

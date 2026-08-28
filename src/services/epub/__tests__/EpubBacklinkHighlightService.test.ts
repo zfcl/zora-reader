@@ -250,6 +250,33 @@ describe('EpubBacklinkHighlightService', () => {
 		]);
 	});
 
+	it('recovers a translation study note as a purple reading-note Marker', async () => {
+		const noteContent = [
+			'> [!EPUB|purple+reading-note]- [[Books/demo.epub#weave-cfi=readium%3Avocabulary&eid=vocab01|📖 old · adjective]]',
+			'> old',
+			'> <!-- div -->',
+			'> **语境义**：最古老的',
+			'^vocab01',
+			'',
+		].join('\n');
+		const { app } = createMockApp({
+			'Notes/外文笔记/demo.md': noteContent,
+		});
+		const service = new EpubBacklinkHighlightService(app);
+
+		await expect(service.collectHighlights('Books/demo.epub')).resolves.toEqual([
+			expect.objectContaining({
+				cfiRange: 'readium:vocabulary',
+				color: 'purple',
+				style: 'reading-note',
+				text: 'old',
+				commentText: '**语境义**：最古老的',
+				excerptId: 'vocab01',
+				sourceFile: 'Notes/外文笔记/demo.md',
+			}),
+		]);
+	});
+
 	it('collects excerpts that use shortest wikilink paths from the source note context', async () => {
 		const notePath = 'Notes/short-link.md';
 		const noteContent = [

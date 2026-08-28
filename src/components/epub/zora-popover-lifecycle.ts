@@ -65,7 +65,23 @@ export function hideMobilePopoverDom(targetDocument: Document): void {
     popoverEl.style.visibility = "hidden";
     popoverEl.style.opacity = "0";
     popoverEl.style.pointerEvents = "none";
+    // Detach immediately. Merely hiding the element leaves it available for a
+    // Svelte style flush (top/left are reactive), which can briefly expose the
+    // portalled card at its initial top: 0 position before component teardown.
+    popoverEl.remove();
   }
+}
+
+/**
+ * A mobile lookup owns a stable copy of the selection it was opened from.
+ * Losing the controller's live selection must not tear down that lookup; an
+ * explicit close or blank-area dismissal remains responsible for doing so.
+ */
+export function shouldPreserveMobilePopoverOnSelectionLoss(
+  isMobile: boolean,
+  hasOpenPopover: boolean
+): boolean {
+  return isMobile && hasOpenPopover;
 }
 
 export interface SelectionDismissalSteps {

@@ -160,6 +160,9 @@ export async function appendVocabularyStudyNote(
   input: StudyNoteVocabularyInput
 ): Promise<string> {
   const deepLink = buildEpubDeepLink(input.bookPath, input.cfiRange, input.chapterIndex);
+  const blockId = Math.random().toString(36).substring(2, 8);
+  const encodedCfi = EpubLinkService.encodeCfiForWikilink(input.cfiRange);
+  const title = `📖 ${input.word}${input.partOfSpeech ? ` · ${input.partOfSpeech}` : ""}`;
   const sensesList =
     input.senses && input.senses.length > 0
       ? input.senses
@@ -169,7 +172,9 @@ export async function appendVocabularyStudyNote(
       : "";
 
   const lines = [
-    `> [!abstract]- 📖 ${input.word}${input.partOfSpeech ? ` · ${input.partOfSpeech}` : ""}`,
+    `> [!EPUB|purple+reading-note]- [[${input.bookPath}#weave-cfi=${encodedCfi}&eid=${blockId}|${title}]]`,
+    `> ${input.word.trim()}`,
+    `> <!-- div -->`,
   ];
   if (input.contextMeaning) {
     lines.push(`> **语境义**：${input.contextMeaning}`);
@@ -185,6 +190,7 @@ export async function appendVocabularyStudyNote(
   }
   lines.push(`>`);
   lines.push(`> [↗ 回到原文](${deepLink})`);
+  lines.push(`^${blockId}`);
 
   return appendStudyNoteEntry(app, input.bookTitle, "词义", lines.join("\n"));
 }

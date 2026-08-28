@@ -34,7 +34,11 @@ import type { ReaderAnchorPoint, ReaderViewportRect } from '../../services/epub/
 	} from './toolbar-positioning';
 	import { expandRangeToSentence, expandRangeToParagraph } from './sentence-selection';
 	import { extractWordRangeFromTextNode } from './mobile-tap-selection';
-	import { dismissSelectionUiFirst, hideMobilePopoverDom } from './zora-popover-lifecycle';
+	import {
+		dismissSelectionUiFirst,
+		hideMobilePopoverDom,
+		shouldPreserveMobilePopoverOnSelectionLoss,
+	} from './zora-popover-lifecycle';
 	import { getWorkspaceBounds } from '../../utils/mobile-modal-bounds';
 
 	type ExternalSelectionState = {
@@ -135,7 +139,9 @@ let lookupSelection: ZoraSelectionTranslationInput & { anchorRect: DOMRect; anch
 let lookupViewportEl: HTMLElement | null = $state(null);
 let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | null>(null);
 
-	const isMobileToolbar = Platform.isMobile || activeDocument.body.classList.contains('is-mobile');
+	const isMobileToolbar = Platform.isMobile
+		|| activeDocument.body.classList.contains('is-mobile')
+		|| activeDocument.body.classList.contains('is-phone');
 	let mobileBottomClearance = $state(0);
 
 	function updateMobileBottomClearance() {
@@ -535,6 +541,10 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 
 	async function handleNoteSaved(info: { cfiRange: string; blockId: string; text: string; filePath: string }) {
 		await onReadingNoteSaved?.(info.filePath);
+	}
+
+	async function handleStudyNoteSaved(sourcePath: string) {
+		await onReadingNoteSaved?.(sourcePath);
 	}
 
 	function closePopover() {
@@ -1067,6 +1077,13 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 		if (!selection) {
 			if (isMobileToolbar) {
 				clearPendingExternalSelectionHide();
+				const hasOpenPopover = untrack(() => Boolean(
+					activePopoverType && lookupSelection && lookupViewportEl
+				));
+				if (shouldPreserveMobilePopoverOnSelectionLoss(isMobileToolbar, hasOpenPopover)) {
+					hideToolbar({ preserveSelectionContext: true });
+					return;
+				}
 				clearPopoverState();
 				hideToolbar();
 				return;
@@ -1254,6 +1271,7 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 			anchorRects={lookupSelection.anchorRects}
 			anchorPoint={lookupSelection.anchorPoint}
 			viewportEl={lookupViewportEl}
+			onStudyNoteSaved={handleStudyNoteSaved}
 			onClose={closePopover}
 		/>
 	{:else if activePopoverType === 'comprehension' && translationSettings}

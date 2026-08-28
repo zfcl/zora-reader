@@ -64,7 +64,10 @@ describe("zora-study-note-service", () => {
     let content = mockApp._store.get(filePath);
     expect(content).toContain("# Flowers for Algernon · 外文笔记");
     expect(content).toContain("## 词义");
-    expect(content).toContain("> [!abstract]- 📖 old · 形容词");
+    expect(content).toContain("> [!EPUB|purple+reading-note]- [[Books/Flowers.epub#weave-cfi=");
+    expect(content).toContain("|📖 old · 形容词]]");
+    expect(content).toContain("> old\n> <!-- div -->");
+    expect(content).toMatch(/\^[-a-z0-9]{6}/);
     expect(content).toContain("> **语境义**：最古老的；历史最悠久的");
     expect(content).toContain("[↗ 回到原文]");
 
