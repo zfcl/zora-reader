@@ -29,6 +29,16 @@ jobs:
         run: |
           git fetch origin main
           git show origin/main:scripts/v0.2.17-patch.py > /tmp/v0.2.17-patch.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('/tmp/v0.2.17-patch.py')
+          text = p.read_text(encoding='utf-8')
+          old = '"import { appendVocabularyStudyNote } from \'../../services/ai/zora/zora-study-note-service\';"'
+          new = '"  import { appendVocabularyStudyNote } from \\"../../services/ai/zora/zora-study-note-service\\";"'
+          if old not in text:
+              raise SystemExit('patch-runner fixup target missing')
+          p.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
           python3 /tmp/v0.2.17-patch.py
           npm version 0.2.17 --no-git-tag-version
           git diff --check
