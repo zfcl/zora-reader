@@ -10,6 +10,8 @@ const comprehensionSource = readFileSync(
   "src/services/ai/zora/zora-comprehension-service.ts",
   "utf8"
 );
+const highlightToolbarSource = readFileSync("src/components/epub/EpubHighlightToolbar.svelte", "utf8");
+const studyNoteSource = readFileSync("src/services/ai/zora/zora-study-note-service.ts", "utf8");
 
 describe("targeted reader regressions", () => {
   it("refreshes persisted Markdown highlights after a reading note is saved", () => {
@@ -18,11 +20,13 @@ describe("targeted reader regressions", () => {
       toolbarSource.indexOf("function closePopover")
     );
 
-    expect(handler).toContain("await onReadingNoteSaved?.(info.filePath)");
+    expect(handler).toContain("await onReadingNoteSaved?.(info.filePath, info.blockId)");
     expect(handler).not.toContain("addHighlight");
     expect(notePopoverSource).toContain("await onSaved?.({");
-    expect(readerAppSource).toContain("onReadingNoteSaved={reloadHighlightsAfterExcerptMutation}");
+    expect(readerAppSource).toContain("onReadingNoteSaved={refreshPersistedReadingNoteMarkersAfterSave}");
     expect(readerAppSource).toContain("return reloadHighlights({ incremental: true })");
+		expect(readerAppSource).toContain("refreshPersistedReadingNoteMarkersAfterSave");
+		expect(readerAppSource).toContain("await reloadHighlights({ incremental: true, invalidateCache: true })");
   });
 
   it("refreshes the same persisted Marker pipeline after a translation study note is saved", () => {
@@ -41,6 +45,30 @@ describe("targeted reader regressions", () => {
     expect(syncHelper).toContain("mobileSelectionController.syncFrames(readerService.getVisibleFrames())");
     expect(readerAppSource.match(/syncMobileSelectionFrames\(\)/g)?.length).toBe(4);
   });
+
+	it("opens a persisted reading note through NavigationHub and blocks page-turn bubbling", () => {
+		const backlinkHandler = readerAppSource.slice(
+			readerAppSource.indexOf("async function handleHighlightBacklink"),
+			readerAppSource.indexOf("function handleHighlightEditComment")
+		);
+		expect(backlinkHandler).toContain("navigateToPersistedReadingNote");
+		expect(backlinkHandler).not.toContain("workspace.openLinkText");
+		expect(readerAppSource).toContain("kind: 'markdown'");
+		expect(readerAppSource).toContain("excerptId: input.excerptId");
+		expect(highlightToolbarSource).toContain("event.stopPropagation()");
+		expect(highlightToolbarSource).toContain("class:mobile-centered={toolbarMode === 'centered'}");
+	});
+
+	it("uses Git-synced Vault Markdown as the sole reading-note persistence source", () => {
+		expect(studyNoteSource).toContain("Notes/读书笔记/");
+		expect(studyNoteSource).toContain("[!EPUB|purple+reading-note]");
+		expect(studyNoteSource).not.toContain("getZoraSyncService");
+		expect(studyNoteSource).not.toContain("syncService.saveNote");
+		expect(readerAppSource).toContain("normalizedPath.startsWith('Notes/读书笔记/')");
+		expect(readerAppSource).toContain("normalizedPath.startsWith('Notes/外文笔记/')");
+		expect(readerAppSource).toContain("app.vault.on('create'");
+		expect(readerAppSource).toContain("app.vault.on('modify'");
+	});
 
   it("uses a compact first-open Zora Reader welcome instead of opening the tutorial", () => {
     const firstOpen = readerAppSource.slice(

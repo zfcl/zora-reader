@@ -878,6 +878,24 @@ body.is-mobile .epub-highlight-toolbar:not(.mobile-docked) {
 	transform: translateY(0);
 }
 
+.epub-highlight-toolbar.mobile-centered {
+	position: fixed !important;
+	width: max-content !important;
+	max-width: calc(100vw - 32px) !important;
+	box-sizing: border-box;
+	align-items: stretch;
+	transform: none !important;
+	z-index: var(--layer-popover, 50);
+}
+
+.epub-highlight-toolbar.visible.mobile-centered {
+	transform: none !important;
+}
+
+.epub-highlight-toolbar.mobile-centered .toolbar-arrow {
+	display: none !important;
+}
+
 .epub-selection-toolbar.mobile-docked .toolbar-arrow,
 .epub-highlight-toolbar.mobile-docked .toolbar-arrow {
 	display: none !important;
@@ -1800,4 +1818,3 @@ body.is-phone .epub-highlight-toolbar .highlight-actions-row::-webkit-scrollbar 
 	width: 14px;
 	height: 14px;
 }
-

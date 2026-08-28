@@ -71,7 +71,7 @@ import type { ReaderAnchorPoint, ReaderViewportRect } from '../../services/epub/
 		externalSelection?: ExternalSelectionState | null;
 		onCustomSelectionExpand?: (newRange: Range, newText: string, newCfiRange: string) => void;
 		onHighlight?: (text: string, cfiRange: string, color: string, style?: EpubHighlightStyle) => void | Promise<void>;
-		onInsertToNote?: (text: string, cfiRange: string, color?: string, style?: EpubHighlightStyle) => void;
+		onInsertToNote?: (text: string, cfiRange: string, color?: string, style?: EpubHighlightStyle) => void | Promise<void>;
 		onCopySelectionLink?: (
 			action: 'protocolMarkdown' | 'vaultWikilink' | 'obsidianUri' | 'plainText',
 			text: string,
@@ -80,7 +80,7 @@ import type { ReaderAnchorPoint, ReaderViewportRect } from '../../services/epub/
 		onCreateReadingPoint?: (text: string, cfiRange: string) => void;
 		onOpenAIMenu?: (event: MouseEvent, text: string, cfiRange: string) => void;
 		onRunAIAction?: (actionId: string, text: string, cfiRange: string) => void;
-		onReadingNoteSaved?: (sourcePath: string) => void | Promise<void>;
+		onReadingNoteSaved?: (sourcePath: string, excerptId?: string) => void | Promise<void>;
 		translationSettings?: IntegratedAISettings;
 	}
 
@@ -408,13 +408,13 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 		clearAndHide();
 	}
 
-	function handleInsertToNote() {
+	async function handleInsertToNote() {
 		if (!canUseExcerptNotes && showPremiumFeaturePreviewEnabled) {
 			handlePremiumExcerptFeaturePreview();
 			return;
 		}
 		if (selectedText && currentCfiRange) {
-			onInsertToNote?.(selectedText, currentCfiRange);
+			await onInsertToNote?.(selectedText, currentCfiRange);
 		}
 		clearAndHide();
 	}
@@ -540,7 +540,7 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 	}
 
 	async function handleNoteSaved(info: { cfiRange: string; blockId: string; text: string; filePath: string }) {
-		await onReadingNoteSaved?.(info.filePath);
+		await onReadingNoteSaved?.(info.filePath, info.blockId);
 	}
 
 	async function handleStudyNoteSaved(sourcePath: string) {

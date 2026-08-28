@@ -1501,6 +1501,31 @@
 		return reloadHighlights({ incremental: true });
 	}
 
+	async function refreshPersistedReadingNoteMarkersAfterSave(
+		sourcePath: string,
+		excerptId?: string
+	) {
+		await reloadHighlightsAfterExcerptMutation(sourcePath);
+		const normalizedPath = normalizeTrackedVaultPath(sourcePath);
+		const markerWasIndexed = Boolean(
+			excerptId && (pendingLoadedHighlights || []).some((highlight) =>
+				highlight.style === 'reading-note'
+				&& highlight.excerptId === excerptId
+				&& normalizeTrackedVaultPath(highlight.sourceFile) === normalizedPath
+			)
+		);
+		if (markerWasIndexed) {
+			return;
+		}
+
+		// A newly created/modified Markdown file can precede Obsidian's metadata
+		// cache by one turn, especially on desktop. Retry the persisted source,
+		// rather than synthesizing an in-memory marker that cannot survive restart.
+		await new Promise<void>((resolve) => window.setTimeout(resolve, 140));
+		rememberHighlightSourcePath(normalizedPath);
+		await reloadHighlights({ incremental: true, invalidateCache: true });
+	}
+
 	function queueHighlightReload(delayMs = 350, options: HighlightReloadOptions = {}) {
 		if (componentDisposed) {
 			return;
@@ -3373,8 +3398,13 @@
 				chapterIndex: readerService.getCurrentChapterIndex()
 			});
 			new Notice('已创建读书笔记');
-			await app.workspace.openLinkText(newNotePath + '#^' + blockId, newNotePath, false);
-			void reloadHighlights();
+			await refreshPersistedReadingNoteMarkersAfterSave(newNotePath, blockId);
+			await navigateToPersistedReadingNote({
+				sourceFile: newNotePath,
+				excerptId: blockId,
+				cfiRange,
+				text,
+			});
 		} else {
 			new Notice(t('epub.reader.bookNotReady'));
 		}
@@ -4927,9 +4957,15 @@
 					chapterIndex: readerService.getCurrentChapterIndex()
 				});
 				new Notice('已创建读书笔记');
-				await app.workspace.openLinkText(`${newNotePath}#^${blockId}`, newNotePath, false);
 				highlightToolbarInfo = null;
-				void reloadHighlights();
+				await refreshPersistedReadingNoteMarkersAfterSave(newNotePath, blockId);
+				await navigateToPersistedReadingNote({
+					sourceFile: newNotePath,
+					excerptId: blockId,
+					cfiRange: info.cfiRange,
+					text: info.text,
+					createdTime: info.createdTime,
+				});
 			} else {
 				new Notice(t('epub.reader.bookNotReady'));
 			}
@@ -4971,11 +5007,19 @@
 		}
 
 		if (source.excerptId) {
-			await app.workspace.openLinkText(sourceFile + '#^' + source.excerptId, sourceFile, false);
+			highlightToolbarInfo = null;
+			await navigateToPersistedReadingNote({
+				sourceFile,
+				excerptId: source.excerptId,
+				sourceRef,
+				cfiRange: info.cfiRange,
+				text: info.text,
+				createdTime: info.createdTime,
+			});
 		} else {
 			await navigateToMarkdownCallout(sourceFile, encodedCfi, info.cfiRange, info.text, info.createdTime);
+			highlightToolbarInfo = null;
 		}
-		highlightToolbarInfo = null;
 	}
 
 	function handleHighlightEditComment(info: HighlightClickInfo) {
@@ -5101,6 +5145,32 @@
 		await navigateExternalSource({
 			kind: 'markdown',
 			resourcePath: sourceFile,
+			locate: { candidates: locateCandidates },
+			context: { epubFilePath: filePath },
+		});
+	}
+
+	async function navigateToPersistedReadingNote(input: {
+		sourceFile: string;
+		excerptId: string;
+		sourceRef?: string;
+		cfiRange: string;
+		text?: string;
+		createdTime?: number;
+	}) {
+		const encodedCfi = EpubLinkService.encodeCfiForWikilink(input.cfiRange);
+		const locateCandidates = buildEpubMarkdownLocateCandidates({
+			epubFilePath: filePath,
+			encodedCfi,
+			rawCfi: input.cfiRange,
+			excerptText: input.text,
+			createdTime: input.createdTime,
+			sourceRef: input.sourceRef,
+			excerptId: input.excerptId,
+		});
+		await navigateExternalSource({
+			kind: 'markdown',
+			resourcePath: input.sourceFile,
 			locate: { candidates: locateCandidates },
 			context: { epubFilePath: filePath },
 		});
@@ -6026,7 +6096,7 @@
 				onRunAIAction={handleRunIntegratedAIAction}
 				onOpenAIMenu={showSelectedTextAIMenu}
 				translationSettings={resolveEpubHost(app)?.settings?.aiAssistant}
-				onReadingNoteSaved={reloadHighlightsAfterExcerptMutation}
+				onReadingNoteSaved={refreshPersistedReadingNoteMarkersAfterSave}
 			/>
 
 			<EpubPremiumFeaturePopover

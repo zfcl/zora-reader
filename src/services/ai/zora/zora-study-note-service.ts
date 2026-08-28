@@ -2,8 +2,7 @@ import { TFile, type App } from "obsidian";
 import { EPUB_RUNTIME } from "../../epub/epub-runtime";
 import { DirectoryUtils } from "../../../utils/directory-utils";
 import { EpubLinkService } from "../../epub/EpubLinkService";
-import { getZoraSyncService } from "../../sync/ZoraSyncService";
-import { logMobileEvent, logMobileError } from "../../../utils/zora-mobile-logger";
+import { logMobileEvent } from "../../../utils/zora-mobile-logger";
 
 export interface StudyNoteVocabularyInput {
   word: string;
@@ -487,37 +486,6 @@ export async function appendBookReadingNote(
   }
 
   await writeVaultFile(app, filePath, content);
-
-  try {
-    const syncService = getZoraSyncService(app);
-    const bookId = await syncService.computeBookIdFromFile(input.bookPath);
-    if (bookId) {
-      const noteId = blockId;
-      const annotationId = `ann-${blockId}`;
-      await syncService.saveNote({
-        id: noteId,
-        bookId,
-        annotationId,
-        cfiRange: input.cfiRange,
-        type: "reading-note",
-        content: input.note || "",
-        selectedText: input.selectedText,
-        chapterIndex: input.chapterIndex,
-      });
-      await syncService.saveAnnotation({
-        id: annotationId,
-        bookId,
-        cfiRange: input.cfiRange,
-        type: "reading-note",
-        color: "purple",
-        style: "reading-note",
-        text: input.selectedText,
-        chapterIndex: input.chapterIndex,
-      });
-    }
-  } catch (syncErr) {
-    logMobileError("Notes", "SyncBookReadingNoteFailed", syncErr);
-  }
 
   logMobileEvent("Notes", "BookReadingNoteAppended", { bookTitle: input.bookTitle, blockId, filePath });
   return { path: filePath, blockId, filePath };

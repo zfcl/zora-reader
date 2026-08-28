@@ -6,6 +6,7 @@
 	import type { EpubReaderEngine, HighlightClickInfo } from '../../services/epub';
 	import {
 		computeToolbarPosition,
+		computeMobilePopoverCenterPosition,
 		createEventBinder,
 		isEventOutsideToolbar,
 		resolveMobileFloatingInsetBottom,
@@ -24,7 +25,7 @@
 		onChangeColor: (info: HighlightClickInfo, newColor: string) => void;
 		onChangeStyle: (info: HighlightClickInfo, newStyle?: HighlightClickInfo['style']) => void;
 		onEditComment: (info: HighlightClickInfo) => void;
-		onBacklink: (info: HighlightClickInfo) => void;
+		onBacklink: (info: HighlightClickInfo) => void | Promise<void>;
 		onExtractToCard: (info: HighlightClickInfo) => void;
 		onCopyText: (info: HighlightClickInfo) => void;
 		onDismiss: () => void;
@@ -54,7 +55,7 @@
 	let posTop = $state(0);
 	let posLeft = $state(0);
 	let isBelowTarget = $state(false);
-	let toolbarMode = $state<'floating' | 'docked'>('floating');
+	let toolbarMode = $state<'floating' | 'docked' | 'centered'>('floating');
 	let arrowOffset = $state(0);
 	let teardownOutsidePointerTracking: (() => void) | null = null;
 	let teardownViewportTracking: (() => void) | null = null;
@@ -67,7 +68,9 @@
 		purple: t('epub.highlightToolbar.purple'),
 		green: t('epub.highlightToolbar.green')
 	}));
-	const isMobileToolbar = Platform.isMobile || activeDocument.body.classList.contains('is-mobile');
+	const isMobileToolbar = Platform.isMobile
+		|| activeDocument.body.classList.contains('is-mobile')
+		|| activeDocument.body.classList.contains('is-phone');
 
 	function icon(node: HTMLElement, name: string) {
 		setIcon(node, name);
@@ -77,6 +80,46 @@
 				node.replaceChildren();
 				setIcon(node, newName);
 			}
+		};
+	}
+
+	function stopReaderGesture(node: HTMLElement) {
+		const stopPropagation = (event: Event) => event.stopPropagation();
+		const eventNames = [
+			'click',
+			'mousedown',
+			'mouseup',
+			'pointerdown',
+			'pointerup',
+			'touchstart',
+			'touchmove',
+			'touchend',
+		] as const;
+		for (const eventName of eventNames) {
+			node.addEventListener(eventName, stopPropagation);
+		}
+		return {
+			destroy() {
+				for (const eventName of eventNames) {
+					node.removeEventListener(eventName, stopPropagation);
+				}
+			},
+		};
+	}
+
+	function backlinkAction(node: HTMLElement, initialInfo: HighlightClickInfo) {
+		let currentInfo = initialInfo;
+		const handleClick = (event: MouseEvent) => {
+			void handleBacklinkAction(event, currentInfo);
+		};
+		node.addEventListener('click', handleClick);
+		return {
+			update(nextInfo: HighlightClickInfo) {
+				currentInfo = nextInfo;
+			},
+			destroy() {
+				node.removeEventListener('click', handleClick);
+			},
 		};
 	}
 
@@ -151,6 +194,25 @@
 		if (!viewportEl) return;
 
 		startViewportTracking();
+		const shouldCenterNoteActions = isMobileToolbar && Boolean(
+			currentInfo.style === 'reading-note' || currentInfo.sourceLocators?.length
+		);
+		if (shouldCenterNoteActions) {
+			toolbarMode = 'centered';
+			await tick();
+			if (!toolbarEl || info !== currentInfo) return;
+			const centered = computeMobilePopoverCenterPosition(
+				toolbarEl.offsetWidth || 296,
+				toolbarEl.offsetHeight || 78,
+				viewportEl
+			);
+			posTop = centered.top;
+			posLeft = centered.left;
+			isBelowTarget = false;
+			arrowOffset = 0;
+			return;
+		}
+
 		const containerRect = viewportEl.getBoundingClientRect();
 		const toRelativeRect = (rect: HighlightClickInfo['rect']) => ({
 			top: rect.top - containerRect.top,
@@ -203,7 +265,9 @@
 		onChangeStyle(targetInfo, targetInfo.style === nextStyle ? undefined : nextStyle);
 	}
 
-	function handleBacklinkAction(targetInfo: HighlightClickInfo) {
+	async function handleBacklinkAction(event: Event, targetInfo: HighlightClickInfo) {
+		event.preventDefault();
+		event.stopPropagation();
 		if (!canUseSourceLocation) {
 			if (showPremiumFeaturePreviewEnabled) {
 				onRequestPremiumFeaturePreview?.(PREMIUM_FEATURES.EPUB_SOURCE_LOCATION);
@@ -211,7 +275,7 @@
 			}
 			return;
 		}
-		onBacklink(targetInfo);
+		await onBacklink(targetInfo);
 	}
 
 	$effect(() => {
@@ -250,7 +314,9 @@
 	class:visible={info !== null}
 	class:below-target={isBelowTarget}
 	class:mobile-docked={toolbarMode === 'docked'}
+	class:mobile-centered={toolbarMode === 'centered'}
 	style={`top: ${posTop}px; left: ${posLeft}px; --toolbar-arrow-offset: ${arrowOffset}px;`}
+	use:stopReaderGesture
 	bind:this={toolbarEl}
 >
 	{#if info}
@@ -274,11 +340,11 @@
 		{:else if info.sourceLocators?.length || info.style === 'reading-note'}
 			<div class="highlight-main-row">
 				<div class="toolbar-row actions-row highlight-actions-row">
-					<button class="clickable-icon action-item backlink-action" onclick={() => handleBacklinkAction(info)} title="打开笔记">
+					<button class="clickable-icon action-item backlink-action" use:backlinkAction={info} title="打开笔记">
 						<span class="action-icon" use:icon={'external-link'}></span>
 						<span class="action-label">打开笔记</span>
 					</button>
-					<button class="clickable-icon action-item backlink-action" onclick={() => handleBacklinkAction(info)} title="编辑笔记">
+					<button class="clickable-icon action-item backlink-action" use:backlinkAction={info} title="编辑笔记">
 						<span class="action-icon" use:icon={'edit'}></span>
 						<span class="action-label">编辑笔记</span>
 					</button>
