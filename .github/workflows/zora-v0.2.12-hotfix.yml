@@ -1,0 +1,790 @@
+name: Zora v0.2.12 mobile hotfix
+
+on:
+  push:
+    branches:
+      - personal
+    paths:
+      - ".github/workflows/zora-v0.2.12-hotfix.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: zora-v0.2.12-hotfix
+  cancel-in-progress: false
+
+jobs:
+  hotfix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout personal
+        uses: actions/checkout@v4
+        with:
+          ref: personal
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Safety gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_BASE="2b0b38dac9e6c04bdcd03d13d13519cdc9eaa30b"
+          WORKFLOW=".github/workflows/zora-v0.2.12-hotfix.yml"
+
+          CURRENT="$(git rev-parse HEAD)"
+          PARENT="$(git rev-parse HEAD^)"
+          echo "current=$CURRENT"
+          echo "parent=$PARENT"
+
+          if [ "$PARENT" != "$EXPECTED_BASE" ]; then
+            echo "::error::personal no longer has the expected v0.2.11 base as the workflow commit parent."
+            exit 1
+          fi
+
+          VERSION="$(node -p "require('./manifest.json').version")"
+          if [ "$VERSION" != "0.2.11" ]; then
+            echo "::error::Expected manifest 0.2.11, got $VERSION"
+            exit 1
+          fi
+
+          mapfile -t CHANGED < <(git diff --name-only HEAD^ HEAD)
+          printf 'workflow commit files:\n%s\n' "${CHANGED[*]}"
+          if [ "${#CHANGED[@]}" -ne 1 ] || [ "${CHANGED[0]}" != "$WORKFLOW" ]; then
+            echo "::error::The trigger commit changed files other than the one-off hotfix workflow."
+            exit 1
+          fi
+
+          if git ls-remote --exit-code --tags origin refs/tags/v0.2.12 >/dev/null 2>&1; then
+            echo "::error::Tag v0.2.12 already exists."
+            exit 1
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply v0.2.12 hotfix
+        shell: bash
+        run: |
+          cat > /tmp/zora-hotfix.cjs <<'NODE'
+          const fs = require("fs");
+
+          function read(path) {
+            return fs.readFileSync(path, "utf8").replace(/\r\n/g, "\n");
+          }
+
+          function write(path, text) {
+            fs.writeFileSync(path, text.replace(/\r\n/g, "\n"), "utf8");
+          }
+
+          function fail(message) {
+            throw new Error(message);
+          }
+
+          function countLiteral(text, needle) {
+            return text.split(needle).length - 1;
+          }
+
+          function replaceLiteral(text, oldText, newText, label) {
+            const count = countLiteral(text, oldText);
+            if (count !== 1) {
+              fail(`${label}: expected exactly 1 match, got ${count}`);
+            }
+            return text.replace(oldText, newText);
+          }
+
+          function replaceBetween(text, startMarker, endMarker, replacement, label) {
+            const start = text.indexOf(startMarker);
+            if (start < 0) fail(`${label}: start marker not found`);
+            if (text.indexOf(startMarker, start + startMarker.length) >= 0) {
+              fail(`${label}: start marker is not unique`);
+            }
+            const end = text.indexOf(endMarker, start + startMarker.length);
+            if (end < 0) fail(`${label}: end marker not found`);
+            return text.slice(0, start) + replacement + text.slice(end);
+          }
+
+          // ------------------------------------------------------------------
+          // SelectionToolbar: keep the real custom-selection clear callback
+          // while AI/note popovers are open, and arbitrate mobile blank taps
+          // from one touchend path.
+          // ------------------------------------------------------------------
+          {
+            const path = "src/components/epub/SelectionToolbar.svelte";
+            let s = read(path);
+
+            const newHide = `\tfunction resetSelectionContext() {
+          \t\tselectedText = '';
+          \t\tcurrentCfiRange = '';
+          \t\tactiveClearSelection = null;
+          \t\tactiveCustomRange = null;
+          \t\tactiveCustomGeometry = null;
+          \t\tactiveInitialWordRange = null;
+          \t\tactiveInitialWordText = null;
+          \t\tactiveGranularity = 'word';
+          \t\tstopPositionTracking();
+          \t}
+
+          \tfunction hideToolbar(options: { preserveSelectionContext?: boolean } = {}) {
+          \t\tclearPendingCollapsedHide();
+          \t\tdismissActiveToolbarMenu();
+          \t\tclearPendingExternalSelectionHide();
+          \t\tisVisible = false;
+          \t\tisBelowSelection = false;
+          \t\ttoolbarMode = 'floating';
+          \t\tarrowOffset = 0;
+
+          \t\tif (options.preserveSelectionContext) {
+          \t\t\tclearPendingSync();
+          \t\t\tteardownPositionTracking?.();
+          \t\t\tteardownPositionTracking = null;
+          \t\t\treturn;
+          \t\t}
+
+          \t\tresetSelectionContext();
+          \t}
+
+          `;
+
+            s = replaceBetween(
+              s,
+              "\tfunction hideToolbar() {",
+              "\tfunction clearAndHide() {",
+              newHide,
+              "SelectionToolbar hide/reset split"
+            );
+
+            s = replaceLiteral(
+              s,
+              `\t\tif (activeClearSelection) {
+          \t\t\tactiveClearSelection();
+          \t\t} else if (iframeDoc) {`,
+              `\t\tconst clearSelection = activeClearSelection || externalSelection?.clear || null;
+          \t\tif (clearSelection) {
+          \t\t\tclearSelection();
+          \t\t} else if (iframeDoc) {`,
+              "SelectionToolbar clear callback fallback"
+            );
+
+            for (const type of ["dict", "comprehension", "grammar", "note"]) {
+              s = replaceLiteral(
+                s,
+                `\t\tactivePopoverType = '${type}';
+          \t\thideToolbar();`,
+                `\t\tactivePopoverType = '${type}';
+          \t\thideToolbar({ preserveSelectionContext: true });`,
+                `SelectionToolbar preserve context ${type}`
+              );
+            }
+
+            const newHostEnd = `\tfunction handleMobileHostTouchEnd(event: TouchEvent) {
+          \t\tif (!mobileHostTouchStartPoint) return;
+          \t\tconst touch = event.changedTouches[0] || (event as any).touches?.[0];
+          \t\tif (!touch) {
+          \t\t\tmobileHostTouchStartPoint = null;
+          \t\t\treturn;
+          \t\t}
+
+          \t\tconst dist = Math.hypot(
+          \t\t\ttouch.clientX - mobileHostTouchStartPoint.x,
+          \t\t\ttouch.clientY - mobileHostTouchStartPoint.y
+          \t\t);
+          \t\tmobileHostTouchStartPoint = null;
+
+          \t\tconst target = getEventTargetNode(event.target);
+          \t\tconst targetEl = getEventTargetElement(event.target);
+
+          \t\tconst insideToolbar = Boolean(target && toolbarEl?.contains(target));
+          \t\tconst insidePopover = Boolean(targetEl?.closest('.zora-lookup-popover'));
+          \t\tconst insideFloatingUi = isEventInsideObsidianFloatingUi(event);
+          \t\tconst insideChapterIframe = Boolean(
+          \t\t\ttargetEl?.closest('iframe') || (targetEl && targetEl.ownerDocument !== activeDocument)
+          \t\t);
+          \t\tconst insideInteractive = Boolean(
+          \t\t\ttarget && closestAcrossShadowHosts(
+          \t\t\t\ttarget,
+          \t\t\t\t'button, a, input, textarea, select, option, [role="button"], [contenteditable="true"], [data-zora-interactive="true"], [data-zora-note-marker], [data-weave-comment-marker], [data-weave-reference-badge]'
+          \t\t\t)
+          \t\t);
+          \t\tconst insideReaderShell = Boolean(
+          \t\t\ttarget && closestAcrossShadowHosts(
+          \t\t\t\ttarget,
+          \t\t\t\t'.weave-epub-view-content, .epub-reader-view, .epub-content-wrapper, .epub-reader-viewport, foliate-view'
+          \t\t\t)
+          \t\t);
+          \t\tconst hasDismissibleSelection = Boolean(
+          \t\t\texternalSelection?.clear ||
+          \t\t\tactiveClearSelection ||
+          \t\t\tactiveCustomRange ||
+          \t\t\tlookupSelection ||
+          \t\t\tisVisible
+          \t\t);
+
+          \t\tconst isTap = dist < 8;
+
+          \t\tif (
+          \t\t\tisTap &&
+          \t\t\t!insideToolbar &&
+          \t\t\t!insidePopover &&
+          \t\t\t!insideFloatingUi &&
+          \t\t\t!insideInteractive &&
+          \t\t\t!insideChapterIframe &&
+          \t\t\tinsideReaderShell &&
+          \t\t\thasDismissibleSelection
+          \t\t) {
+          \t\t\tclearAndHide();
+          \t\t\tif (event.cancelable) {
+          \t\t\t\tevent.preventDefault();
+          \t\t\t}
+          \t\t\tevent.stopPropagation();
+          \t\t}
+          \t}
+
+          `;
+
+            s = replaceBetween(
+              s,
+              "\tfunction handleMobileHostTouchEnd(event: TouchEvent) {",
+              "\tfunction handlePointerDownOutside(event: Event) {",
+              newHostEnd,
+              "SelectionToolbar mobile host arbitration"
+            );
+
+            const binderCount = countLiteral(s, "binder.add(");
+            if (binderCount !== 3) {
+              fail(`SelectionToolbar binder.add expected 3, got ${binderCount}`);
+            }
+            s = s.replaceAll("binder.add(", "binder.bind(");
+
+            write(path, s);
+          }
+
+          // ------------------------------------------------------------------
+          // Mobile popover bounds: use one global visualViewport coordinate
+          // system. Desktop remains reader-relative.
+          // ------------------------------------------------------------------
+          {
+            const path = "src/components/epub/toolbar-positioning.ts";
+            let s = read(path);
+
+            const replacement = `export function getMobileSafeBounds(_viewportEl: HTMLElement): {
+          \tminLeft: number;
+          \tmaxRight: number;
+          \tminTop: number;
+          \tmaxBottom: number;
+          \tavailableWidth: number;
+          \tavailableHeight: number;
+          } {
+          \tconst wsBounds = getWorkspaceBounds();
+          \tconst vv = typeof window !== "undefined" ? window.visualViewport : null;
+          \tconst vvWidth = vv?.width ?? (typeof window !== "undefined" ? window.innerWidth : 390);
+          \tconst vvHeight = vv?.height ?? (typeof window !== "undefined" ? window.innerHeight : 844);
+          \tconst vvLeft = vv?.offsetLeft ?? 0;
+          \tconst vvTop = vv?.offsetTop ?? 0;
+
+          \tconst sideInset = 12;
+          \tconst topInset = Math.max(12, wsBounds.top || 0);
+          \tconst bottomInset = Math.max(12, wsBounds.bottom || 0);
+
+          \tconst minLeft = vvLeft + sideInset;
+          \tconst maxRight = vvLeft + vvWidth - sideInset;
+          \tconst minTop = vvTop + topInset;
+          \tconst maxBottom = vvTop + vvHeight - bottomInset;
+
+          \treturn {
+          \t\tminLeft,
+          \t\tmaxRight,
+          \t\tminTop,
+          \t\tmaxBottom,
+          \t\tavailableWidth: Math.max(160, maxRight - minLeft),
+          \t\tavailableHeight: Math.max(160, maxBottom - minTop),
+          \t};
+          }
+
+          `;
+
+            s = replaceBetween(
+              s,
+              "export function getMobileSafeBounds(viewportEl: HTMLElement): {",
+              "export function clampPopoverPosition(",
+              replacement,
+              "toolbar-positioning mobile global bounds"
+            );
+
+            write(path, s);
+          }
+
+          // ------------------------------------------------------------------
+          // Draggable: explicit iOS touchstart bindings will coexist with
+          // pointer events; prevent a second drag session from starting.
+          // ------------------------------------------------------------------
+          {
+            const path = "src/components/epub/zora-draggable.ts";
+            let s = read(path);
+            s = replaceLiteral(
+              s,
+              `  function handleHeaderPointerDown(e: PointerEvent | MouseEvent | TouchEvent) {
+              if ("button" in e && e.button !== 0) return;`,
+              `  function handleHeaderPointerDown(e: PointerEvent | MouseEvent | TouchEvent) {
+              if (isDragging) return;
+              if ("button" in e && e.button !== 0) return;`,
+              "zora-draggable duplicate start guard"
+            );
+            write(path, s);
+          }
+
+          // ------------------------------------------------------------------
+          // Four existing popovers:
+          // - mobile portal to activeDocument.body so fixed positioning is
+          //   really visualViewport-global even under containment ancestors
+          // - desktop keeps mousedown outside-close
+          // - mobile outside-close is owned only by SelectionToolbar touchend
+          // - explicit touchstart drag entry for iOS
+          // ------------------------------------------------------------------
+          const popovers = [
+            {
+              path: "src/components/epub/SelectionDictionaryPopover.svelte",
+              afterMount: "  async function handleSaveVocabulary() {",
+              positionCall: "    void positionPopover();",
+            },
+            {
+              path: "src/components/epub/SelectionComprehensionPopover.svelte",
+              afterMount: "  // Section level save handlers",
+              positionCall: "    void positionPopover();",
+            },
+            {
+              path: "src/components/epub/SelectionGrammarPopover.svelte",
+              afterMount: "  async function handleSaveToStudyNote() {",
+              positionCall: "    void positionPopover();",
+            },
+            {
+              path: "src/components/epub/SelectionNotePopover.svelte",
+              afterMount: "  async function handleSaveNote() {",
+              positionCall: `    void positionPopover().then(() => {
+                textareaEl?.focus();
+              });`,
+            },
+          ];
+
+          for (const info of popovers) {
+            let s = read(info.path);
+
+            s = replaceLiteral(
+              s,
+              `    onpointerdown={draggable.handleHeaderPointerDown}
+              onmousedown={draggable.handleHeaderPointerDown}`,
+              `    onpointerdown={draggable.handleHeaderPointerDown}
+              ontouchstart={draggable.handleHeaderPointerDown}
+              onmousedown={draggable.handleHeaderPointerDown}`,
+              `${info.path} explicit touchstart`
+            );
+
+            const mount = `  onMount(() => {
+              const isMobile = Platform.isMobile || (typeof document !== "undefined" && (document.body.classList.contains("is-mobile") || document.body.classList.contains("is-phone")));
+              const originalParent = popoverEl?.parentNode ?? null;
+              const originalNextSibling = popoverEl?.nextSibling ?? null;
+
+              if (isMobile && popoverEl && popoverEl.parentNode !== activeDocument.body) {
+                activeDocument.body.appendChild(popoverEl);
+              }
+
+              if (!isMobile) {
+                activeDocument.addEventListener("mousedown", handlePointerDown, { capture: true });
+                viewportEl.addEventListener("scroll", onClose, { passive: true });
+              }
+
+              window.addEventListener("keydown", handleKeydown);
+              window.visualViewport?.addEventListener("resize", handleViewportResize);
+              window.addEventListener("resize", handleViewportResize);
+              window.addEventListener("orientationchange", handleViewportResize);
+
+          ${info.positionCall}
+
+              return () => {
+                draggable.destroy();
+
+                if (!isMobile) {
+                  activeDocument.removeEventListener("mousedown", handlePointerDown, { capture: true });
+                  viewportEl.removeEventListener("scroll", onClose);
+                }
+
+                window.removeEventListener("keydown", handleKeydown);
+                window.visualViewport?.removeEventListener("resize", handleViewportResize);
+                window.removeEventListener("resize", handleViewportResize);
+                window.removeEventListener("orientationchange", handleViewportResize);
+
+                if (
+                  isMobile &&
+                  popoverEl &&
+                  originalParent &&
+                  originalParent.isConnected &&
+                  popoverEl.parentNode === activeDocument.body
+                ) {
+                  if (originalNextSibling && originalNextSibling.parentNode === originalParent) {
+                    originalParent.insertBefore(popoverEl, originalNextSibling);
+                  } else {
+                    originalParent.appendChild(popoverEl);
+                  }
+                }
+              };
+            });
+
+          `;
+
+            s = replaceBetween(
+              s,
+              "  onMount(() => {",
+              info.afterMount,
+              mount,
+              `${info.path} mobile portal and outside-close arbitration`
+            );
+
+            write(info.path, s);
+          }
+
+          // ------------------------------------------------------------------
+          // CSS: remove the old !important bottom-sheet contract that ignored
+          // calculated top/left and drag transforms. Mobile becomes a bounded,
+          // fixed, internally-scrollable card.
+          // ------------------------------------------------------------------
+          {
+            const path = "src/styles/epub/zora-lookup.css";
+            let s = read(path);
+            const marker = `/* ==========================================================================
+             Mobile Bottom Sheet Adaptations (iPhone & Obsidian Mobile)
+             ========================================================================== */`;
+
+            const mobileCss = `/* ==========================================================================
+             Mobile Floating Card Adaptations (iPhone & Obsidian Mobile)
+             ========================================================================== */
+
+          body.is-mobile .zora-lookup-popover,
+          body.is-phone .zora-lookup-popover {
+            position: fixed !important;
+            width: min(500px, calc(100vw - 24px)) !important;
+            max-width: calc(100vw - 24px) !important;
+            min-width: 0 !important;
+            min-height: 0 !important;
+            max-height: min(72dvh, 600px, calc(100dvh - 140px)) !important;
+            right: auto !important;
+            bottom: auto !important;
+            border-radius: 16px !important;
+            border: 1px solid rgba(255, 255, 255, 0.12) !important;
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.52), 0 2px 10px rgba(0, 0, 0, 0.28) !important;
+            margin: 0 !important;
+            z-index: 1000 !important;
+            overflow: hidden !important;
+            pointer-events: auto !important;
+            overscroll-behavior: contain !important;
+          }
+
+          body.is-mobile .zora-lookup-popover.zora-grammar-popover,
+          body.is-mobile .zora-grammar-popover,
+          body.is-phone .zora-lookup-popover.zora-grammar-popover,
+          body.is-phone .zora-grammar-popover {
+            width: min(620px, calc(100vw - 24px)) !important;
+            max-width: calc(100vw - 24px) !important;
+            min-width: 0 !important;
+            min-height: 0 !important;
+            height: auto !important;
+            max-height: min(72dvh, 600px, calc(100dvh - 140px)) !important;
+          }
+
+          body.is-mobile .zora-lookup-popover.tier-compact,
+          body.is-mobile .zora-lookup-popover.tier-normal,
+          body.is-mobile .zora-lookup-popover.tier-wide,
+          body.is-mobile .zora-grammar-popover.tier-compact,
+          body.is-mobile .zora-grammar-popover.tier-normal,
+          body.is-mobile .zora-grammar-popover.tier-wide,
+          body.is-phone .zora-lookup-popover.tier-compact,
+          body.is-phone .zora-lookup-popover.tier-normal,
+          body.is-phone .zora-lookup-popover.tier-wide,
+          body.is-phone .zora-grammar-popover.tier-compact,
+          body.is-phone .zora-grammar-popover.tier-normal,
+          body.is-phone .zora-grammar-popover.tier-wide {
+            width: min(620px, calc(100vw - 24px)) !important;
+            max-width: calc(100vw - 24px) !important;
+            min-width: 0 !important;
+          }
+
+          body.is-mobile .zora-lookup-header,
+          body.is-phone .zora-lookup-header {
+            flex: 0 0 42px;
+            min-height: 42px;
+            padding: 0 14px;
+            cursor: grab !important;
+            touch-action: none !important;
+          }
+
+          body.is-mobile .zora-lookup-header button,
+          body.is-phone .zora-lookup-header button {
+            width: 34px;
+            height: 34px;
+            min-width: 34px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            touch-action: auto !important;
+          }
+
+          body.is-mobile .zora-lookup-header button svg,
+          body.is-phone .zora-lookup-header button svg {
+            width: 18px;
+            height: 18px;
+          }
+
+          body.is-mobile .zora-lookup-body,
+          body.is-phone .zora-lookup-body {
+            flex: 1 1 auto !important;
+            min-height: 0 !important;
+            max-height: min(54dvh, 460px) !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            -webkit-overflow-scrolling: touch !important;
+            overscroll-behavior-y: contain !important;
+            touch-action: pan-y !important;
+            padding: 14px 16px;
+          }
+
+          body.is-mobile .zora-lookup-footer,
+          body.is-phone .zora-lookup-footer {
+            flex: 0 0 auto !important;
+            padding: 10px 14px max(10px, env(safe-area-inset-bottom, 0px)) !important;
+            min-height: 50px;
+            gap: 8px;
+          }
+
+          body.is-mobile .zora-lookup-footer button,
+          body.is-phone .zora-lookup-footer button {
+            min-height: 38px;
+            padding: 7px 12px;
+            font-size: 13px;
+            border-radius: 9px;
+          }
+
+          body.is-mobile .zora-grammar-points-list.grid-2col,
+          body.is-phone .zora-grammar-points-list.grid-2col {
+            display: flex !important;
+            flex-direction: column !important;
+            grid-template-columns: 1fr !important;
+            gap: 8px !important;
+          }
+
+          body.is-mobile .zora-grammar-point-item,
+          body.is-phone .zora-grammar-point-item {
+            padding: 8px 10px;
+          }
+
+          body.is-mobile .zora-lookup-section button.zora-section-note-btn,
+          body.is-phone .zora-lookup-section button.zora-section-note-btn {
+            min-height: 28px !important;
+            padding: 4px 10px !important;
+            font-size: 12px !important;
+          }
+
+          body.is-mobile .zora-lookup-section button.zora-item-note-btn,
+          body.is-phone .zora-lookup-section button.zora-item-note-btn {
+            min-width: 28px !important;
+            min-height: 28px !important;
+            padding: 4px 8px !important;
+          }
+
+          body.is-mobile .zora-note-textarea,
+          body.is-phone .zora-note-textarea {
+            min-height: 110px;
+            max-height: 200px;
+            font-size: 14px;
+            padding: 10px 12px;
+          }
+
+          @media (max-width: 680px) {
+            .zora-grammar-points-list.grid-2col {
+              display: flex !important;
+              flex-direction: column !important;
+              grid-template-columns: 1fr !important;
+              gap: 8px !important;
+            }
+          }
+          `;
+
+            const start = s.indexOf(marker);
+            if (start < 0) fail("zora-lookup.css mobile bottom-sheet marker not found");
+            s = s.slice(0, start) + mobileCss;
+            write(path, s);
+          }
+
+          // ------------------------------------------------------------------
+          // Add one regression for the coordinate-system bug that existed only
+          // when the reader container had a non-zero viewport offset.
+          // ------------------------------------------------------------------
+          {
+            const path = "src/components/epub/__tests__/mobile-selection-ux.test.ts";
+            let s = read(path);
+            const anchor = `\tit('8. 超出左边 → clamp', () => {`;
+            const test = `\tit('7b. mobile fixed popover uses visual viewport coordinates even when reader is offset', () => {
+          \t\tObject.defineProperty(viewportEl, 'getBoundingClientRect', {
+          \t\t\tconfigurable: true,
+          \t\t\tvalue: () => ({ left: 80, top: 120, right: 470, bottom: 964, width: 390, height: 844 }),
+          \t\t});
+
+          \t\tconst pos = computeMobilePopoverCenterPosition(340, 300, viewportEl);
+          \t\texpect(pos.left).toBe(Math.round((390 - 340) / 2));
+          \t\texpect(pos.top).toBe(Math.round((844 - 300) / 2));
+          \t});
+
+          `;
+            s = replaceLiteral(s, anchor, test + anchor, "mobile coordinate regression test");
+            write(path, s);
+          }
+
+          // ------------------------------------------------------------------
+          // Version bump.
+          // ------------------------------------------------------------------
+          {
+            const manifest = JSON.parse(read("manifest.json"));
+            if (manifest.version !== "0.2.11") fail(`manifest expected 0.2.11, got ${manifest.version}`);
+            manifest.version = "0.2.12";
+            write("manifest.json", JSON.stringify(manifest, null, 2) + "\n");
+
+            const pkg = JSON.parse(read("package.json"));
+            if (pkg.version !== "0.2.11") fail(`package expected 0.2.11, got ${pkg.version}`);
+            pkg.version = "0.2.12";
+            write("package.json", JSON.stringify(pkg, null, 2) + "\n");
+
+            const lock = JSON.parse(read("package-lock.json"));
+            if (lock.version !== "0.2.11") fail(`package-lock expected 0.2.11, got ${lock.version}`);
+            lock.version = "0.2.12";
+            if (!lock.packages || !lock.packages[""]) fail("package-lock root package missing");
+            lock.packages[""].version = "0.2.12";
+            write("package-lock.json", JSON.stringify(lock, null, 2) + "\n");
+
+            const versions = JSON.parse(read("versions.json"));
+            if (versions["0.2.12"]) fail("versions.json already contains 0.2.12");
+            versions["0.2.12"] = "1.11.4";
+            write("versions.json", JSON.stringify(versions, null, 2) + "\n");
+          }
+
+          // ------------------------------------------------------------------
+          // Source invariants. These intentionally fail the Action before any
+          // source commit if the hotfix is incomplete.
+          // ------------------------------------------------------------------
+          {
+            const toolbar = read("src/components/epub/SelectionToolbar.svelte");
+            if (!toolbar.includes("externalSelection?.clear")) fail("externalSelection.clear fallback missing");
+            if (countLiteral(toolbar, "hideToolbar({ preserveSelectionContext: true });") !== 4) {
+              fail("all four popover handlers must preserve selection context");
+            }
+            if (toolbar.includes("binder.add(")) fail("binder.add typo still present");
+            if (!toolbar.includes("insideReaderShell")) fail("reader shell blank-tap arbitration missing");
+
+            const css = read("src/styles/epub/zora-lookup.css");
+            if (css.includes("Mobile Bottom Sheet Adaptations")) fail("old bottom-sheet CSS still present");
+            if (!css.includes("position: fixed !important")) fail("mobile fixed card CSS missing");
+            if (css.includes("transform: none !important")) fail("drag-killing transform override still present");
+
+            for (const info of popovers) {
+              const p = read(info.path);
+              if (!p.includes("ontouchstart={draggable.handleHeaderPointerDown}")) {
+                fail(`${info.path}: explicit touchstart missing`);
+              }
+              const mountStart = p.indexOf("  onMount(() => {");
+              const mountEnd = p.indexOf(info.afterMount, mountStart);
+              const mountText = p.slice(mountStart, mountEnd);
+              if (mountText.includes('addEventListener("touchstart", handlePointerDown')) {
+                fail(`${info.path}: mobile document touchstart outside-close still present`);
+              }
+              if (!mountText.includes("activeDocument.body.appendChild(popoverEl)")) {
+                fail(`${info.path}: mobile body portal missing`);
+              }
+            }
+          }
+
+          console.log("v0.2.12 hotfix applied and source invariants passed.");
+          NODE
+
+          node /tmp/zora-hotfix.cjs
+          git diff --check
+          git diff --stat
+
+      - name: Targeted mobile tests
+        run: |
+          npx vitest run \
+            src/components/epub/__tests__/mobile-selection-ux.test.ts \
+            src/components/epub/__tests__/zora-draggable.test.ts \
+            src/components/epub/__tests__/mobile-direct-selection.test.ts
+
+      - name: Full test suite
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+      - name: Verify release assets
+        run: npm run verify:release
+
+      - name: Commit tested hotfix
+        id: commit
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "Zora Hotfix Action"
+          git config user.email "zora-hotfix@users.noreply.github.com"
+
+          git add \
+            src/components/epub/SelectionToolbar.svelte \
+            src/components/epub/toolbar-positioning.ts \
+            src/components/epub/zora-draggable.ts \
+            src/components/epub/SelectionDictionaryPopover.svelte \
+            src/components/epub/SelectionComprehensionPopover.svelte \
+            src/components/epub/SelectionGrammarPopover.svelte \
+            src/components/epub/SelectionNotePopover.svelte \
+            src/components/epub/__tests__/mobile-selection-ux.test.ts \
+            src/styles/epub/zora-lookup.css \
+            manifest.json package.json package-lock.json versions.json
+
+          git diff --cached --check
+
+          if git diff --cached --quiet; then
+            echo "::error::No hotfix changes staged."
+            exit 1
+          fi
+
+          git commit -m "fix(mobile): stabilize selection dismissal and iOS popovers"
+          NEW_SHA="$(git rev-parse HEAD)"
+          echo "sha=$NEW_SHA" >> "$GITHUB_OUTPUT"
+
+          git push origin HEAD:personal
+          git tag -a v0.2.12 -m "Zora Reader v0.2.12"
+          git push origin refs/tags/v0.2.12
+
+      - name: Package v0.2.12 release
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp dist/main.js dist/manifest.json dist/styles.css ./
+          zip -q zora-reader-v0.2.12.zip \
+            main.js manifest.json styles.css LICENSE NOTICE.md
+
+      - name: Publish v0.2.12 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create v0.2.12 \
+            main.js \
+            manifest.json \
+            styles.css \
+            zora-reader-v0.2.12.zip \
+            --target "${{ steps.commit.outputs.sha }}" \
+            --title "Zora Reader v0.2.12" \
+            --notes "iPhone mobile hotfix: reliable selection dismissal, visualViewport-correct popover positioning, internal touch scrolling, and draggable existing Zora popovers."
