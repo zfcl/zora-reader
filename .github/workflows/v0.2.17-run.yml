@@ -1,0 +1,82 @@
+name: Run Zora v0.2.17 release patch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/v0.2.17-run.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact v0.2.16-based branch
+        uses: actions/checkout@v4
+        with:
+          ref: release/v0.2.17
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Apply focused patch
+        run: |
+          git fetch origin main
+          git show origin/main:scripts/v0.2.17-patch.py > /tmp/v0.2.17-patch.py
+          python3 /tmp/v0.2.17-patch.py
+          npm version 0.2.17 --no-git-tag-version
+          git diff --check
+          git diff --stat
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type and Svelte check
+        run: npm run check
+
+      - name: Unit tests
+        run: node scripts/ci-run-tests.cjs
+
+      - name: Build release
+        run: node scripts/ci-run-build.cjs
+
+      - name: Verify release assets
+        run: npm run verify:release
+
+      - name: Commit and push release branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/components/epub/sentence-selection.ts \
+                  src/components/epub/SelectionToolbar.svelte \
+                  src/components/epub/SelectionDictionaryPopover.svelte \
+                  src/services/ai/zora/zora-study-note-service.ts \
+                  src/services/epub/reader-annotation-overlayer.ts \
+                  manifest.json package.json package-lock.json
+          git commit -m 'fix: mobile note markers and selection behavior for v0.2.17'
+          git push origin HEAD:release/v0.2.17
+
+      - name: Tag release
+        run: |
+          git tag -a v0.2.17 -m 'Zora Reader v0.2.17'
+          git push origin v0.2.17
+
+      - name: Prepare release files
+        run: |
+          cp dist/main.js dist/manifest.json dist/styles.css ./
+          zip zora-reader-v0.2.17.zip main.js manifest.json styles.css LICENSE NOTICE.md
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v0.2.17 \
+            main.js manifest.json styles.css zora-reader-v0.2.17.zip \
+            --title 'Zora Reader v0.2.17' \
+            --notes $'v0.2.17\n\n- 修复 iOS 右下角读书笔记记号触控区域被裁切、难以点击的问题。\n- 翻译弹窗“添加到外文笔记”现在会生成蓝色读书笔记记号，并按 excerpt id 精确刷新；普通读书笔记继续保持紫色。\n- 手机端在选区前后已接近句子边界时自动精确吸附完整句子；偏差过大时保持用户原选区。\n- 修复手机点空白取消选中时，多个悬浮 UI 可能先闪到顶部再消失的竞态。\n- 未主动改动其他阅读器功能。'
