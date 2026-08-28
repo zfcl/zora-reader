@@ -41,7 +41,12 @@ jobs:
           '''
           if old not in text:
               raise SystemExit('overlay patch fixup target missing')
-          p.write_text(text.replace(old, '', 1), encoding='utf-8')
+          text = text.replace(old, '', 1)
+          text = text.replace('color && color !== "purple"', 'color === "blue"', 1)
+          text = text.replace('? this.ports.resolveHighlightTint(color)', '? this.ports.resolveHighlightTint("blue")', 1)
+          text = text.replace('annotation.color && annotation.color !== "purple"', 'annotation.color === "blue"')
+          text = text.replace('? this.ports.resolveHighlightTint(annotation.color)', '? this.ports.resolveHighlightTint("blue")', 1)
+          p.write_text(text, encoding='utf-8')
           PY
           python3 /tmp/v0.2.17-patch2.py
           npm version 0.2.17 --no-git-tag-version
