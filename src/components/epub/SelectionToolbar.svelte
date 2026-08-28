@@ -132,6 +132,7 @@ import type { ReaderAnchorPoint, ReaderViewportRect } from '../../services/epub/
 	let pendingCollapsedHideTimer: ReturnType<typeof setTimeout> | null = null;
 	let mobileSelectionDismissBlocked = false;
 	let mobileSelectionDismissTimer: ReturnType<typeof setTimeout> | null = null;
+	let mobileExternalSelectionCooldownUntil = 0;
 	let activeCustomRange: Range | null = null;
 	let activeCustomGeometry: { rect: DOMRect; rects: DOMRect[]; anchorPoint?: ReaderAnchorPoint } | null = null;
 	let activeInitialWordRange: Range | null = null;
@@ -166,6 +167,7 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 	function beginMobileSelectionDismiss() {
 		if (!isMobileToolbar) return;
 		mobileSelectionDismissBlocked = true;
+		mobileExternalSelectionCooldownUntil = Date.now() + 420;
 		clearPendingSync();
 		clearPendingExternalSelectionHide();
 		clearPendingCollapsedHide();
@@ -175,7 +177,7 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 		mobileSelectionDismissTimer = setTimeout(() => {
 			mobileSelectionDismissTimer = null;
 			mobileSelectionDismissBlocked = false;
-		}, 180);
+		}, 420);
 	}
 
 	function icon(node: HTMLElement, name: string) {
@@ -959,7 +961,10 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 			}
 
 			iframeDoc = iframeWindow.document;
-			if (isMobileToolbar && mobileSelectionDismissBlocked) {
+			if (
+				isMobileToolbar &&
+				(mobileSelectionDismissBlocked || Date.now() < mobileExternalSelectionCooldownUntil)
+			) {
 				return;
 			}
 			const selection = iframeWindow.getSelection();
@@ -1079,6 +1084,12 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 		});
 
 		const offSelection = currentReaderService.onSelectionChange(({ cfiRange, frame }) => {
+			if (
+				isMobileToolbar &&
+				(externalSelection || mobileSelectionDismissBlocked || Date.now() < mobileExternalSelectionCooldownUntil)
+			) {
+				return;
+			}
 			void syncSelection(frame, cfiRange);
 		});
 		const offHighlightClick = currentReaderService.onHighlightClick(() => {
@@ -1110,6 +1121,9 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 
 	$effect(() => {
 		const selection = externalSelection;
+		if (isMobileToolbar) {
+			mobileExternalSelectionCooldownUntil = Date.now() + 420;
+		}
 		if (isMobileToolbar && mobileSelectionDismissBlocked) {
 			untrack(() => hideToolbar());
 			return;
@@ -1203,6 +1217,7 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 				mobileSelectionDismissTimer = null;
 			}
 			mobileSelectionDismissBlocked = false;
+			mobileExternalSelectionCooldownUntil = 0;
 		};
 	});
 </script>

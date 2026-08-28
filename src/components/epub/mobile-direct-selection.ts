@@ -1,5 +1,6 @@
 import type { ReaderFrame } from '../../services/epub/reader-engine-types';
 import { logMobileEvent } from '../../utils/zora-mobile-logger';
+import { snapRangeToSentenceIfClose } from './sentence-selection';
 
 /**
  * Realm-safe Text node check (avoids `node instanceof window.Text` failing across iframe boundaries).
@@ -1453,13 +1454,18 @@ export class MobileDirectSelectionController {
 
 				// Drag selection completion
 				if (this.isDragging && this.currentRange && !this.currentRange.collapsed) {
-					const text = this.currentRange.toString();
-					const cfiRange = frame.cfiFromRange ? frame.cfiFromRange(this.currentRange) : null;
-					if (cfiRange && text.trim().length > 0) {
+					const snapped = snapRangeToSentenceIfClose(this.currentRange, doc);
+					const finalRange = snapped?.range ?? this.currentRange;
+					const text = (snapped?.text ?? finalRange.toString()).trim();
+					const cfiRange = frame.cfiFromRange ? frame.cfiFromRange(finalRange) : null;
+					if (cfiRange && text.length > 0) {
+						if (snapped) {
+							overlay.render(finalRange);
+						}
 						const iframe = (doc.defaultView?.frameElement as HTMLElement) || null;
 						const iframeRect = iframe?.getBoundingClientRect() || { left: 0, top: 0 };
-						const bRect = typeof this.currentRange.getBoundingClientRect === 'function'
-							? this.currentRange.getBoundingClientRect()
+						const bRect = typeof finalRange.getBoundingClientRect === 'function'
+							? finalRange.getBoundingClientRect()
 							: new DOMRect(0, 0, 0, 0);
 						const adjustedRect = new DOMRect(
 							bRect.left + iframeRect.left,
@@ -1468,8 +1474,8 @@ export class MobileDirectSelectionController {
 							bRect.height
 						);
 
-						const rawRects = typeof this.currentRange.getClientRects === 'function'
-							? Array.from(this.currentRange.getClientRects())
+						const rawRects = typeof finalRange.getClientRects === 'function'
+							? Array.from(finalRange.getClientRects())
 							: [adjustedRect];
 						const adjustedRects = rawRects.map(
 							(r) =>
@@ -1483,7 +1489,7 @@ export class MobileDirectSelectionController {
 
 						this.activeSelection = {
 							source: 'mobile-direct',
-							range: this.currentRange,
+							range: finalRange,
 							text,
 							cfiRange,
 							rect: adjustedRect,

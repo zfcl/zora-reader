@@ -332,13 +332,20 @@ export function expandRangeToSentence(
 export function snapRangeToSentenceIfClose(
 	range: Range,
 	doc: Document,
-	options?: { maxEdgeChars?: number; maxTotalChars?: number }
+	options?: {
+		maxEdgeChars?: number;
+		maxTotalChars?: number;
+		minCoverage?: number;
+		maxExpansionChars?: number;
+	}
 ): { range: Range; text: string } | null {
 	if (!range || !doc || range.collapsed) {
 		return null;
 	}
 	const originalText = range.toString().trim();
-	if (originalText.length < 12 || !/\s/u.test(originalText)) {
+	// A tap/word selection must remain a word. Sentence snapping is only for a
+	// deliberate multi-word drag selection.
+	if (originalText.length < 8 || !/\s/u.test(originalText)) {
 		return null;
 	}
 	const expanded = expandRangeToSentence(range, doc);
@@ -355,13 +362,20 @@ export function snapRangeToSentenceIfClose(
 		const compactLength = (value: string) => value.replace(/\s+/gu, " ").trim().length;
 		const leadingChars = compactLength(leading.toString());
 		const trailingChars = compactLength(trailing.toString());
-		const maxEdgeChars = Math.max(1, options?.maxEdgeChars ?? 12);
-		const maxTotalChars = Math.max(maxEdgeChars, options?.maxTotalChars ?? 18);
-		if (
-			leadingChars > maxEdgeChars ||
-			trailingChars > maxEdgeChars ||
-			leadingChars + trailingChars > maxTotalChars
-		) {
+		const selectedChars = compactLength(originalText);
+		const sentenceChars = Math.max(1, compactLength(expanded.text));
+		const addedChars = leadingChars + trailingChars;
+		const coverage = selectedChars / sentenceChars;
+		const maxEdgeChars = Math.max(1, options?.maxEdgeChars ?? 28);
+		const maxTotalChars = Math.max(maxEdgeChars, options?.maxTotalChars ?? 48);
+		const minCoverage = Math.max(0.2, Math.min(0.95, options?.minCoverage ?? 0.45));
+		const maxExpansionChars = Math.max(maxTotalChars, options?.maxExpansionChars ?? 96);
+		const closeEnough =
+			leadingChars <= maxEdgeChars &&
+			trailingChars <= maxEdgeChars &&
+			addedChars <= maxTotalChars;
+		const coversEnoughOfSentence = coverage >= minCoverage && addedChars <= maxExpansionChars;
+		if (!closeEnough && !coversEnoughOfSentence) {
 			return null;
 		}
 		return expanded;

@@ -6,7 +6,7 @@
 	import type { EpubReaderEngine, HighlightClickInfo } from '../../services/epub';
 	import {
 		computeToolbarPosition,
-		computeMobilePopoverCenterPosition,
+		getMobileSafeBounds,
 		createEventBinder,
 		isEventOutsideToolbar,
 		resolveMobileFloatingInsetBottom,
@@ -59,6 +59,7 @@
 	let arrowOffset = $state(0);
 	let teardownOutsidePointerTracking: (() => void) | null = null;
 	let teardownViewportTracking: (() => void) | null = null;
+	let positionReady = $state(false);
 
 	const colors = ['yellow', 'blue', 'red', 'purple', 'green'] as const;
 	let colorLabels = $derived.by<Record<(typeof colors)[number], string>>(() => ({
@@ -71,6 +72,11 @@
 	const isMobileToolbar = Platform.isMobile
 		|| activeDocument.body.classList.contains('is-mobile')
 		|| activeDocument.body.classList.contains('is-phone');
+
+	function clampNumber(value: number, min: number, max: number): number {
+		if (max < min) return min;
+		return Math.min(Math.max(value, min), max);
+	}
 
 	function icon(node: HTMLElement, name: string) {
 		setIcon(node, name);
@@ -182,9 +188,11 @@
 			stopViewportTracking();
 			toolbarMode = 'floating';
 			arrowOffset = 0;
+			positionReady = false;
 			return;
 		}
 
+		positionReady = false;
 		await tick();
 		if (!toolbarEl || info !== currentInfo) return;
 
@@ -194,22 +202,60 @@
 		if (!viewportEl) return;
 
 		startViewportTracking();
-		const shouldCenterNoteActions = isMobileToolbar && Boolean(
+		const shouldAnchorNoteActions = isMobileToolbar && Boolean(
 			currentInfo.style === 'reading-note' || currentInfo.sourceLocators?.length
 		);
-		if (shouldCenterNoteActions) {
-			toolbarMode = 'centered';
+		if (shouldAnchorNoteActions) {
+			toolbarMode = 'floating';
 			await tick();
 			if (!toolbarEl || info !== currentInfo) return;
-			const centered = computeMobilePopoverCenterPosition(
-				toolbarEl.offsetWidth || 296,
-				toolbarEl.offsetHeight || 78,
-				viewportEl
+
+			const containerRect = viewportEl.getBoundingClientRect();
+			const safeBounds = getMobileSafeBounds(viewportEl);
+			const width = toolbarEl.offsetWidth || 296;
+			const height = toolbarEl.offsetHeight || 78;
+			const gap = 10;
+			const edgeMargin = 12;
+			const bottomClearance = resolveMobileFloatingInsetBottom(mobileDockBottomOffset);
+			const safeLeft = Math.max(edgeMargin, safeBounds.minLeft - containerRect.left);
+			const safeRight = Math.min(
+				viewportEl.clientWidth - edgeMargin,
+				safeBounds.maxRight - containerRect.left
 			);
-			posTop = centered.top;
-			posLeft = centered.left;
-			isBelowTarget = false;
-			arrowOffset = 0;
+			const safeTop = Math.max(edgeMargin, safeBounds.minTop - containerRect.top);
+			const safeBottom = Math.min(
+				viewportEl.clientHeight - edgeMargin - bottomClearance,
+				safeBounds.maxBottom - containerRect.top - bottomClearance
+			);
+			const markerRect = {
+				top: currentInfo.rect.top - containerRect.top,
+				left: currentInfo.rect.left - containerRect.left,
+				bottom: currentInfo.rect.bottom - containerRect.top,
+				right: currentInfo.rect.right - containerRect.left,
+				width: currentInfo.rect.width,
+				height: currentInfo.rect.height,
+			};
+			const anchorX = currentInfo.anchorPoint
+				? currentInfo.anchorPoint.x - containerRect.left
+				: markerRect.left + markerRect.width / 2;
+			const spaceAbove = markerRect.top - safeTop - gap;
+			const spaceBelow = safeBottom - markerRect.bottom - gap;
+			const placeBelow = spaceAbove >= height
+				? false
+				: spaceBelow >= height
+					? true
+					: spaceBelow > spaceAbove;
+			const desiredTop = placeBelow
+				? markerRect.bottom + gap
+				: markerRect.top - height - gap;
+			const maxLeft = Math.max(safeLeft, safeRight - width);
+			const maxTop = Math.max(safeTop, safeBottom - height);
+			posLeft = Math.round(clampNumber(anchorX - width / 2, safeLeft, maxLeft));
+			posTop = Math.round(clampNumber(desiredTop, safeTop, maxTop));
+			isBelowTarget = placeBelow;
+			const arrowLimit = Math.max(0, width / 2 - 18);
+			arrowOffset = clampNumber(anchorX - (posLeft + width / 2), -arrowLimit, arrowLimit);
+			positionReady = true;
 			return;
 		}
 
@@ -246,6 +292,7 @@
 		posLeft = position.left;
 		isBelowTarget = position.isBelowAnchor;
 		arrowOffset = position.arrowOffset;
+		positionReady = true;
 	}
 
 	function handleClickOutside(e: Event) {
@@ -291,12 +338,16 @@
 		});
 
 		if (currentInfo) {
+			untrack(() => {
+				positionReady = false;
+			});
 			void positionToolbar();
 		} else {
 			untrack(() => {
 				stopViewportTracking();
 				toolbarMode = 'floating';
 				arrowOffset = 0;
+				positionReady = false;
 			});
 		}
 
@@ -311,7 +362,7 @@
 
 <div
 	class="epub-highlight-toolbar epub-glass-panel"
-	class:visible={info !== null}
+	class:visible={info !== null && positionReady}
 	class:below-target={isBelowTarget}
 	class:mobile-docked={toolbarMode === 'docked'}
 	class:mobile-centered={toolbarMode === 'centered'}
