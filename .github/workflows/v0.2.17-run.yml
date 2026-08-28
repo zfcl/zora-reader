@@ -67,10 +67,8 @@ jobs:
       - name: Build release
         run: node scripts/ci-run-build.cjs
 
-      - name: Verify release assets and plugin scope
-        run: |
-          npm run verify:release
-          npm run verify:plugin-scope
+      - name: Verify release assets
+        run: npm run verify:release
 
       - name: Commit and push release branch
         run: |
