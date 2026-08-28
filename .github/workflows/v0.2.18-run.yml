@@ -1,0 +1,104 @@
+name: Run Zora v0.2.18 release patch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/v0.2.18-run.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact v0.2.17-based branch
+        uses: actions/checkout@v4
+        with:
+          ref: release/v0.2.18
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Apply focused v0.2.18 patch
+        run: |
+          git fetch origin main
+          git show origin/main:scripts/v0.2.18-patch.py > /tmp/v0.2.18-patch.py
+          python3 /tmp/v0.2.18-patch.py
+          npm version 0.2.18 --no-git-tag-version
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('versions.json')
+          data = json.loads(p.read_text(encoding='utf-8'))
+          data['0.2.18'] = '1.11.4'
+          p.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          PY
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          mobile = Path('src/components/epub/mobile-direct-selection.ts').read_text(encoding='utf-8')
+          selection = Path('src/components/epub/SelectionToolbar.svelte').read_text(encoding='utf-8')
+          highlight = Path('src/components/epub/EpubHighlightToolbar.svelte').read_text(encoding='utf-8')
+          sentence = Path('src/components/epub/sentence-selection.ts').read_text(encoding='utf-8')
+          checks = {
+              'mobile drag sentence snap': 'snapRangeToSentenceIfClose(this.currentRange, doc)' in mobile,
+              'snapped range drives CFI': 'frame.cfiFromRange(finalRange)' in mobile,
+              'mobile stale-selection cooldown': 'mobileExternalSelectionCooldownUntil' in selection,
+              'note toolbar hidden until positioned': 'class:visible={info !== null && positionReady}' in highlight,
+              'note toolbar anchored to marker': 'shouldAnchorNoteActions' in highlight and 'markerRect' in highlight,
+              'legacy forced center removed': 'shouldCenterNoteActions' not in highlight,
+              'coverage-based sentence snap': 'coversEnoughOfSentence' in sentence,
+          }
+          failed = [name for name, ok in checks.items() if not ok]
+          for name, ok in checks.items():
+              print(f"[v0.2.18-check] {'PASS' if ok else 'FAIL'} {name}")
+          if failed:
+              raise SystemExit('Focused patch verification failed: ' + ', '.join(failed))
+          PY
+          git diff --stat
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Production build
+        run: node scripts/ci-run-build.cjs
+
+      - name: Verify release assets
+        run: npm run verify:release
+
+      - name: Commit and push release branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/components/epub/sentence-selection.ts \
+                  src/components/epub/mobile-direct-selection.ts \
+                  src/components/epub/SelectionToolbar.svelte \
+                  src/components/epub/EpubHighlightToolbar.svelte \
+                  manifest.json package.json package-lock.json versions.json
+          git commit -m 'fix: mobile selection and note popover positioning for v0.2.18'
+          git push origin HEAD:release/v0.2.18
+
+      - name: Tag release
+        run: |
+          git tag -a v0.2.18 -m 'Zora Reader v0.2.18'
+          git push origin v0.2.18
+
+      - name: Prepare release files
+        run: |
+          cp dist/main.js dist/manifest.json dist/styles.css ./
+          zip zora-reader-v0.2.18.zip main.js manifest.json styles.css LICENSE NOTICE.md
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v0.2.18 \
+            main.js manifest.json styles.css zora-reader-v0.2.18.zip \
+            --title 'Zora Reader v0.2.18' \
+            --notes $'v0.2.18\n\n- 修复手机拖选后的完整句子吸附：现在在移动端直接选区完成阶段就规范化 Range，并同步更新 CFI、选区覆盖层和后续操作文本。\n- 放宽但限制句子吸附判定：多词选区只要已覆盖句子主体或距离句首句尾足够近就自动补全，短词/低覆盖选区不会误扩整句。\n- 修复点空白取消选中后，残留 selection 事件可能重新唤起悬浮工具栏并在顶部闪一下的问题；移动端直接选区切换/清除期间加入明确冷却屏障。\n- 读书笔记记号操作浮窗不再固定居中：优先贴近记号上方，空间不足自动放到下方，并限制在 visual viewport、Obsidian 工作区安全区和底部导航之内。\n- 悬浮工具栏在实际定位完成前保持隐藏，避免默认 top:0/left:0 的首帧闪烁。\n- 未主动改动其他阅读器功能。'
