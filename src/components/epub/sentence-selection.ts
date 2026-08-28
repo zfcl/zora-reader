@@ -329,6 +329,47 @@ export function expandRangeToSentence(
 	}
 }
 
+export function snapRangeToSentenceIfClose(
+	range: Range,
+	doc: Document,
+	options?: { maxEdgeChars?: number; maxTotalChars?: number }
+): { range: Range; text: string } | null {
+	if (!range || !doc || range.collapsed) {
+		return null;
+	}
+	const originalText = range.toString().trim();
+	if (originalText.length < 12 || !/\s/u.test(originalText)) {
+		return null;
+	}
+	const expanded = expandRangeToSentence(range, doc);
+	if (!expanded || !expanded.text || expanded.text === originalText) {
+		return null;
+	}
+	try {
+		const leading = doc.createRange();
+		leading.setStart(expanded.range.startContainer, expanded.range.startOffset);
+		leading.setEnd(range.startContainer, range.startOffset);
+		const trailing = doc.createRange();
+		trailing.setStart(range.endContainer, range.endOffset);
+		trailing.setEnd(expanded.range.endContainer, expanded.range.endOffset);
+		const compactLength = (value: string) => value.replace(/\s+/gu, " ").trim().length;
+		const leadingChars = compactLength(leading.toString());
+		const trailingChars = compactLength(trailing.toString());
+		const maxEdgeChars = Math.max(1, options?.maxEdgeChars ?? 12);
+		const maxTotalChars = Math.max(maxEdgeChars, options?.maxTotalChars ?? 18);
+		if (
+			leadingChars > maxEdgeChars ||
+			trailingChars > maxEdgeChars ||
+			leadingChars + trailingChars > maxTotalChars
+		) {
+			return null;
+		}
+		return expanded;
+	} catch {
+		return null;
+	}
+}
+
 export function expandRangeToParagraph(
 	range: Range,
 	doc: Document

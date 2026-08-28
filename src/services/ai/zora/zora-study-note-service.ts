@@ -154,10 +154,10 @@ export async function appendStudyNoteEntry(
   return filePath;
 }
 
-export async function appendVocabularyStudyNote(
+export async function appendVocabularyStudyNoteWithLocator(
   app: App,
   input: StudyNoteVocabularyInput
-): Promise<string> {
+): Promise<{ path: string; filePath: string; blockId: string }> {
   const deepLink = buildEpubDeepLink(input.bookPath, input.cfiRange, input.chapterIndex);
   const blockId = Math.random().toString(36).substring(2, 8);
   const encodedCfi = EpubLinkService.encodeCfiForWikilink(input.cfiRange);
@@ -171,7 +171,7 @@ export async function appendVocabularyStudyNote(
       : "";
 
   const lines = [
-    `> [!EPUB|purple+reading-note]- [[${input.bookPath}#weave-cfi=${encodedCfi}&eid=${blockId}|${title}]]`,
+    `> [!EPUB|blue+reading-note]- [[${input.bookPath}#weave-cfi=${encodedCfi}&eid=${blockId}|${title}]]`,
     `> ${input.word.trim()}`,
     `> <!-- div -->`,
   ];
@@ -191,7 +191,15 @@ export async function appendVocabularyStudyNote(
   lines.push(`> [↗ 回到原文](${deepLink})`);
   lines.push(`^${blockId}`);
 
-  return appendStudyNoteEntry(app, input.bookTitle, "词义", lines.join("\n"));
+  const filePath = await appendStudyNoteEntry(app, input.bookTitle, "词义", lines.join("\n"));
+  return { path: filePath, filePath, blockId };
+}
+
+export async function appendVocabularyStudyNote(
+  app: App,
+  input: StudyNoteVocabularyInput
+): Promise<string> {
+  return (await appendVocabularyStudyNoteWithLocator(app, input)).filePath;
 }
 
 export async function appendGrammarStudyNote(

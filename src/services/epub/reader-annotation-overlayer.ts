@@ -261,7 +261,7 @@ export class ReaderAnnotationOverlayRenderer {
 					);
 				}
 			} else {
-				group.appendChild(this.createReadingNoteHintOverlay(rects));
+				group.appendChild(this.createReadingNoteHintOverlay(rects, annotation.color));
 			}
 			group.appendChild(this.createNoteMarkerOverlay(annotation, rects));
 		} else if (annotation.style) {
@@ -290,10 +290,12 @@ export class ReaderAnnotationOverlayRenderer {
 		return group;
 	}
 
-	createReadingNoteHintOverlay(rects: unknown[]): SVGElement {
+	createReadingNoteHintOverlay(rects: unknown[], color?: string): SVGElement {
 		const group = activeDocument.createElementNS(SVG_NS, "g");
 		group.setAttribute("data-zora-reading-note-hint", "group");
-		const purpleColor = "#8b5cf6";
+		const noteColor = color === "blue"
+			? this.ports.resolveHighlightTint("blue")
+			: "#8b5cf6";
 		for (const rect of rects as RawViewportRect[]) {
 			if (rect.width <= 0 || rect.height <= 0) {
 				continue;
@@ -306,7 +308,7 @@ export class ReaderAnnotationOverlayRenderer {
 			bg.setAttribute("height", String(rect.height));
 			bg.setAttribute("rx", "2");
 			bg.setAttribute("ry", "2");
-			bg.setAttribute("fill", purpleColor);
+			bg.setAttribute("fill", noteColor);
 			bg.setAttribute("fill-opacity", "0.08");
 			setSvgInteractionAttributes(bg, { pointerEvents: "none" });
 			group.appendChild(bg);
@@ -407,7 +409,7 @@ export class ReaderAnnotationOverlayRenderer {
 		const anchorRect = createViewportRectFromRawRectList(rectList);
 
 		const size = 8;
-		const hitSize = 18;
+		const hitSize = 26;
 		const cornerRadius = 2.0;
 
 		const position = computeNoteMarkerPosition(rectList, size, options);
@@ -418,8 +420,12 @@ export class ReaderAnnotationOverlayRenderer {
 		const markerX = position.x;
 		const markerY = position.y;
 
-		const purpleColor = "#8b5cf6";
-		const purpleBorder = "#7c3aed";
+		const markerColor = annotation.color === "blue"
+			? this.ports.resolveHighlightTint("blue")
+			: "#8b5cf6";
+		const markerBorder = annotation.color === "blue"
+			? markerColor
+			: "#7c3aed";
 		const fillColor = "#ffffff";
 
 		const badge = activeDocument.createElementNS(SVG_NS, "rect");
@@ -430,8 +436,8 @@ export class ReaderAnnotationOverlayRenderer {
 		badge.setAttribute("height", String(size));
 		badge.setAttribute("rx", String(cornerRadius));
 		badge.setAttribute("ry", String(cornerRadius));
-		badge.setAttribute("fill", purpleColor);
-		badge.setAttribute("stroke", purpleBorder);
+		badge.setAttribute("fill", markerColor);
+		badge.setAttribute("stroke", markerBorder);
 		badge.setAttribute("stroke-width", "0.75");
 		setSvgInteractionAttributes(badge, { pointerEvents: "none" });
 
@@ -454,12 +460,30 @@ export class ReaderAnnotationOverlayRenderer {
 		setSvgInteractionAttributes(icon, { pointerEvents: "none" });
 
 		const hitOffset = (hitSize - size) / 2;
+		const viewportWidth = Math.max(
+			0,
+			options?.viewportBounds?.width ?? activeDocument.documentElement?.clientWidth ?? 0
+		);
+		const viewportHeight = Math.max(
+			0,
+			options?.viewportBounds?.height ?? activeDocument.documentElement?.clientHeight ?? 0
+		);
+		const hitWidth = viewportWidth > 0 ? Math.min(hitSize, viewportWidth) : hitSize;
+		const hitHeight = viewportHeight > 0 ? Math.min(hitSize, viewportHeight) : hitSize;
+		const desiredHitX = markerX - hitOffset;
+		const desiredHitY = markerY - hitOffset;
+		const hitX = viewportWidth > 0
+			? Math.max(0, Math.min(desiredHitX, Math.max(0, viewportWidth - hitWidth)))
+			: desiredHitX;
+		const hitY = viewportHeight > 0
+			? Math.max(0, Math.min(desiredHitY, Math.max(0, viewportHeight - hitHeight)))
+			: desiredHitY;
 		const hitArea = activeDocument.createElementNS(SVG_NS, "rect");
 		hitArea.setAttribute("data-zora-note-marker", "hit-area");
-		hitArea.setAttribute("x", String(markerX - hitOffset));
-		hitArea.setAttribute("y", String(markerY - hitOffset));
-		hitArea.setAttribute("width", String(hitSize));
-		hitArea.setAttribute("height", String(hitSize));
+		hitArea.setAttribute("x", String(hitX));
+		hitArea.setAttribute("y", String(hitY));
+		hitArea.setAttribute("width", String(hitWidth));
+		hitArea.setAttribute("height", String(hitHeight));
 		hitArea.setAttribute("rx", String(cornerRadius + 1.5));
 		hitArea.setAttribute("ry", String(cornerRadius + 1.5));
 		hitArea.setAttribute("fill", "#000000");

@@ -32,7 +32,7 @@ import type { ReaderAnchorPoint, ReaderViewportRect } from '../../services/epub/
 		shouldDismissToolbarOnPointerDown,
 		resolveMobileFloatingInsetBottom,
 	} from './toolbar-positioning';
-	import { expandRangeToSentence, expandRangeToParagraph } from './sentence-selection';
+	import { expandRangeToSentence, expandRangeToParagraph, snapRangeToSentenceIfClose } from './sentence-selection';
 	import { extractWordRangeFromTextNode } from './mobile-tap-selection';
 	import {
 		dismissSelectionUiFirst,
@@ -130,6 +130,8 @@ import type { ReaderAnchorPoint, ReaderViewportRect } from '../../services/epub/
 	let pendingExternalSelectionHideFrame: number | null = null;
 	let activeToolbarMenu: Menu | null = null;
 	let pendingCollapsedHideTimer: ReturnType<typeof setTimeout> | null = null;
+	let mobileSelectionDismissBlocked = false;
+	let mobileSelectionDismissTimer: ReturnType<typeof setTimeout> | null = null;
 	let activeCustomRange: Range | null = null;
 	let activeCustomGeometry: { rect: DOMRect; rects: DOMRect[]; anchorPoint?: ReaderAnchorPoint } | null = null;
 	let activeInitialWordRange: Range | null = null;
@@ -159,6 +161,21 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 			clearTimeout(pendingCollapsedHideTimer);
 			pendingCollapsedHideTimer = null;
 		}
+	}
+
+	function beginMobileSelectionDismiss() {
+		if (!isMobileToolbar) return;
+		mobileSelectionDismissBlocked = true;
+		clearPendingSync();
+		clearPendingExternalSelectionHide();
+		clearPendingCollapsedHide();
+		if (mobileSelectionDismissTimer !== null) {
+			clearTimeout(mobileSelectionDismissTimer);
+		}
+		mobileSelectionDismissTimer = setTimeout(() => {
+			mobileSelectionDismissTimer = null;
+			mobileSelectionDismissBlocked = false;
+		}, 180);
 	}
 
 	function icon(node: HTMLElement, name: string) {
@@ -344,6 +361,7 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 	}
 
 	function clearAndHide() {
+		beginMobileSelectionDismiss();
 		clearPendingCollapsedHide();
 		const clearSelection = activeClearSelection || externalSelection?.clear || null;
 		dismissSelectionUiFirst({
@@ -543,8 +561,8 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 		await onReadingNoteSaved?.(info.filePath, info.blockId);
 	}
 
-	async function handleStudyNoteSaved(sourcePath: string) {
-		await onReadingNoteSaved?.(sourcePath);
+	async function handleStudyNoteSaved(sourcePath: string, excerptId?: string) {
+		await onReadingNoteSaved?.(sourcePath, excerptId);
 	}
 
 	function closePopover() {
@@ -847,17 +865,19 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 		anchorPoint?: ReaderAnchorPoint
 	) {
 		updateMobileBottomClearance();
-		isVisible = true;
-		await tick();
-
 		if (isMobileToolbar) {
 			toolbarMode = 'docked';
 			posTop = 0;
 			posLeft = 0;
 			isBelowSelection = false;
 			arrowOffset = 0;
+			isVisible = true;
+			await tick();
 			return;
 		}
+
+		isVisible = true;
+		await tick();
 
 		const containerRect = containerEl.getBoundingClientRect();
 		const toRelativeRect = (rect: DOMRect) => ({
@@ -939,6 +959,9 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 			}
 
 			iframeDoc = iframeWindow.document;
+			if (isMobileToolbar && mobileSelectionDismissBlocked) {
+				return;
+			}
 			const selection = iframeWindow.getSelection();
 			if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
 				if (isMobileToolbar) {
@@ -961,7 +984,7 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 			}
 			clearPendingCollapsedHide();
 
-			const text = selection.toString().trim();
+			let text = selection.toString().trim();
 			if (!text) {
 				if (isMobileToolbar) {
 					clearPendingCollapsedHide();
@@ -980,8 +1003,21 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 				return;
 			}
 
-			const range = selection.getRangeAt(0);
-			const resolvedCfiRange = cfiRange || frame.cfiFromRange(range);
+			let range = selection.getRangeAt(0);
+			let snappedToSentence = false;
+			if (isMobileToolbar) {
+				const snapped = snapRangeToSentenceIfClose(range, iframeDoc);
+				if (snapped) {
+					selection.removeAllRanges();
+					selection.addRange(snapped.range);
+					range = snapped.range;
+					text = snapped.text;
+					snappedToSentence = true;
+				}
+			}
+			const resolvedCfiRange = snappedToSentence
+				? frame.cfiFromRange(range)
+				: (cfiRange || frame.cfiFromRange(range));
 			if (!resolvedCfiRange) {
 				if (!repositionOnly) {
 					hideToolbar();
@@ -1074,6 +1110,10 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 
 	$effect(() => {
 		const selection = externalSelection;
+		if (isMobileToolbar && mobileSelectionDismissBlocked) {
+			untrack(() => hideToolbar());
+			return;
+		}
 		if (!selection) {
 			if (isMobileToolbar) {
 				clearPendingExternalSelectionHide();
@@ -1158,6 +1198,11 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 			clearPendingSync();
 			clearPendingExternalSelectionHide();
 			clearPendingCollapsedHide();
+			if (mobileSelectionDismissTimer !== null) {
+				clearTimeout(mobileSelectionDismissTimer);
+				mobileSelectionDismissTimer = null;
+			}
+			mobileSelectionDismissBlocked = false;
 		};
 	});
 </script>

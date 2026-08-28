@@ -6,7 +6,7 @@
   import type { ReaderAnchorPoint, ReaderViewportRect } from "../../services/epub/reader-engine-types";
   import type { TranslationResult } from "../../services/ai/zora/translation";
   import { runZoraSelectionTranslation, type ZoraSelectionTranslationInput } from "../../services/ai/zora/zora-translation-service";
-  import { appendVocabularyStudyNote } from "../../services/ai/zora/zora-study-note-service";
+  import { appendVocabularyStudyNoteWithLocator } from "../../services/ai/zora/zora-study-note-service";
   import { contextPosLabel } from "../../services/ai/zora/translation";
   import {
     computeToolbarPosition,
@@ -26,7 +26,7 @@
     anchorRects?: DOMRect[];
     anchorPoint?: ReaderAnchorPoint;
     viewportEl: HTMLElement;
-    onStudyNoteSaved?: (sourcePath: string) => void | Promise<void>;
+    onStudyNoteSaved?: (sourcePath: string, excerptId?: string) => void | Promise<void>;
     onClose: () => void;
   }
   let { app, settings, selection, anchorRect, anchorRects = [], anchorPoint, viewportEl, onStudyNoteSaved, onClose }: Props = $props();
@@ -216,29 +216,26 @@
     studyNoteState = "saving";
     studyNoteMessage = "";
     try {
-      let sourcePath: string;
-      if (result.kind === "word") {
-        sourcePath = await appendVocabularyStudyNote(app, {
-          word: result.lemma || result.surfaceForm || selection.text,
-          partOfSpeech: result.partOfSpeech || (result.contextPartOfSpeech ? contextPosLabel(result.contextPartOfSpeech) : undefined),
-          contextMeaning: result.currentMeaning || result.translation,
-          senses: result.senses,
-          sentence: selection.context || result.sentenceTranslation,
-          bookPath: selection.bookPath,
-          bookTitle: selection.bookTitle,
-          cfiRange: selection.cfiRange,
-        });
-      } else {
-        sourcePath = await appendVocabularyStudyNote(app, {
-          word: selection.text,
-          contextMeaning: result.translation,
-          sentence: selection.context,
-          bookPath: selection.bookPath,
-          bookTitle: selection.bookTitle,
-          cfiRange: selection.cfiRange,
-        });
-      }
-      await onStudyNoteSaved?.(sourcePath);
+      const saved = result.kind === "word"
+        ? await appendVocabularyStudyNoteWithLocator(app, {
+            word: result.lemma || result.surfaceForm || selection.text,
+            partOfSpeech: result.partOfSpeech || (result.contextPartOfSpeech ? contextPosLabel(result.contextPartOfSpeech) : undefined),
+            contextMeaning: result.currentMeaning || result.translation,
+            senses: result.senses,
+            sentence: selection.context || result.sentenceTranslation,
+            bookPath: selection.bookPath,
+            bookTitle: selection.bookTitle,
+            cfiRange: selection.cfiRange,
+          })
+        : await appendVocabularyStudyNoteWithLocator(app, {
+            word: selection.text,
+            contextMeaning: result.translation,
+            sentence: selection.context,
+            bookPath: selection.bookPath,
+            bookTitle: selection.bookTitle,
+            cfiRange: selection.cfiRange,
+          });
+      await onStudyNoteSaved?.(saved.filePath, saved.blockId);
       studyNoteState = "saved";
       setTimeout(() => {
         if (studyNoteState === "saved") {
