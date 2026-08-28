@@ -499,7 +499,7 @@ export function setSessionMobilePopoverPosition(pos: { left: number; top: number
 	sessionMobilePopoverPos = pos;
 }
 
-export function getMobileSafeBounds(viewportEl: HTMLElement): {
+export function getMobileSafeBounds(_viewportEl: HTMLElement): {
 	minLeft: number;
 	maxRight: number;
 	minTop: number;
@@ -508,38 +508,28 @@ export function getMobileSafeBounds(viewportEl: HTMLElement): {
 	availableHeight: number;
 } {
 	const wsBounds = getWorkspaceBounds();
-	const containerRect = viewportEl.getBoundingClientRect();
 	const vv = typeof window !== "undefined" ? window.visualViewport : null;
-	const vvWidth = vv?.width ?? (typeof window !== "undefined" ? window.innerWidth : containerRect.width);
-	const vvHeight = vv?.height ?? (typeof window !== "undefined" ? window.innerHeight : containerRect.height);
+	const vvWidth = vv?.width ?? (typeof window !== "undefined" ? window.innerWidth : 390);
+	const vvHeight = vv?.height ?? (typeof window !== "undefined" ? window.innerHeight : 844);
 	const vvLeft = vv?.offsetLeft ?? 0;
 	const vvTop = vv?.offsetTop ?? 0;
 
-	const safeLeft = 12;
-	const safeRight = 12;
-	const safeTop = wsBounds.top || 12;
-	const safeBottom = wsBounds.bottom || 12;
+	const sideInset = 12;
+	const topInset = Math.max(12, wsBounds.top || 0);
+	const bottomInset = Math.max(12, wsBounds.bottom || 0);
 
-	const globalMinLeft = vvLeft + safeLeft;
-	const globalMaxRight = vvLeft + vvWidth - safeRight;
-	const globalMinTop = vvTop + safeTop;
-	const globalMaxBottom = vvTop + vvHeight - safeBottom;
-
-	const minLeft = Math.max(8, globalMinLeft - containerRect.left);
-	const maxRight = Math.min(containerRect.width - 8, globalMaxRight - containerRect.left);
-	const minTop = Math.max(8, globalMinTop - containerRect.top);
-	const maxBottom = Math.min(containerRect.height - 8, globalMaxBottom - containerRect.top);
-
-	const availableWidth = Math.max(160, maxRight - minLeft);
-	const availableHeight = Math.max(160, maxBottom - minTop);
+	const minLeft = vvLeft + sideInset;
+	const maxRight = vvLeft + vvWidth - sideInset;
+	const minTop = vvTop + topInset;
+	const maxBottom = vvTop + vvHeight - bottomInset;
 
 	return {
 		minLeft,
 		maxRight,
 		minTop,
 		maxBottom,
-		availableWidth,
-		availableHeight,
+		availableWidth: Math.max(160, maxRight - minLeft),
+		availableHeight: Math.max(160, maxBottom - minTop),
 	};
 }
 

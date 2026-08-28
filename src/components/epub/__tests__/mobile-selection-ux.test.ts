@@ -61,6 +61,17 @@ describe('Mobile Selection UX Verification Suite', () => {
 		expect(pos.left).toBe(Math.round((390 - 340) / 2));
 	});
 
+	it('7b. mobile fixed popover uses visual viewport coordinates even when reader is offset', () => {
+		Object.defineProperty(viewportEl, 'getBoundingClientRect', {
+			configurable: true,
+			value: () => ({ left: 80, top: 120, right: 470, bottom: 964, width: 390, height: 844 }),
+		});
+
+		const pos = computeMobilePopoverCenterPosition(340, 300, viewportEl);
+		expect(pos.left).toBe(Math.round((390 - 340) / 2));
+		expect(pos.top).toBe(Math.round((844 - 300) / 2));
+	});
+
 	it('8. 超出左边 → clamp', () => {
 		const clamped = clampPopoverPosition({ left: -100, top: 200 }, 340, 300, viewportEl, true);
 		expect(clamped.left).toBe(12);

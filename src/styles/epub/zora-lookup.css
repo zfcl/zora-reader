@@ -1030,42 +1030,39 @@
 }
 
 /* ==========================================================================
-   Mobile Bottom Sheet Adaptations (iPhone & Obsidian Mobile)
+   Mobile Floating Card Adaptations (iPhone & Obsidian Mobile)
    ========================================================================== */
 
 body.is-mobile .zora-lookup-popover,
-body.is-phone .zora-lookup-popover,
-.zora-lookup-popover.docked-bottom-sheet {
+body.is-phone .zora-lookup-popover {
   position: fixed !important;
-  top: auto !important;
-  bottom: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  width: 100vw !important;
-  max-width: 100vw !important;
-  min-width: 100vw !important;
-  min-height: 45vh !important;
-  max-height: 65vh !important;
-  border-radius: 20px 20px 0 0 !important;
+  width: min(500px, calc(100vw - 24px)) !important;
+  max-width: calc(100vw - 24px) !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-height: min(72dvh, 600px, calc(100dvh - 140px)) !important;
+  right: auto !important;
+  bottom: auto !important;
+  border-radius: 16px !important;
   border: 1px solid rgba(255, 255, 255, 0.12) !important;
-  border-bottom: none !important;
-  border-left: none !important;
-  border-right: none !important;
-  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.6) !important;
-  transform: none !important;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.52), 0 2px 10px rgba(0, 0, 0, 0.28) !important;
   margin: 0 !important;
   z-index: 1000 !important;
+  overflow: hidden !important;
+  pointer-events: auto !important;
+  overscroll-behavior: contain !important;
 }
 
 body.is-mobile .zora-lookup-popover.zora-grammar-popover,
 body.is-mobile .zora-grammar-popover,
 body.is-phone .zora-lookup-popover.zora-grammar-popover,
 body.is-phone .zora-grammar-popover {
-  min-height: 70vh !important;
-  max-height: 88vh !important;
+  width: min(620px, calc(100vw - 24px)) !important;
+  max-width: calc(100vw - 24px) !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
   height: auto !important;
-  width: 100vw !important;
-  max-width: 100vw !important;
+  max-height: min(72dvh, 600px, calc(100dvh - 140px)) !important;
 }
 
 body.is-mobile .zora-lookup-popover.tier-compact,
@@ -1080,28 +1077,30 @@ body.is-phone .zora-lookup-popover.tier-wide,
 body.is-phone .zora-grammar-popover.tier-compact,
 body.is-phone .zora-grammar-popover.tier-normal,
 body.is-phone .zora-grammar-popover.tier-wide {
-  width: 100vw !important;
-  max-width: 100vw !important;
-  min-width: 100vw !important;
+  width: min(620px, calc(100vw - 24px)) !important;
+  max-width: calc(100vw - 24px) !important;
+  min-width: 0 !important;
 }
 
 body.is-mobile .zora-lookup-header,
 body.is-phone .zora-lookup-header {
-  flex: 0 0 46px;
-  min-height: 46px;
-  padding: 0 16px;
-  cursor: default !important;
+  flex: 0 0 42px;
+  min-height: 42px;
+  padding: 0 14px;
+  cursor: grab !important;
+  touch-action: none !important;
 }
 
 body.is-mobile .zora-lookup-header button,
 body.is-phone .zora-lookup-header button {
-  width: 36px;
-  height: 36px;
-  min-width: 36px;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
   border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
+  touch-action: auto !important;
 }
 
 body.is-mobile .zora-lookup-header button svg,
@@ -1112,31 +1111,33 @@ body.is-phone .zora-lookup-header button svg {
 
 body.is-mobile .zora-lookup-body,
 body.is-phone .zora-lookup-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: min(54dvh, 460px) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  overscroll-behavior-y: contain !important;
+  touch-action: pan-y !important;
   padding: 14px 16px;
 }
 
 body.is-mobile .zora-lookup-footer,
 body.is-phone .zora-lookup-footer {
-  flex: 0 0 auto;
-  padding: 10px 16px calc(12px + env(safe-area-inset-bottom, 0px)) !important;
-  min-height: calc(52px + env(safe-area-inset-bottom, 0px));
-  gap: 10px;
+  flex: 0 0 auto !important;
+  padding: 10px 14px max(10px, env(safe-area-inset-bottom, 0px)) !important;
+  min-height: 50px;
+  gap: 8px;
 }
 
 body.is-mobile .zora-lookup-footer button,
 body.is-phone .zora-lookup-footer button {
-  min-height: 42px;
-  padding: 8px 16px;
+  min-height: 38px;
+  padding: 7px 12px;
   font-size: 13px;
-  border-radius: 10px;
+  border-radius: 9px;
 }
 
-/* Single Column for Grammar & Comprehension on Mobile */
 body.is-mobile .zora-grammar-points-list.grid-2col,
 body.is-phone .zora-grammar-points-list.grid-2col {
   display: flex !important;
@@ -1164,7 +1165,6 @@ body.is-phone .zora-lookup-section button.zora-item-note-btn {
   padding: 4px 8px !important;
 }
 
-/* Ensure Note Popover textarea fits comfortably on mobile */
 body.is-mobile .zora-note-textarea,
 body.is-phone .zora-note-textarea {
   min-height: 110px;
@@ -1174,37 +1174,6 @@ body.is-phone .zora-note-textarea {
 }
 
 @media (max-width: 680px) {
-  .zora-lookup-popover {
-    position: fixed !important;
-    top: auto !important;
-    bottom: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    width: 100vw !important;
-    max-width: 100vw !important;
-    min-width: 100vw !important;
-    min-height: 45vh !important;
-    max-height: 65vh !important;
-    border-radius: 20px 20px 0 0 !important;
-    border: 1px solid rgba(255, 255, 255, 0.12) !important;
-    border-bottom: none !important;
-    border-left: none !important;
-    border-right: none !important;
-    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.6) !important;
-    transform: none !important;
-    margin: 0 !important;
-    z-index: 1000 !important;
-  }
-
-  .zora-lookup-popover.zora-grammar-popover,
-  .zora-grammar-popover {
-    min-height: 70vh !important;
-    max-height: 88vh !important;
-    height: auto !important;
-    width: 100vw !important;
-    max-width: 100vw !important;
-  }
-
   .zora-grammar-points-list.grid-2col {
     display: flex !important;
     flex-direction: column !important;

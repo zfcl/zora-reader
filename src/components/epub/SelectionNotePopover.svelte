@@ -136,28 +136,52 @@
 
   onMount(() => {
     const isMobile = Platform.isMobile || (typeof document !== "undefined" && (document.body.classList.contains("is-mobile") || document.body.classList.contains("is-phone")));
-    activeDocument.addEventListener("mousedown", handlePointerDown, { capture: true });
-    activeDocument.addEventListener("touchstart", handlePointerDown, true);
+    const originalParent = popoverEl?.parentNode ?? null;
+    const originalNextSibling = popoverEl?.nextSibling ?? null;
+
+    if (isMobile && popoverEl && popoverEl.parentNode !== activeDocument.body) {
+      activeDocument.body.appendChild(popoverEl);
+    }
+
+    if (!isMobile) {
+      activeDocument.addEventListener("mousedown", handlePointerDown, { capture: true });
+      viewportEl.addEventListener("scroll", onClose, { passive: true });
+    }
+
     window.addEventListener("keydown", handleKeydown);
     window.visualViewport?.addEventListener("resize", handleViewportResize);
     window.addEventListener("resize", handleViewportResize);
     window.addEventListener("orientationchange", handleViewportResize);
-    if (!isMobile) {
-      viewportEl.addEventListener("scroll", onClose, { passive: true });
-    }
+
     void positionPopover().then(() => {
       textareaEl?.focus();
     });
+
     return () => {
       draggable.destroy();
-      activeDocument.removeEventListener("mousedown", handlePointerDown, { capture: true });
-      activeDocument.removeEventListener("touchstart", handlePointerDown, true);
+
+      if (!isMobile) {
+        activeDocument.removeEventListener("mousedown", handlePointerDown, { capture: true });
+        viewportEl.removeEventListener("scroll", onClose);
+      }
+
       window.removeEventListener("keydown", handleKeydown);
       window.visualViewport?.removeEventListener("resize", handleViewportResize);
       window.removeEventListener("resize", handleViewportResize);
       window.removeEventListener("orientationchange", handleViewportResize);
-      if (!isMobile) {
-        viewportEl.removeEventListener("scroll", onClose);
+
+      if (
+        isMobile &&
+        popoverEl &&
+        originalParent &&
+        originalParent.isConnected &&
+        popoverEl.parentNode === activeDocument.body
+      ) {
+        if (originalNextSibling && originalNextSibling.parentNode === originalParent) {
+          originalParent.insertBefore(popoverEl, originalNextSibling);
+        } else {
+          originalParent.appendChild(popoverEl);
+        }
       }
     };
   });
@@ -207,6 +231,7 @@
     class="zora-lookup-header"
     style="cursor: grab; user-select: none;"
     onpointerdown={draggable.handleHeaderPointerDown}
+    ontouchstart={draggable.handleHeaderPointerDown}
     onmousedown={draggable.handleHeaderPointerDown}
   >
     <span class="zora-lookup-kind">添加读书笔记</span>

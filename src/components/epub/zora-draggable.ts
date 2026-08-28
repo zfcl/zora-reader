@@ -62,6 +62,7 @@ export function createZoraDraggable(options: ZoraDraggableOptions): ZoraDraggabl
   }
 
   function handleHeaderPointerDown(e: PointerEvent | MouseEvent | TouchEvent) {
+    if (isDragging) return;
     if ("button" in e && e.button !== 0) return;
     if ("touches" in e && e.touches.length > 1) return;
 
