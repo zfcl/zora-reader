@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
 	computeMobilePopoverCenterPosition,
 	clampPopoverPosition,
@@ -9,6 +10,8 @@ import {
 import { createZoraDraggable } from '../zora-draggable';
 import { MobileDirectSelectionController } from '../mobile-direct-selection';
 import type { ReaderFrame } from '../../../services/epub/reader-engine-types';
+
+const mobilePopoverCss = readFileSync('src/styles/epub/zora-lookup.css', 'utf8');
 
 describe('Mobile Selection UX Verification Suite', () => {
 	let viewportEl: HTMLElement;
@@ -105,6 +108,21 @@ describe('Mobile Selection UX Verification Suite', () => {
 		(window as any).visualViewport.height = 400;
 		const clampedAfter = clampPopoverPosition(currentPos, 340, 300, viewportEl, true);
 		expect(clampedAfter.top + 300).toBeLessThanOrEqual(400 - 12);
+	});
+
+	it('12b. iPhone popover width leaves real horizontal drag distance', () => {
+		expect(mobilePopoverCss).toContain('width: min(500px, calc(100vw - 64px)) !important;');
+		expect(mobilePopoverCss).toContain('max-height: min(58dvh, 520px, calc(100dvh - 180px)) !important;');
+
+		const viewportWidth = 390;
+		const safeMinLeft = 12;
+		const safeMaxRight = viewportWidth - 12;
+		const popoverWidth = Math.min(500, viewportWidth - 64);
+		const maxLeft = safeMaxRight - popoverWidth;
+
+		expect(popoverWidth).toBeLessThan(safeMaxRight - safeMinLeft);
+		expect(maxLeft).toBeGreaterThan(safeMinLeft);
+		expect(maxLeft - safeMinLeft).toBeGreaterThanOrEqual(40);
 	});
 
 	it('13. header drag → card 移动', () => {

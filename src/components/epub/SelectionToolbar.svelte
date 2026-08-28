@@ -34,6 +34,7 @@ import type { ReaderAnchorPoint, ReaderViewportRect } from '../../services/epub/
 	} from './toolbar-positioning';
 	import { expandRangeToSentence, expandRangeToParagraph } from './sentence-selection';
 	import { extractWordRangeFromTextNode } from './mobile-tap-selection';
+	import { dismissSelectionUiFirst } from './zora-popover-lifecycle';
 	import { getWorkspaceBounds } from '../../utils/mobile-modal-bounds';
 
 	type ExternalSelectionState = {
@@ -337,13 +338,17 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 	function clearAndHide() {
 		clearPendingCollapsedHide();
 		const clearSelection = activeClearSelection || externalSelection?.clear || null;
-		if (clearSelection) {
-			clearSelection();
-		} else if (iframeDoc) {
-			iframeDoc.getSelection()?.removeAllRanges();
-		}
-		clearPopoverState();
-		hideToolbar();
+		dismissSelectionUiFirst({
+			clearPopoverState,
+			hideToolbar,
+			clearSelection: () => {
+				if (clearSelection) {
+					clearSelection();
+				} else if (iframeDoc) {
+					iframeDoc.getSelection()?.removeAllRanges();
+				}
+			}
+		});
 	}
 
 	function canPreviewLockedExcerptFeature(): boolean {

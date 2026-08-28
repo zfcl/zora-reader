@@ -12,6 +12,7 @@
     getSessionMobilePopoverPosition,
   } from "./toolbar-positioning";
   import { createZoraDraggable } from "./zora-draggable";
+  import { createPopoverCloseHandlers, mountMobilePopoverPortal } from "./zora-popover-lifecycle";
 
   interface Props {
     app: App;
@@ -54,6 +55,7 @@
       userDragged = true;
     },
   });
+  const closeHandlers = createPopoverCloseHandlers(draggable, () => onClose());
 
   function toRelativeRect(rect: DOMRect | ReaderViewportRect) {
     const containerRect = viewportEl.getBoundingClientRect();
@@ -116,11 +118,11 @@
     if (isDragging) return;
     const target = event.target as Node | null;
     if (target && popoverEl?.contains(target)) return;
-    onClose();
+    closeHandlers.handleClick(event);
   }
 
   function handleKeydown(event: KeyboardEvent) {
-    if (event.key === "Escape") onClose();
+    if (event.key === "Escape") closeHandlers.handleClick(event);
   }
 
   function handleViewportResize() {
@@ -136,16 +138,11 @@
 
   onMount(() => {
     const isMobile = Platform.isMobile || (typeof document !== "undefined" && (document.body.classList.contains("is-mobile") || document.body.classList.contains("is-phone")));
-    const originalParent = popoverEl?.parentNode ?? null;
-    const originalNextSibling = popoverEl?.nextSibling ?? null;
-
-    if (isMobile && popoverEl && popoverEl.parentNode !== activeDocument.body) {
-      activeDocument.body.appendChild(popoverEl);
-    }
+    const teardownMobilePortal = mountMobilePopoverPortal(popoverEl, activeDocument, isMobile);
 
     if (!isMobile) {
       activeDocument.addEventListener("mousedown", handlePointerDown, { capture: true });
-      viewportEl.addEventListener("scroll", onClose, { passive: true });
+      viewportEl.addEventListener("scroll", closeHandlers.handleClick, { passive: true });
     }
 
     window.addEventListener("keydown", handleKeydown);
@@ -162,27 +159,14 @@
 
       if (!isMobile) {
         activeDocument.removeEventListener("mousedown", handlePointerDown, { capture: true });
-        viewportEl.removeEventListener("scroll", onClose);
+        viewportEl.removeEventListener("scroll", closeHandlers.handleClick);
       }
 
       window.removeEventListener("keydown", handleKeydown);
       window.visualViewport?.removeEventListener("resize", handleViewportResize);
       window.removeEventListener("resize", handleViewportResize);
       window.removeEventListener("orientationchange", handleViewportResize);
-
-      if (
-        isMobile &&
-        popoverEl &&
-        originalParent &&
-        originalParent.isConnected &&
-        popoverEl.parentNode === activeDocument.body
-      ) {
-        if (originalNextSibling && originalNextSibling.parentNode === originalParent) {
-          originalParent.insertBefore(popoverEl, originalNextSibling);
-        } else {
-          originalParent.appendChild(popoverEl);
-        }
-      }
+      teardownMobilePortal();
     };
   });
 
@@ -209,7 +193,7 @@
         text: selection.text,
         filePath: result.filePath,
       });
-      onClose();
+      closeHandlers.handleClick();
     } catch (e) {
       saving = false;
       error = e instanceof Error ? e.message : String(e);
@@ -231,11 +215,15 @@
     class="zora-lookup-header"
     style="cursor: grab; user-select: none;"
     onpointerdown={draggable.handleHeaderPointerDown}
-    ontouchstart={draggable.handleHeaderPointerDown}
-    onmousedown={draggable.handleHeaderPointerDown}
   >
     <span class="zora-lookup-kind">添加读书笔记</span>
-    <button class="clickable-icon" onclick={onClose} aria-label="关闭">
+    <button
+      class="clickable-icon"
+      onpointerdown={closeHandlers.handlePressStart}
+      ontouchstart={closeHandlers.handlePressStart}
+      onclick={closeHandlers.handleClick}
+      aria-label="关闭"
+    >
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M18 6 6 18M6 6l12 12"></path>
       </svg>
@@ -257,7 +245,7 @@
     {/if}
   </div>
   <div class="zora-lookup-footer">
-    <button onclick={onClose}>取消</button>
+    <button onclick={closeHandlers.handleClick}>取消</button>
     <button class="zora-lookup-primary" onclick={handleSaveNote} disabled={saving}>
       {saving ? "保存中…" : "添加到读书笔记"}
     </button>

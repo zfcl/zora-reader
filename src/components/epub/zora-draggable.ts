@@ -30,6 +30,10 @@ export interface ZoraDraggableOptions {
 export interface ZoraDraggableController {
   /** Pointerdown / mousedown event listener to attach to the draggable header */
   handleHeaderPointerDown: (e: PointerEvent | MouseEvent | TouchEvent) => void;
+  /** Force-cancel an active or stale drag session without committing a position */
+  cancel: () => void;
+  /** Exposed for lifecycle assertions and defensive close handling */
+  isDragging: () => boolean;
   /** Clean up any active drag listeners / frames */
   destroy: () => void;
 }
@@ -38,17 +42,61 @@ export function createZoraDraggable(options: ZoraDraggableOptions): ZoraDraggabl
   let isDragging = false;
   let rafId: number | null = null;
   let cleanupListeners: (() => void) | null = null;
+  let activePopoverEl: HTMLElement | null = null;
+  let activeCaptureTarget: HTMLElement | null = null;
+  let activePointerId: number | null = null;
+  let activeSessionId = 0;
+  let nextSessionId = 1;
 
-  function destroy() {
+  function releaseActivePointerCapture() {
+    const captureTarget = activeCaptureTarget;
+    const pointerId = activePointerId;
+    activeCaptureTarget = null;
+    activePointerId = null;
+
+    if (captureTarget && pointerId !== null && typeof captureTarget.releasePointerCapture === "function") {
+      try {
+        captureTarget.releasePointerCapture(pointerId);
+      } catch {
+        // The capture may already have been released by WebKit.
+      }
+    }
+  }
+
+  function clearDragStyles(popoverEl = activePopoverEl) {
+    if (!popoverEl) return;
+    popoverEl.style.transform = "";
+    popoverEl.style.willChange = "";
+    popoverEl.classList.remove("is-dragging");
+  }
+
+  function cancelActiveDrag() {
+    const wasDragging = isDragging;
+    isDragging = false;
+    activeSessionId = 0;
+
     if (rafId !== null) {
       cancelAnimationFrame(rafId);
       rafId = null;
     }
+
     if (cleanupListeners) {
-      cleanupListeners();
+      const cleanup = cleanupListeners;
       cleanupListeners = null;
+      cleanup();
     }
-    isDragging = false;
+
+    releaseActivePointerCapture();
+    clearDragStyles();
+    activePopoverEl = null;
+
+    if (wasDragging) {
+      options.onDragStateChange?.(false);
+    }
+  }
+
+  function destroy() {
+    cancelActiveDrag();
   }
 
   function getCoords(evt: PointerEvent | MouseEvent | TouchEvent): { clientX: number; clientY: number } {
@@ -62,7 +110,11 @@ export function createZoraDraggable(options: ZoraDraggableOptions): ZoraDraggabl
   }
 
   function handleHeaderPointerDown(e: PointerEvent | MouseEvent | TouchEvent) {
-    if (isDragging) return;
+    // A new real gesture is also the recovery path for a WebKit session that
+    // never delivered pointerup/pointercancel/touchend.
+    if (isDragging) {
+      cancelActiveDrag();
+    }
     if ("button" in e && e.button !== 0) return;
     if ("touches" in e && e.touches.length > 1) return;
 
@@ -81,12 +133,19 @@ export function createZoraDraggable(options: ZoraDraggableOptions): ZoraDraggabl
     }
     e.stopPropagation();
 
-    // Pointer capture
+    const sessionId = nextSessionId++;
+    const inputFamily = "pointerId" in e ? "pointer" : "touches" in e ? "touch" : "mouse";
     const currentTarget = e.currentTarget as HTMLElement | null;
-    const pointerId = "pointerId" in e ? (e as PointerEvent).pointerId : undefined;
-    if (currentTarget && pointerId !== undefined && typeof currentTarget.setPointerCapture === "function") {
+    const eventWindow = currentTarget?.ownerDocument.defaultView ?? window;
+    const eventDocument = currentTarget?.ownerDocument ?? popoverEl.ownerDocument;
+
+    // Pointer capture is scoped to pointer sessions only.
+    const pointerId = inputFamily === "pointer" ? (e as PointerEvent).pointerId : null;
+    if (currentTarget && pointerId !== null && typeof currentTarget.setPointerCapture === "function") {
       try {
         currentTarget.setPointerCapture(pointerId);
+        activeCaptureTarget = currentTarget;
+        activePointerId = pointerId;
       } catch {
         // Fallback gracefully in unsupported environments
       }
@@ -127,6 +186,8 @@ export function createZoraDraggable(options: ZoraDraggableOptions): ZoraDraggabl
     }
 
     isDragging = true;
+    activeSessionId = sessionId;
+    activePopoverEl = popoverEl;
     options.onDragStateChange?.(true);
 
     popoverEl.classList.add("is-dragging");
@@ -138,7 +199,7 @@ export function createZoraDraggable(options: ZoraDraggableOptions): ZoraDraggabl
     let latestTargetTop = startTop;
 
     const handlePointerMove = (moveEvt: PointerEvent | MouseEvent | TouchEvent) => {
-      if (!isDragging) return;
+      if (!isDragging || activeSessionId !== sessionId) return;
       if ("cancelable" in moveEvt && moveEvt.cancelable) {
         moveEvt.preventDefault();
       }
@@ -159,47 +220,41 @@ export function createZoraDraggable(options: ZoraDraggableOptions): ZoraDraggabl
       if (rafId === null) {
         rafId = requestAnimationFrame(() => {
           rafId = null;
-          if (!isDragging || !popoverEl) return;
+          if (!isDragging || activeSessionId !== sessionId) return;
           popoverEl.style.transform = `translate3d(${currentDx}px, ${currentDy}px, 0)`;
         });
       }
     };
 
-    const handlePointerUp = (upEvt?: PointerEvent | MouseEvent | TouchEvent) => {
-      if (!isDragging) return;
+    const finishActiveDrag = () => {
+      if (!isDragging || activeSessionId !== sessionId) return;
       isDragging = false;
+      activeSessionId = 0;
 
       if (rafId !== null) {
         cancelAnimationFrame(rafId);
         rafId = null;
       }
 
-      if (currentTarget && pointerId !== undefined && typeof currentTarget.releasePointerCapture === "function") {
-        try {
-          currentTarget.releasePointerCapture(pointerId);
-        } catch {
-          // Ignore
-        }
-      }
-
-      // Remove window listeners
       if (cleanupListeners) {
-        cleanupListeners();
+        const cleanup = cleanupListeners;
         cleanupListeners = null;
+        cleanup();
       }
 
-      // Reset direct DOM transform and will-change
-      if (popoverEl) {
-        popoverEl.style.transform = "";
-        popoverEl.style.willChange = "";
-        popoverEl.classList.remove("is-dragging");
-      }
+      releaseActivePointerCapture();
 
-      options.onDragStateChange?.(false);
-
-      // Commit final position to reactive state
       const finalPos = { left: latestTargetLeft, top: latestTargetTop };
+
+      // Commit reactive state first, mirror it directly onto the element, and
+      // only then remove the temporary transform. This prevents a one-frame
+      // jump back to the pre-drag Svelte left/top while its update is pending.
       options.onDragEnd(finalPos);
+      popoverEl.style.left = `${finalPos.left}px`;
+      popoverEl.style.top = `${finalPos.top}px`;
+      clearDragStyles(popoverEl);
+      activePopoverEl = null;
+      options.onDragStateChange?.(false);
 
       if (isMobile) {
         setSessionMobilePopoverPosition(finalPos);
@@ -209,31 +264,55 @@ export function createZoraDraggable(options: ZoraDraggableOptions): ZoraDraggabl
       options.onPersistPosition?.(finalPos);
     };
 
+    const handleCancel = () => {
+      if (activeSessionId === sessionId) {
+        cancelActiveDrag();
+      }
+    };
+
+    const handleVisibilityChange = () => handleCancel();
+
     const removeListeners = () => {
-      window.removeEventListener("pointermove", handlePointerMove, { capture: true });
-      window.removeEventListener("pointerup", handlePointerUp, { capture: true });
-      window.removeEventListener("pointercancel", handlePointerUp, { capture: true });
-      window.removeEventListener("touchmove", handlePointerMove, { capture: true });
-      window.removeEventListener("touchend", handlePointerUp, { capture: true });
-      window.removeEventListener("touchcancel", handlePointerUp, { capture: true });
-      window.removeEventListener("mousemove", handlePointerMove, { capture: true });
-      window.removeEventListener("mouseup", handlePointerUp, { capture: true });
+      if (inputFamily === "pointer") {
+        eventWindow.removeEventListener("pointermove", handlePointerMove as EventListener, true);
+        eventWindow.removeEventListener("pointerup", finishActiveDrag, true);
+        eventWindow.removeEventListener("pointercancel", handleCancel, true);
+        currentTarget?.removeEventListener("lostpointercapture", handleCancel, true);
+      } else if (inputFamily === "touch") {
+        eventWindow.removeEventListener("touchmove", handlePointerMove as EventListener, true);
+        eventWindow.removeEventListener("touchend", finishActiveDrag, true);
+        eventWindow.removeEventListener("touchcancel", handleCancel, true);
+      } else {
+        eventWindow.removeEventListener("mousemove", handlePointerMove as EventListener, true);
+        eventWindow.removeEventListener("mouseup", finishActiveDrag, true);
+      }
+      eventWindow.removeEventListener("blur", handleCancel, true);
+      eventDocument.removeEventListener("visibilitychange", handleVisibilityChange, true);
     };
 
     cleanupListeners = removeListeners;
 
-    window.addEventListener("pointermove", handlePointerMove, { capture: true, passive: false });
-    window.addEventListener("pointerup", handlePointerUp, { capture: true });
-    window.addEventListener("pointercancel", handlePointerUp, { capture: true });
-    window.addEventListener("touchmove", handlePointerMove, { capture: true, passive: false });
-    window.addEventListener("touchend", handlePointerUp, { capture: true });
-    window.addEventListener("touchcancel", handlePointerUp, { capture: true });
-    window.addEventListener("mousemove", handlePointerMove, { capture: true });
-    window.addEventListener("mouseup", handlePointerUp, { capture: true });
+    if (inputFamily === "pointer") {
+      eventWindow.addEventListener("pointermove", handlePointerMove as EventListener, { capture: true, passive: false });
+      eventWindow.addEventListener("pointerup", finishActiveDrag, { capture: true });
+      eventWindow.addEventListener("pointercancel", handleCancel, { capture: true });
+      currentTarget?.addEventListener("lostpointercapture", handleCancel, { capture: true });
+    } else if (inputFamily === "touch") {
+      eventWindow.addEventListener("touchmove", handlePointerMove as EventListener, { capture: true, passive: false });
+      eventWindow.addEventListener("touchend", finishActiveDrag, { capture: true });
+      eventWindow.addEventListener("touchcancel", handleCancel, { capture: true });
+    } else {
+      eventWindow.addEventListener("mousemove", handlePointerMove as EventListener, { capture: true });
+      eventWindow.addEventListener("mouseup", finishActiveDrag, { capture: true });
+    }
+    eventWindow.addEventListener("blur", handleCancel, { capture: true });
+    eventDocument.addEventListener("visibilitychange", handleVisibilityChange, { capture: true });
   }
 
   return {
     handleHeaderPointerDown,
+    cancel: cancelActiveDrag,
+    isDragging: () => isDragging,
     destroy,
   };
 }

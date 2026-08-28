@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createZoraDraggable, type ZoraDraggableOptions } from "../zora-draggable";
+import { createPopoverCloseHandlers } from "../zora-popover-lifecycle";
 
 // Polyfill PointerEvent for jsdom environment if missing
 if (typeof globalThis.PointerEvent === "undefined") {
@@ -149,6 +150,156 @@ describe("zora-draggable", () => {
     expect(popoverEl.style.transform).toBe("");
     expect(popoverEl.style.willChange).toBe("");
     expect(dragStateChanges).toEqual([true, false]);
+  });
+
+  it("fully ends a pointer session and permits a second drag", () => {
+    const draggable = setupDraggable();
+
+    draggable.handleHeaderPointerDown(
+      new PointerEvent("pointerdown", { button: 0, clientX: 100, clientY: 100 })
+    );
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 140, clientY: 130 }));
+    window.dispatchEvent(new PointerEvent("pointerup", { clientX: 140, clientY: 130 }));
+
+    expect(draggable.isDragging()).toBe(false);
+    expect(dragEnds).toHaveLength(1);
+
+    draggable.handleHeaderPointerDown(
+      new PointerEvent("pointerdown", { button: 0, clientX: 140, clientY: 130 })
+    );
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 160, clientY: 150 }));
+    window.dispatchEvent(new PointerEvent("pointerup", { clientX: 160, clientY: 150 }));
+
+    expect(draggable.isDragging()).toBe(false);
+    expect(dragEnds).toHaveLength(2);
+    expect(dragStarts).toBe(2);
+    expect(dragStateChanges).toEqual([true, false, true, false]);
+  });
+
+  it("pointercancel completely resets the active drag", () => {
+    const draggable = setupDraggable();
+
+    draggable.handleHeaderPointerDown(
+      new PointerEvent("pointerdown", { button: 0, clientX: 100, clientY: 100 })
+    );
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 140, clientY: 130 }));
+    window.dispatchEvent(new PointerEvent("pointercancel"));
+
+    expect(draggable.isDragging()).toBe(false);
+    expect(popoverEl.classList.contains("is-dragging")).toBe(false);
+    expect(popoverEl.style.transform).toBe("");
+    expect(popoverEl.style.willChange).toBe("");
+    expect(dragEnds).toHaveLength(0);
+    expect(persistPositions).toHaveLength(0);
+    expect(dragStateChanges).toEqual([true, false]);
+  });
+
+  it("cancels safely on window blur and document visibilitychange", () => {
+    const draggable = setupDraggable();
+
+    draggable.handleHeaderPointerDown(
+      new PointerEvent("pointerdown", { button: 0, clientX: 100, clientY: 100 })
+    );
+    window.dispatchEvent(new Event("blur"));
+    expect(draggable.isDragging()).toBe(false);
+
+    draggable.handleHeaderPointerDown(
+      new PointerEvent("pointerdown", { button: 0, clientX: 120, clientY: 120 })
+    );
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(draggable.isDragging()).toBe(false);
+    expect(dragEnds).toHaveLength(0);
+    expect(dragStateChanges).toEqual([true, false, true, false]);
+  });
+
+  it("recovers a stale drag on the next header pointerdown", () => {
+    const draggable = setupDraggable();
+
+    draggable.handleHeaderPointerDown(
+      new PointerEvent("pointerdown", { button: 0, clientX: 100, clientY: 100 })
+    );
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 130, clientY: 120 }));
+    expect(draggable.isDragging()).toBe(true);
+
+    // No pointerup/pointercancel for session one. A new gesture must cancel it
+    // and immediately become a fresh working session.
+    draggable.handleHeaderPointerDown(
+      new PointerEvent("pointerdown", { button: 0, clientX: 200, clientY: 200 })
+    );
+    expect(draggable.isDragging()).toBe(true);
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 240, clientY: 230 }));
+    window.dispatchEvent(new PointerEvent("pointerup", { clientX: 240, clientY: 230 }));
+
+    expect(draggable.isDragging()).toBe(false);
+    expect(dragStarts).toBe(2);
+    expect(dragEnds).toHaveLength(1);
+    expect(dragStateChanges).toEqual([true, false, true, false]);
+  });
+
+  it("registers only the pointer listener family for a PointerEvent session", () => {
+    const addSpy = vi.spyOn(window, "addEventListener");
+    const draggable = setupDraggable();
+
+    draggable.handleHeaderPointerDown(
+      new PointerEvent("pointerdown", { button: 0, clientX: 100, clientY: 100 })
+    );
+
+    const eventTypes = addSpy.mock.calls.map(([type]) => type);
+    expect(eventTypes).toContain("pointermove");
+    expect(eventTypes).toContain("pointerup");
+    expect(eventTypes).toContain("pointercancel");
+    expect(eventTypes).not.toContain("touchmove");
+    expect(eventTypes).not.toContain("touchend");
+    expect(eventTypes).not.toContain("mousemove");
+    expect(eventTypes).not.toContain("mouseup");
+
+    draggable.destroy();
+  });
+
+  it("cancels a stale drag on close-button press and still invokes onClose", () => {
+    const draggable = setupDraggable();
+    const onClose = vi.fn();
+    const closeHandlers = createPopoverCloseHandlers(draggable, onClose);
+
+    draggable.handleHeaderPointerDown(
+      new PointerEvent("pointerdown", { button: 0, clientX: 100, clientY: 100 })
+    );
+    expect(draggable.isDragging()).toBe(true);
+
+    closeHandlers.handlePressStart(new Event("pointerdown", { bubbles: true }));
+    expect(draggable.isDragging()).toBe(false);
+    closeHandlers.handleClick(new MouseEvent("click", { bubbles: true }));
+
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(dragEnds).toHaveLength(0);
+  });
+
+  it("commits final left/top before removing the temporary transform", () => {
+    const callbackSnapshots: Array<{ transform: string; left: string; top: string }> = [];
+    const draggable = setupDraggable({
+      onDragEnd: (finalPos) => {
+        currentPos = finalPos;
+        callbackSnapshots.push({
+          transform: popoverEl.style.transform,
+          left: popoverEl.style.left,
+          top: popoverEl.style.top,
+        });
+      },
+    });
+
+    popoverEl.style.left = "100px";
+    popoverEl.style.top = "100px";
+    popoverEl.style.transform = "translate3d(20px, 10px, 0)";
+    draggable.handleHeaderPointerDown(
+      new PointerEvent("pointerdown", { button: 0, clientX: 100, clientY: 100 })
+    );
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 140, clientY: 130 }));
+    window.dispatchEvent(new PointerEvent("pointerup", { clientX: 140, clientY: 130 }));
+
+    expect(callbackSnapshots[0]?.transform).not.toBe("");
+    expect(popoverEl.style.left).toBe("140px");
+    expect(popoverEl.style.top).toBe("130px");
+    expect(popoverEl.style.transform).toBe("");
   });
 
   it("batches DOM transform updates to at most once per animation frame", () => {

@@ -1036,11 +1036,11 @@
 body.is-mobile .zora-lookup-popover,
 body.is-phone .zora-lookup-popover {
   position: fixed !important;
-  width: min(500px, calc(100vw - 24px)) !important;
-  max-width: calc(100vw - 24px) !important;
+  width: min(500px, calc(100vw - 64px)) !important;
+  max-width: calc(100vw - 64px) !important;
   min-width: 0 !important;
   min-height: 0 !important;
-  max-height: min(72dvh, 600px, calc(100dvh - 140px)) !important;
+  max-height: min(58dvh, 520px, calc(100dvh - 180px)) !important;
   right: auto !important;
   bottom: auto !important;
   border-radius: 16px !important;
@@ -1057,12 +1057,12 @@ body.is-mobile .zora-lookup-popover.zora-grammar-popover,
 body.is-mobile .zora-grammar-popover,
 body.is-phone .zora-lookup-popover.zora-grammar-popover,
 body.is-phone .zora-grammar-popover {
-  width: min(620px, calc(100vw - 24px)) !important;
-  max-width: calc(100vw - 24px) !important;
+  width: min(620px, calc(100vw - 64px)) !important;
+  max-width: calc(100vw - 64px) !important;
   min-width: 0 !important;
   min-height: 0 !important;
   height: auto !important;
-  max-height: min(72dvh, 600px, calc(100dvh - 140px)) !important;
+  max-height: min(60dvh, 560px, calc(100dvh - 180px)) !important;
 }
 
 body.is-mobile .zora-lookup-popover.tier-compact,
@@ -1077,8 +1077,8 @@ body.is-phone .zora-lookup-popover.tier-wide,
 body.is-phone .zora-grammar-popover.tier-compact,
 body.is-phone .zora-grammar-popover.tier-normal,
 body.is-phone .zora-grammar-popover.tier-wide {
-  width: min(620px, calc(100vw - 24px)) !important;
-  max-width: calc(100vw - 24px) !important;
+  width: min(620px, calc(100vw - 64px)) !important;
+  max-width: calc(100vw - 64px) !important;
   min-width: 0 !important;
 }
 
@@ -1113,7 +1113,7 @@ body.is-mobile .zora-lookup-body,
 body.is-phone .zora-lookup-body {
   flex: 1 1 auto !important;
   min-height: 0 !important;
-  max-height: min(54dvh, 460px) !important;
+  max-height: min(46dvh, 400px) !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
   -webkit-overflow-scrolling: touch !important;
