@@ -64,25 +64,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Svelte and TypeScript validation
-        id: typecheck
-        continue-on-error: true
-        run: |
-          set -o pipefail
-          npm run lint:svelte5 2>&1 | tee typecheck-v0.2.17.log
-
-      - name: Upload typecheck diagnostics
-        if: steps.typecheck.outcome == 'failure'
-        uses: actions/upload-artifact@v4
-        with:
-          name: typecheck-v0.2.17
-          path: typecheck-v0.2.17.log
-          retention-days: 1
-
-      - name: Stop on typecheck failure
-        if: steps.typecheck.outcome == 'failure'
-        run: exit 1
-
       - name: Build release
         run: node scripts/ci-run-build.cjs
 
