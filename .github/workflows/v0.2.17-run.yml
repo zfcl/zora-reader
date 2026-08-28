@@ -45,6 +45,14 @@ jobs:
           PY
           python3 /tmp/v0.2.17-patch2.py
           npm version 0.2.17 --no-git-tag-version
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('versions.json')
+          data = json.loads(p.read_text(encoding='utf-8'))
+          data['0.2.17'] = '1.11.4'
+          p.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          PY
           git diff --check
           git diff --stat
 
@@ -72,7 +80,7 @@ jobs:
                   src/components/epub/SelectionDictionaryPopover.svelte \
                   src/services/ai/zora/zora-study-note-service.ts \
                   src/services/epub/reader-annotation-overlayer.ts \
-                  manifest.json package.json package-lock.json
+                  manifest.json package.json package-lock.json versions.json
           git commit -m 'fix: mobile note markers and selection behavior for v0.2.17'
           git push origin HEAD:release/v0.2.17
 
