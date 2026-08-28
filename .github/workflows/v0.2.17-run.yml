@@ -59,8 +59,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Type and Svelte check
-        run: npm run check
+      - name: Svelte and TypeScript validation
+        run: npm run lint:svelte5
 
       - name: Unit tests
         run: node scripts/ci-run-tests.cjs
@@ -68,8 +68,10 @@ jobs:
       - name: Build release
         run: node scripts/ci-run-build.cjs
 
-      - name: Verify release assets
-        run: npm run verify:release
+      - name: Verify release assets and plugin scope
+        run: |
+          npm run verify:release
+          npm run verify:plugin-scope
 
       - name: Commit and push release branch
         run: |
