@@ -34,7 +34,6 @@ export interface StudyNoteComprehensionInput {
   translation?: string;
   howToRead?: Array<{ chunk: string; translation: string }>;
   keyPatterns?: Array<{ pattern: string; meaning: string }>;
-  specialNotes?: Array<{ target?: string; explanation: string }>;
   bookPath: string;
   bookTitle: string;
   cfiRange: string;
@@ -328,34 +327,6 @@ export async function appendComprehensionSinglePatternNote(
   return appendStudyNoteEntry(app, input.bookTitle, "简易理解", lines.join("\n"));
 }
 
-export async function appendComprehensionSpecialNotesNote(
-  app: App,
-  input: {
-    sentence: string;
-    items: Array<{ target?: string; explanation: string }>;
-    bookPath: string;
-    bookTitle: string;
-    cfiRange: string;
-    chapterIndex?: number;
-  }
-): Promise<string> {
-  const deepLink = buildEpubDeepLink(input.bookPath, input.cfiRange, input.chapterIndex);
-  const lines = [
-    `> [!example]- 💡 为什么这样说`,
-    `> **原句**：${input.sentence.trim()}`,
-  ];
-  if (input.items && input.items.length > 0) {
-    lines.push(`>`);
-    for (const note of input.items) {
-      const targetStr = note.target ? `（\`${note.target}\`）` : "";
-      lines.push(`> - ${targetStr}${note.explanation}`);
-    }
-  }
-  lines.push(`>`);
-  lines.push(`> [↗ 回到原文](${deepLink})`);
-  return appendStudyNoteEntry(app, input.bookTitle, "简易理解", lines.join("\n"));
-}
-
 export async function appendComprehensionTransferNote(
   app: App,
   input: {
@@ -410,14 +381,6 @@ export async function appendComprehensionStudyNote(
     lines.push(`> **值得记住**：`);
     for (const pat of input.keyPatterns) {
       lines.push(`> - **${pat.pattern}**：${pat.meaning}`);
-    }
-  }
-  if (input.specialNotes && input.specialNotes.length > 0) {
-    lines.push(`>`);
-    lines.push(`> **这里为什么这样说**：`);
-    for (const note of input.specialNotes) {
-      const targetStr = note.target ? `（\`${note.target}\`）` : "";
-      lines.push(`> - ${targetStr}${note.explanation}`);
     }
   }
   lines.push(`>`);

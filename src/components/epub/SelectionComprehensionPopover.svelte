@@ -17,7 +17,6 @@
     appendComprehensionSingleChunkNote,
     appendComprehensionKeyPatternsNote,
     appendComprehensionSinglePatternNote,
-    appendComprehensionSpecialNotesNote,
     appendComprehensionTransferNote,
   } from "../../services/ai/zora/zora-study-note-service";
   import {
@@ -86,7 +85,7 @@
     if (result?.complexity) return result.complexity;
     const textLen = (selection?.text || "").trim().length;
     const chunksCount = result?.howToRead?.length || 0;
-    if (textLen < 60 && chunksCount === 0 && (!result?.specialNotes || result.specialNotes.length === 0)) {
+    if (textLen < 60 && chunksCount === 0) {
       return "simple";
     }
     if (textLen >= 140 || chunksCount >= 4) {
@@ -355,30 +354,6 @@
     }
   }
 
-  async function handleSaveSpecialNotesSection() {
-    if (!result?.specialNotes || savedSections["specialNotes"] === "saving") return;
-    savedSections["specialNotes"] = "saving";
-    noteErrorMessage = "";
-    try {
-      await appendComprehensionSpecialNotesNote(app, {
-        sentence: selection.text,
-        items: result.specialNotes,
-        bookPath: selection.bookPath,
-        bookTitle: selection.bookTitle,
-        cfiRange: selection.cfiRange,
-      });
-      savedSections["specialNotes"] = "saved";
-      setTimeout(() => {
-        if (savedSections["specialNotes"] === "saved") {
-          savedSections["specialNotes"] = "idle" as any;
-        }
-      }, 1500);
-    } catch (e) {
-      savedSections["specialNotes"] = "error";
-      noteErrorMessage = e instanceof Error ? e.message : String(e);
-    }
-  }
-
   async function handleSaveTransferSection() {
     if (!result?.transferExample || savedSections["transferExample"] === "saving") return;
     savedSections["transferExample"] = "saving";
@@ -420,14 +395,6 @@
         ? [
             `值得记住：`,
             ...result.keyPatterns.map((item) => `· ${item.pattern}: ${item.meaning}`),
-          ]
-        : []),
-      ...(result.specialNotes && result.specialNotes.length > 0
-        ? [
-            `这里为什么这样说：`,
-            ...result.specialNotes.map(
-              (item) => `· ${item.target ? `${item.target}：` : ""}${item.explanation}`
-            ),
           ]
         : []),
       ...(result.transferExample
@@ -610,39 +577,6 @@
                   </button>
                 </div>
                 <div class="zora-grammar-point-desc">{item.meaning}</div>
-              </div>
-            {/each}
-          </div>
-        </section>
-      {/if}
-
-      {#if result.specialNotes && result.specialNotes.length > 0}
-        <section class="zora-lookup-section">
-          <div class="zora-section-header-row">
-            <h4>这里为什么这样说</h4>
-            <button
-              type="button"
-              class="zora-section-note-btn"
-              class:is-saved={savedSections["specialNotes"] === "saved"}
-              disabled={savedSections["specialNotes"] === "saving"}
-              onclick={handleSaveSpecialNotesSection}
-            >
-              {savedSections["specialNotes"] === "saved"
-                ? "✓ 已添加"
-                : savedSections["specialNotes"] === "saving"
-                  ? "添加中…"
-                  : "+笔记"}
-            </button>
-          </div>
-          <div class="zora-comprehension-special-list">
-            {#each result.specialNotes as item}
-              <div class="zora-grammar-point-item">
-                {#if item.target}
-                  <div class="zora-grammar-point-head">
-                    <span class="zora-grammar-target">{item.target}</span>
-                  </div>
-                {/if}
-                <div class="zora-grammar-difficulty-text">{item.explanation}</div>
               </div>
             {/each}
           </div>

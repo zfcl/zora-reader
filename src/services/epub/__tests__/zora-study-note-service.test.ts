@@ -82,9 +82,6 @@ describe("zora-study-note-service", () => {
       keyPatterns: [
         { pattern: "didn't know what...", meaning: "不知道……" },
       ],
-      specialNotes: [
-        { target: "gonna", explanation: "口语形式" },
-      ],
       bookPath: "Books/Flowers.epub",
       bookTitle,
       cfiRange: "epubcfi(/6/2!/4/15:0)",
@@ -99,8 +96,6 @@ describe("zora-study-note-service", () => {
     expect(foreignContent).toContain("> - I didn't know → 我不知道");
     expect(foreignContent).toContain("> **值得记住**：");
     expect(foreignContent).toContain("> - **didn't know what...**：不知道……");
-    expect(foreignContent).toContain("> **这里为什么这样说**：");
-    expect(foreignContent).toContain("> - （`gonna`）口语形式");
     expect(foreignContent).toContain("[↗ 回到原文]");
 
     // 3. Add grammar to 外文笔记
@@ -190,21 +185,7 @@ describe("zora-study-note-service", () => {
       cfiRange,
     });
 
-    // 5. Module level 为什么这样说
-    await (await import("../../ai/zora/zora-study-note-service")).appendComprehensionSpecialNotesNote(mockApp, {
-      sentence: "I am 32 yeres old.",
-      items: [
-        {
-          target: "yeres",
-          explanation: "原文采用非标准拼写，标准形式为 years；属于人物书写特征，保留原文。",
-        },
-      ],
-      bookPath,
-      bookTitle,
-      cfiRange,
-    });
-
-    // 6. Transfer example 顺手记一下 (迁移例句)
+    // 5. Transfer example 顺手记一下 (迁移例句)
     await (await import("../../ai/zora/zora-study-note-service")).appendComprehensionTransferNote(mockApp, {
       sentence,
       exampleSentence: "She kept asking me the same question.",
@@ -224,8 +205,7 @@ describe("zora-study-note-service", () => {
     expect(content).toContain("> [!example]- 💡 值得记住");
     expect(content).toContain("> - **keep telling sb to do sth**：一直叫某人做某事");
     expect(content).toContain("> **表达**：**get sb + adjective** → 使某人变得……");
-    expect(content).toContain("> [!example]- 💡 为什么这样说");
-    expect(content).toContain("> - （`yeres`）原文采用非标准拼写");
+    expect(content).not.toContain("为什么这样说");
     expect(content).toContain("> [!example]- 💡 迁移例句");
     expect(content).toContain("> **例句**：She kept asking me the same question.");
     expect(content).toContain("> **理解**：她一直问我同一个问题。");

@@ -313,7 +313,7 @@ const enEpubViews: TranslationKey = {
 		},
 	},
 	epubSidebar: {
-		title: 'Weave Reader',
+		title: 'Zora Reader',
 		loadFailed: 'Failed to load the sidebar',
 	},
 	epubBookshelfSidebar: {

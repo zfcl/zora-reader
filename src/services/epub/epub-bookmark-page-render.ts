@@ -16,7 +16,7 @@ import type { ReadingStats } from "./types";
 import { unknownPlainText } from "../../utils/unknown-plain-text";
 
 export const EPUB_BOOKMARK_PAGE_MAINTENANCE_NOTE =
-	"> 📎 本页由 Weave EPUB 自动维护。YAML 中 `readingState`、`bookmarks` 请勿手改；`user` 与「我的标注」可自由编辑。";
+	"> 📎 本页由 Zora Reader 自动维护。YAML 中 `readingState`、`bookmarks` 请勿手改；`user` 与「我的标注」可自由编辑。";
 
 /** @deprecated Use EPUB_BOOKMARK_PAGE_MAINTENANCE_NOTE */
 export const EPUB_BOOKMARK_PAGE_CALLOUT = EPUB_BOOKMARK_PAGE_MAINTENANCE_NOTE;
@@ -225,7 +225,7 @@ function renderEpubBookmarkBody(
 	lines.push(...renderLinkedNotesSection(linkedNotePaths));
 	lines.push("", "---", "");
 	lines.push(...renderUserNotesSection(input.user));
-	lines.push("", "---", "", `*${EPUB_BOOKMARK_FILE_FORMAT_V3} · Weave EPUB 自动维护*`);
+	lines.push("", "---", "", `*${EPUB_BOOKMARK_FILE_FORMAT_V3} · Zora Reader 自动维护*`);
 	return lines.join("\n").trimEnd();
 }
 

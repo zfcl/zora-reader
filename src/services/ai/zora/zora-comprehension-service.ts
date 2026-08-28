@@ -19,11 +19,6 @@ export interface ZoraKeyPattern {
   meaning: string;
 }
 
-export interface ZoraSpecialNote {
-  target?: string;
-  explanation: string;
-}
-
 export interface ZoraTransferExample {
   pattern?: string;
   sentence: string;
@@ -36,13 +31,12 @@ export interface ZoraComprehensionResult {
   complexity: ZoraComprehensionComplexity;
   howToRead?: ZoraSenseGroup[];
   keyPatterns: ZoraKeyPattern[];
-  specialNotes?: ZoraSpecialNote[];
   transferExample?: ZoraTransferExample;
   rawText?: string;
 }
 
 const COMPREHENSION_SYSTEM_PROMPT =
-  `你是一名英语原著阅读理解与自然语感专家。请对用户提供的英文句子进行简易、面向原著阅读的理解解析，目标是构建“理解意义 → 意群切块 → 可复用表达 → 必要形式说明 → 轻量迁移”的原著阅读学习模式。\n\n` +
+  `你是一名英语原著阅读理解与自然语感专家。请对用户提供的英文句子进行简易、面向原著阅读的理解解析，目标是构建“理解意义 → 意群切块 → 可复用表达 → 轻量迁移”的原著阅读学习模式。\n\n` +
   `【核心原则：严禁传统应试语法分析】\n` +
   `严禁使用学校应试式语法术语（如：主谓宾、主系表、宾语从句、定语从句、状语从句、主从复合句、现在分词作状语等语法树/成分分析术语）。\n` +
   `目标是帮助读者顺着英文语序自然理解，吸收地道表达。\n\n` +
@@ -64,25 +58,15 @@ const COMPREHENSION_SYSTEM_PROMPT =
   `     · don't know what + clause → 不知道……\n` +
   `     · keep telling sb to do sth → 一直叫某人做某事\n` +
   `   - meaning 必须简明扼要，不要为了凑数硬塞无价值碎片。\n\n` +
-  `4. 这里为什么这样说（specialNotes - 仅在真正影响理解时输出）：\n` +
-  `   - 只有遇到真正影响理解或具有特殊语言特色的现象时才输出：\n` +
-  `     ① 文学作品中的人物非标准拼写/书写形式（如《献给阿尔吉侬的花束》Flowers for Algernon 中的 werk / rite / yeres / munth 等）：\n` +
-  `       - 严禁修改原文非标准拼写，必须保留原文；\n` +
-  `       - 【禁止无依据推断人物属性】：严禁无原著依据自动推断人物属性，不要自动写“教育程度较低”、“智力水平”、“口音来源”、“社会阶层”等；\n` +
-  `       - 统一规范表述为：“原文采用非标准拼写/书写形式，标准形式通常为……；这是人物当前书写与语言特征的一部分，阅读时保留原文。”；\n` +
-  `       - 只有原著上下文明确信息时，才能进一步说明原因；\n` +
-  `     ② 口语表达、口语缩写（如 gonna → going to）；\n` +
-  `     ③ 省略、特殊语境、容易误解的形式；\n` +
-  `   - 没有必要时整个模块必须为空数组 []（前端将自动隐藏）。\n\n` +
-  `5. 顺手记一下（transferExample - 迁移例句）：\n` +
+  `4. 顺手记一下（transferExample - 迁移例句）：\n` +
   `   - 从“值得记住”中选择最有价值的 1 个 pattern，生成 1 个全新的、简短自然的英文例句；\n` +
   `   - 提供对应的自然中文理解译文；\n` +
   `   - 极简单句可不生成（设为 null）；普通句和长难句生成 1 个例句；不要考试、不要评分、不要选择题。\n` +
   `   - 示例：\n` +
   `     sentence: "She kept asking me the same question.", translation: "她一直问我同一个问题。", pattern: "keep telling/asking sb to do..."\n\n` +
   `【复杂度自适应规则（complexity）】\n` +
-  `- "simple"（极简单句）：原文+译文 + 值得记住（1~2 个），howToRead 为 []，specialNotes 为 []，transferExample 为 null；\n` +
-  `- "complex"（普通句/长难句）：提供 怎么读（howToRead）+ 值得记住（keyPatterns）+ 必要时“为什么这样说”（specialNotes）+ 顺手记一下（transferExample）。\n\n` +
+  `- "simple"（极简单句）：原文+译文 + 值得记住（1~2 个），howToRead 为 []，transferExample 为 null；\n` +
+  `- "complex"（普通句/长难句）：提供 怎么读（howToRead）+ 值得记住（keyPatterns）+ 顺手记一下（transferExample）。\n\n` +
   `必须严格输出以下 JSON 格式（不要包含任何额外 Markdown 标题或代码块之外的废话）：\n` +
   `{\n` +
   `  "complexity": "simple | complex",\n` +
@@ -97,12 +81,6 @@ const COMPREHENSION_SYSTEM_PROMPT =
   `    {\n` +
   `      "pattern": "核心搭配/句式（如：get + sb + adjective）",\n` +
   `      "meaning": "含义（如：使某人变得…… / 使某人感到……）"\n` +
-  `    }\n` +
-  `  ],\n` +
-  `  "specialNotes": [\n` +
-  `    {\n` +
-  `      "target": "特殊表达或原词（如：yeres / munth 或 gonna）",\n` +
-  `      "explanation": "标准形式与说明（如：原文采用非标准拼写/书写形式，标准形式通常为 years / month；这是人物当前书写与语言特征的一部分，阅读时保留原文。）"\n` +
   `    }\n` +
   `  ],\n` +
   `  "transferExample": {\n` +
@@ -250,14 +228,6 @@ export function parseComprehensionResponse(
         }))
         .filter((item) => item.pattern && item.meaning);
 
-      const rawSpecialNotes = Array.isArray(parsed.specialNotes) ? parsed.specialNotes : [];
-      const specialNotes: ZoraSpecialNote[] = rawSpecialNotes
-        .map((item: any) => ({
-          target: item.target ? String(item.target).trim() : undefined,
-          explanation: String(item.explanation || item.desc || item.meaning || "").trim(),
-        }))
-        .filter((item) => item.explanation);
-
       const rawTransfer = parsed.transferExample;
       let transferExample: ZoraTransferExample | undefined;
       if (rawTransfer && typeof rawTransfer === "object") {
@@ -280,7 +250,6 @@ export function parseComprehensionResponse(
         complexity,
         howToRead: howToRead.length > 0 ? howToRead : undefined,
         keyPatterns: keyPatterns.slice(0, 4),
-        specialNotes: specialNotes.length > 0 ? specialNotes : undefined,
         transferExample,
         rawText: trimmed,
       };
@@ -310,14 +279,13 @@ function parseComprehensionTextFallback(
   let translation = "";
   const howToRead: ZoraSenseGroup[] = [];
   const keyPatterns: ZoraKeyPattern[] = [];
-  const specialNotes: ZoraSpecialNote[] = [];
   let transferExample: ZoraTransferExample | undefined;
 
   let currentSection:
     | "translation"
     | "howToRead"
     | "keyPatterns"
-    | "specialNotes"
+    | "ignoredLegacySpecialNotes"
     | "transferExample"
     | null = null;
 
@@ -339,7 +307,7 @@ function parseComprehensionTextFallback(
       continue;
     }
     if (/(?:这里为什么这样说|为什么这样说|特殊表达|语言特色|非标准)/i.test(line)) {
-      currentSection = "specialNotes";
+      currentSection = "ignoredLegacySpecialNotes";
       continue;
     }
     if (/(?:顺手记一下|迁移例句|新例句|例句迁移|迁移应用)/i.test(line)) {
@@ -364,19 +332,8 @@ function parseComprehensionTextFallback(
           meaning: match[2].replace(/[*_`]/g, "").trim(),
         });
       }
-    } else if (currentSection === "specialNotes") {
-      const cleanedLine = line.replace(/^[-*•\d+.]+\s*/, "").trim();
-      const match = cleanedLine.match(/^([^:：→\->]+)(?:[:：]|(?:→|->))\s*(.*)$/);
-      if (match) {
-        specialNotes.push({
-          target: match[1].replace(/[*_`]/g, "").trim(),
-          explanation: match[2].replace(/[*_`]/g, "").trim(),
-        });
-      } else {
-        specialNotes.push({
-          explanation: cleanedLine.replace(/[*_`]/g, "").trim(),
-        });
-      }
+    } else if (currentSection === "ignoredLegacySpecialNotes") {
+      continue;
     } else if (currentSection === "transferExample") {
       const cleanedLine = line.replace(/^[-*•\d+.]+\s*/, "").trim();
       const arrowMatch = cleanedLine.split(/\s*(?:→|->)\s*/);
@@ -414,7 +371,6 @@ function parseComprehensionTextFallback(
     complexity,
     howToRead: howToRead.length > 0 ? howToRead : undefined,
     keyPatterns: keyPatterns.slice(0, 4),
-    specialNotes: specialNotes.length > 0 ? specialNotes : undefined,
     transferExample:
       transferExample && transferExample.sentence && transferExample.translation
         ? transferExample

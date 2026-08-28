@@ -305,16 +305,16 @@
   ],
   "family": [
     {
-      "title": "What is Weave",
+      "title": "What is Zora Reader",
       "paragraphs": [
         "Weave is a family of Obsidian plugins built around long-term learning: read → capture → schedule → review.",
-        "Weave EPUB Reader (this plugin) handles in-vault reading and excerpts; the Weave main plugin handles memory decks, question banks, and smart card creation; Weave Incremental Reading handles reading-point queues and calendar scheduling."
+        "Zora Reader handles in-vault reading and excerpts; companion knowledge and incremental-reading tools handle cards, queues, and scheduling."
       ],
       "listGroups": [
         {
           "heading": "How the three plugins divide work",
           "items": [
-            "Weave EPUB Reader: read books in Obsidian, manage highlights and excerpts, and connect with notes, Canvas, and decks.",
+            "Zora Reader: read books in Obsidian, manage highlights and excerpts, and connect with notes, Canvas, and decks.",
             "Weave main plugin: create memory cards with source links from any paragraph in any vault file, and manage and review them in table, kanban, and grid views.",
             "Weave Incremental Reading: organize “read later” material into reading-point queues and advance multiple books and chapters through topics and a month calendar."
           ]
@@ -322,7 +322,7 @@
       ]
     },
     {
-      "title": "Weave EPUB Reader (this plugin)",
+      "title": "Zora Reader",
       "paragraphs": [
         "Make Obsidian more than a note archive—a place where you actually read: open EPUB, TXT, and other books in your vault, excerpt as you go, and keep passages linked to your notes through deep links and in-body rendering."
       ],
@@ -386,7 +386,7 @@
       "listGroups": [
         {
           "items": [
-            "Read and excerpt only in Obsidian: Weave EPUB Reader alone is enough.",
+            "Read and excerpt only in Obsidian: Zora Reader alone is enough.",
             "Review and make cards after reading: EPUB Reader + Weave main plugin—fill the card window from excerpts or use AI split-to-card.",
             "Pace multiple or long books: EPUB Reader + Weave Incremental Reading—schedule chapters on the calendar and deep-link back on due days.",
             "Full loop (read → capture → schedule → review): install all three—excerpt while reading, review with cards, queue chapters and passages for incremental reading."

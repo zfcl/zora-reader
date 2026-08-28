@@ -76,7 +76,7 @@ export const EPUB_TUTORIAL_TABS_BY_LANG: Record<TutorialLanguage, TutorialTab[]>
 		{ id: "highlight", label: "高亮与想法" },
 		{ id: "workflow", label: "摘录工作流" },
 		{ id: "tools", label: "工具联动" },
-		{ id: "family", label: "Weave 系列" },
+		{ id: "family", label: "Zora Reader" },
 		{ id: "credits", label: "致谢" },
 	],
 	"zh-TW": [
@@ -84,7 +84,7 @@ export const EPUB_TUTORIAL_TABS_BY_LANG: Record<TutorialLanguage, TutorialTab[]>
 		{ id: "highlight", label: "高亮與想法" },
 		{ id: "workflow", label: "摘錄工作流" },
 		{ id: "tools", label: "工具聯動" },
-		{ id: "family", label: "Weave 系列" },
+		{ id: "family", label: "Zora Reader" },
 		{ id: "credits", label: "致謝" },
 	],
 	"en-US": [
@@ -92,7 +92,7 @@ export const EPUB_TUTORIAL_TABS_BY_LANG: Record<TutorialLanguage, TutorialTab[]>
 		{ id: "highlight", label: "Highlights" },
 		{ id: "workflow", label: "Workflow" },
 		{ id: "tools", label: "Tools" },
-		{ id: "family", label: "Weave family" },
+		{ id: "family", label: "Zora Reader" },
 		{ id: "credits", label: "Credits" },
 	],
 	"ja-JP": [
@@ -100,7 +100,7 @@ export const EPUB_TUTORIAL_TABS_BY_LANG: Record<TutorialLanguage, TutorialTab[]>
 		{ id: "highlight", label: "ハイライトと思考" },
 		{ id: "workflow", label: "抜粋ワークフロー" },
 		{ id: "tools", label: "ツール連携" },
-		{ id: "family", label: "Weave シリーズ" },
+		{ id: "family", label: "Zora Reader" },
 		{ id: "credits", label: "謝辞" },
 	],
 	"ko-KR": [
@@ -108,7 +108,7 @@ export const EPUB_TUTORIAL_TABS_BY_LANG: Record<TutorialLanguage, TutorialTab[]>
 		{ id: "highlight", label: "하이라이트와 생각" },
 		{ id: "workflow", label: "발췌 워크플로" },
 		{ id: "tools", label: "도구 연동" },
-		{ id: "family", label: "Weave 시리즈" },
+		{ id: "family", label: "Zora Reader" },
 		{ id: "credits", label: "감사의 말" },
 	],
 	"ru-RU": [
@@ -116,7 +116,7 @@ export const EPUB_TUTORIAL_TABS_BY_LANG: Record<TutorialLanguage, TutorialTab[]>
 		{ id: "highlight", label: "Выделения и мысли" },
 		{ id: "workflow", label: "Рабочий процесс" },
 		{ id: "tools", label: "Инструменты" },
-		{ id: "family", label: "Серия Weave" },
+		{ id: "family", label: "Zora Reader" },
 		{ id: "credits", label: "Благодарности" },
 	],
 };

@@ -14,7 +14,7 @@
   let contactItems = $derived.by(() => [
     {
       label: t("epub.settings.contact.email"),
-      href: "mailto:tutaoyuan8@outlook.com?subject=Weave%20EPUB%20Reader%20%E5%8F%8D%E9%A6%88",
+      href: "mailto:tutaoyuan8@outlook.com?subject=Zora%20Reader%20%E5%8F%8D%E9%A6%88",
     },
     {
       label: t("epub.settings.contact.docs"),

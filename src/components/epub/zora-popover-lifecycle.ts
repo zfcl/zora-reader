@@ -47,12 +47,29 @@ export function mountMobilePopoverPortal(
 
   return () => {
     popoverEl.style.visibility = "hidden";
+    popoverEl.style.opacity = "0";
     popoverEl.style.pointerEvents = "none";
     popoverEl.remove();
   };
 }
 
+/**
+ * Hides portalled lookup cards synchronously, before Svelte gets a chance to
+ * flush state-driven teardown. This closes the one-frame gap that is visible
+ * on iOS when the selection is dismissed.
+ */
+export function hideMobilePopoverDom(targetDocument: Document): void {
+  const candidates = targetDocument.querySelectorAll<HTMLElement>(".zora-lookup-popover");
+  for (const popoverEl of candidates) {
+    if (popoverEl.parentNode !== targetDocument.body) continue;
+    popoverEl.style.visibility = "hidden";
+    popoverEl.style.opacity = "0";
+    popoverEl.style.pointerEvents = "none";
+  }
+}
+
 export interface SelectionDismissalSteps {
+  hidePopoverDom: () => void;
   clearPopoverState: () => void;
   hideToolbar: () => void;
   clearSelection: () => void;
@@ -60,6 +77,7 @@ export interface SelectionDismissalSteps {
 
 /** Synchronously removes floating UI before selection observers are notified. */
 export function dismissSelectionUiFirst(steps: SelectionDismissalSteps): void {
+  steps.hidePopoverDom();
   steps.clearPopoverState();
   steps.hideToolbar();
   steps.clearSelection();

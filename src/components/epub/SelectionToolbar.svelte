@@ -34,7 +34,7 @@ import type { ReaderAnchorPoint, ReaderViewportRect } from '../../services/epub/
 	} from './toolbar-positioning';
 	import { expandRangeToSentence, expandRangeToParagraph } from './sentence-selection';
 	import { extractWordRangeFromTextNode } from './mobile-tap-selection';
-	import { dismissSelectionUiFirst } from './zora-popover-lifecycle';
+	import { dismissSelectionUiFirst, hideMobilePopoverDom } from './zora-popover-lifecycle';
 	import { getWorkspaceBounds } from '../../utils/mobile-modal-bounds';
 
 	type ExternalSelectionState = {
@@ -76,6 +76,7 @@ import type { ReaderAnchorPoint, ReaderViewportRect } from '../../services/epub/
 		onCreateReadingPoint?: (text: string, cfiRange: string) => void;
 		onOpenAIMenu?: (event: MouseEvent, text: string, cfiRange: string) => void;
 		onRunAIAction?: (actionId: string, text: string, cfiRange: string) => void;
+		onReadingNoteSaved?: (sourcePath: string) => void | Promise<void>;
 		translationSettings?: IntegratedAISettings;
 	}
 
@@ -102,6 +103,7 @@ import type { ReaderAnchorPoint, ReaderViewportRect } from '../../services/epub/
 		onCreateReadingPoint,
 		onOpenAIMenu,
 		onRunAIAction,
+		onReadingNoteSaved,
 		translationSettings
 	}: Props = $props();
 	let t = $derived($tr);
@@ -339,6 +341,9 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 		clearPendingCollapsedHide();
 		const clearSelection = activeClearSelection || externalSelection?.clear || null;
 		dismissSelectionUiFirst({
+			hidePopoverDom: () => {
+				if (isMobileToolbar) hideMobilePopoverDom(activeDocument);
+			},
 			clearPopoverState,
 			hideToolbar,
 			clearSelection: () => {
@@ -528,16 +533,8 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 		hideToolbar({ preserveSelectionContext: true });
 	}
 
-	function handleNoteSaved(info: { cfiRange: string; blockId: string; text: string; filePath: string }) {
-		readerService?.addHighlight?.({
-			cfiRange: info.cfiRange,
-			color: 'purple',
-			style: 'reading-note',
-			text: info.text,
-			excerptId: info.blockId,
-			sourceFile: info.filePath,
-			presentation: 'highlight',
-		});
+	async function handleNoteSaved(info: { cfiRange: string; blockId: string; text: string; filePath: string }) {
+		await onReadingNoteSaved?.(info.filePath);
 	}
 
 	function closePopover() {

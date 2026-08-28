@@ -21,7 +21,7 @@ describe("zora-comprehension-service", () => {
     expect(body.messages[1].content).toBe("TEST_USER_CONTENT");
   });
 
-  it("parses valid JSON response for complex sentence with howToRead, keyPatterns, specialNotes", () => {
+  it("ignores the removed specialNotes field in legacy JSON responses", () => {
     const rawJson = JSON.stringify({
       complexity: "complex",
       translation: "我不知道他准备做什么，而我正紧紧抓住……",
@@ -50,8 +50,7 @@ describe("zora-comprehension-service", () => {
     expect(result.howToRead?.[0]).toEqual({ chunk: "I didn't know", translation: "我不知道" });
     expect(result.keyPatterns).toHaveLength(2);
     expect(result.keyPatterns[0]).toEqual({ pattern: "didn't know what...", meaning: "不知道……" });
-    expect(result.specialNotes).toHaveLength(1);
-    expect(result.specialNotes?.[0].target).toBe("gonna");
+    expect("specialNotes" in result).toBe(false);
   });
 
   it("parses valid JSON response with transferExample (顺手记一下)", () => {
@@ -65,7 +64,6 @@ describe("zora-comprehension-service", () => {
       keyPatterns: [
         { pattern: "keep telling sb to do sth", meaning: "一直叫某人做某事" },
       ],
-      specialNotes: [],
       transferExample: {
         pattern: "keep telling sb to do sth",
         sentence: "She kept asking me the same question.",
@@ -85,7 +83,7 @@ describe("zora-comprehension-service", () => {
     expect(result.transferExample?.pattern).toBe("keep telling sb to do sth");
   });
 
-  it("parses simple sentence without howToRead, specialNotes, or transferExample", () => {
+  it("parses simple sentence without howToRead or transferExample", () => {
     const rawJson = JSON.stringify({
       complexity: "simple",
       translation: "他每天早上慢跑。",
@@ -93,7 +91,6 @@ describe("zora-comprehension-service", () => {
       keyPatterns: [
         { pattern: "go jogging", meaning: "去慢跑" },
       ],
-      specialNotes: [],
       transferExample: null,
     });
 
@@ -106,11 +103,10 @@ describe("zora-comprehension-service", () => {
     expect(result.translation).toBe("他每天早上慢跑。");
     expect(result.howToRead).toBeUndefined();
     expect(result.keyPatterns).toHaveLength(1);
-    expect(result.specialNotes).toBeUndefined();
     expect(result.transferExample).toBeUndefined();
   });
 
-  it("handles literary non-standard spellings (Flowers for Algernon style) correctly", () => {
+  it("preserves the original sentence while ignoring removed legacy notes", () => {
     const sentence = "I am 32 yeres old and next munth is my brithday.";
     const rawJson = JSON.stringify({
       complexity: "complex",
@@ -133,9 +129,7 @@ describe("zora-comprehension-service", () => {
 
     const result = parseComprehensionResponse(rawJson, sentence);
     expect(result.sentence).toBe(sentence); // Original non-standard spellings preserved
-    expect(result.specialNotes).toHaveLength(1);
-    expect(result.specialNotes?.[0].explanation).toContain("原文采用非标准拼写/书写形式，标准形式通常为");
-    expect(result.specialNotes?.[0].explanation).toContain("这是人物当前书写与语言特征的一部分，阅读时保留原文。");
+    expect("specialNotes" in result).toBe(false);
   });
 
   it("throws error when response is truncated by token limit", () => {
@@ -162,7 +156,7 @@ She kept asking me the same question. → 她一直问我同一个问题。
     expect(result.translation).toBe("我不知道他准备做什么。");
     expect(result.howToRead).toHaveLength(2);
     expect(result.keyPatterns).toHaveLength(1);
-    expect(result.specialNotes).toHaveLength(1);
+    expect("specialNotes" in result).toBe(false);
     expect(result.transferExample).toBeDefined();
     expect(result.transferExample?.sentence).toBe("She kept asking me the same question.");
     expect(result.transferExample?.translation).toBe("她一直问我同一个问题。");
@@ -181,7 +175,6 @@ She kept asking me the same question. → 她一直问我同一个问题。
         { pattern: "keep telling sb to do sth", meaning: "一直叫某人做某事" },
         { pattern: "get + sb + adjective", meaning: "使某人变得…… / 使某人感到……" },
       ],
-      specialNotes: [],
       transferExample: null,
     });
 

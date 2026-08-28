@@ -21,7 +21,7 @@
     anchorRects?: DOMRect[];
     anchorPoint?: ReaderAnchorPoint;
     viewportEl: HTMLElement;
-    onSaved?: (info: { cfiRange: string; blockId: string; text: string; filePath: string }) => void;
+    onSaved?: (info: { cfiRange: string; blockId: string; text: string; filePath: string }) => void | Promise<void>;
     onClose: () => void;
   }
 
@@ -187,7 +187,7 @@
         cfiRange: selection.cfiRange,
       });
       new Notice("已保存至读书笔记");
-      onSaved?.({
+      await onSaved?.({
         cfiRange: selection.cfiRange,
         blockId: result.blockId,
         text: selection.text,

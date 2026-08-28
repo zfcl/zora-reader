@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createPopoverCloseHandlers,
   dismissSelectionUiFirst,
+  hideMobilePopoverDom,
   mountMobilePopoverPortal,
 } from "../zora-popover-lifecycle";
 
@@ -43,20 +44,31 @@ describe("zora popover lifecycle", () => {
 
     expect(popover.isConnected).toBe(false);
     expect(popover.style.visibility).toBe("hidden");
+    expect(popover.style.opacity).toBe("0");
     expect(popover.style.pointerEvents).toBe("none");
     expect(originalParent.contains(popover)).toBe(false);
     expect(originalParent.firstChild).toBe(nextSibling);
   });
 
-  it("clears popover and toolbar UI before external selection", () => {
+  it("synchronously hides the body portal before clearing state and selection", () => {
     const order: string[] = [];
+    const popover = document.createElement("div");
+    popover.className = "zora-lookup-popover";
+    document.body.appendChild(popover);
 
     dismissSelectionUiFirst({
+      hidePopoverDom: () => {
+        order.push("dom");
+        hideMobilePopoverDom(document);
+      },
       clearPopoverState: () => order.push("popover"),
       hideToolbar: () => order.push("toolbar"),
       clearSelection: () => order.push("selection"),
     });
 
-    expect(order).toEqual(["popover", "toolbar", "selection"]);
+    expect(order).toEqual(["dom", "popover", "toolbar", "selection"]);
+    expect(popover.style.visibility).toBe("hidden");
+    expect(popover.style.opacity).toBe("0");
+    expect(popover.style.pointerEvents).toBe("none");
   });
 });

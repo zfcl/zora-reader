@@ -75,7 +75,7 @@
   let remainingAttempts = $state<number | null>(null);
   let showActivationCodeFull = $state(false);
   const supportEmail = 'tutaoyuan8@outlook.com';
-  const supportSubject = 'Weave EPUB activation support';
+  const supportSubject = 'Zora Reader activation support';
 
   // ==================== Derived State ====================
   

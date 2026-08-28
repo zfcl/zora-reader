@@ -308,16 +308,16 @@
   ],
   "family": [
     {
-      "title": "Weave 是什麼",
+      "title": "Zora Reader 是什麼",
       "paragraphs": [
         "Weave 是一組面向 Obsidian 的知識工作流外掛，圍繞「讀 → 記 → 排 → 複習」組織長期學習。",
-        "Weave EPUB Reader（本外掛）負責在庫內讀書與摘錄；Weave 主外掛負責記憶牌組、題庫與智慧制卡；Weave Incremental Reading 負責增量閱讀佇列與月曆排期。"
+        "Zora Reader（本外掛）負責在庫內讀書與摘錄；配套知識外掛負責記憶牌組、題庫與智慧制卡；增量閱讀外掛負責閱讀佇列與月曆排期。"
       ],
       "listGroups": [
         {
           "heading": "三者分工",
           "items": [
-            "Weave EPUB Reader：在 Obsidian 內閱讀書籍，管理摘錄與高亮，並與筆記、Canvas、牌組聯動。",
+            "Zora Reader：在 Obsidian 內閱讀書籍，管理摘錄與高亮，並與筆記、Canvas、牌組聯動。",
             "Weave 主外掛：從 Obsidian 任意檔案的段落摘錄生成帶溯源連結的記憶卡片，並以表格、看板、網格等視圖管理與複習。",
             "Weave Incremental Reading：把「以後再看」的內容整理成閱讀點佇列，用專題與月曆調度多書、多章節的推進節奏。"
           ]
@@ -325,7 +325,7 @@
       ]
     },
     {
-      "title": "Weave EPUB Reader（當前外掛）",
+      "title": "Zora Reader（當前外掛）",
       "paragraphs": [
         "讓 Obsidian 不只是筆記倉庫，也是你正經讀書的地方：在 Vault 內開啟 EPUB、TXT 等書籍，邊讀邊摘錄，並透過深連結與正文回顯，把「書裡的句子」和「庫裡的筆記」連在一起。"
       ],
@@ -389,7 +389,7 @@
       "listGroups": [
         {
           "items": [
-            "只想在 Obsidian 裡讀書、做摘錄：只裝 Weave EPUB Reader 即可。",
+            "只想在 Obsidian 裡讀書、做摘錄：只裝 Zora Reader 即可。",
             "讀完要複習、要制卡：EPUB Reader + Weave 主外掛；摘錄後可一鍵填充到制卡視窗，或 AI 拆分制卡。",
             "多本書/長書要有節奏：EPUB Reader + Weave Incremental Reading；章節進月曆排期，到調度日再深連結回書中精讀。",
             "完整閉環（讀 → 記 → 排 → 複習）：三款都裝；讀書摘錄 → 制卡複習 → 章節/段落進增量佇列，長期推進。"

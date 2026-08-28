@@ -12,6 +12,7 @@
 	import BookNotesExportPopover from './BookNotesExportPopover.svelte';
 	import ScreenshotOverlay from './ScreenshotOverlay.svelte';
 	import EpubTutorial from './EpubTutorial.svelte';
+	import EpubWelcome from './EpubWelcome.svelte';
 	import type { TutorialTabId } from './epub-tutorial-content';
 	import EpubHighlightToolbar from './EpubHighlightToolbar.svelte';
 	import EpubCommentEditorPopover from './EpubCommentEditorPopover.svelte';
@@ -253,6 +254,7 @@
 	let screenshotMode = $state(false);
 	let screenshotSaveAsImage = $state(true);
 	let tutorialVisible = $state(false);
+	let welcomeVisible = $state(false);
 	let tutorialInitialTab = $state<TutorialTabId | undefined>(undefined);
 	let readerTutorialDismissed = $state(false);
 	let tutorialDismissStateReady = untrack(() =>
@@ -1487,7 +1489,7 @@
 
 	function reloadHighlightsAfterExcerptMutation(sourcePath?: string | null) {
 		rememberHighlightSourcePath(sourcePath);
-		void reloadHighlights({ incremental: true });
+		return reloadHighlights({ incremental: true });
 	}
 
 	function queueHighlightReload(delayMs = 350, options: HighlightReloadOptions = {}) {
@@ -2458,13 +2460,22 @@
 		closeTutorial();
 	}
 
+	async function acknowledgeWelcome() {
+		welcomeVisible = false;
+		readerTutorialDismissed = true;
+		try {
+			await storageService.savePluginUiMemory({ readerTutorialDismissed: true });
+		} catch (error) {
+			logger.warn('[EpubReaderApp] Failed to save welcome dismiss state:', error);
+		}
+	}
+
 	async function maybeShowTutorialOnBookOpen() {
 		await tutorialDismissStateReady;
 		if (readerTutorialDismissed) {
 			return;
 		}
-		tutorialInitialTab = 'workflow';
-		tutorialVisible = true;
+		welcomeVisible = true;
 	}
 
 	async function addBookmark() {
@@ -6006,6 +6017,7 @@
 				onRunAIAction={handleRunIntegratedAIAction}
 				onOpenAIMenu={showSelectedTextAIMenu}
 				translationSettings={resolveEpubHost(app)?.settings?.aiAssistant}
+				onReadingNoteSaved={reloadHighlightsAfterExcerptMutation}
 			/>
 
 			<EpubPremiumFeaturePopover
@@ -6022,6 +6034,8 @@
 				onClose={closeTutorial}
 				onDismissPermanently={dismissTutorialPermanently}
 			/>
+
+			<EpubWelcome visible={welcomeVisible} onConfirm={acknowledgeWelcome} />
 
 			<ScreenshotOverlay
 				active={screenshotMode}
