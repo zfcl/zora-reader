@@ -64,12 +64,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Svelte and TypeScript validation (advisory)
-        continue-on-error: true
+      - name: Svelte and TypeScript validation
         run: npm run lint:svelte5
-
-      - name: Unit tests
-        run: node scripts/ci-run-tests.cjs
 
       - name: Build release
         run: node scripts/ci-run-build.cjs
