@@ -4,6 +4,7 @@ import {
 	isSentenceTerminator,
 	expandRangeToSentence,
 	expandRangeToParagraph,
+	snapRangeToSentenceForMobileDrag,
 } from "../sentence-selection";
 
 describe("sentence-selection", () => {
@@ -109,6 +110,53 @@ describe("sentence-selection", () => {
 			const result = expandRangeToSentence(range, document);
 			expect(result).not.toBeNull();
 			expect(result?.text).toBe("I ain't never been to no dentist neither.");
+
+			document.body.removeChild(p);
+		});
+
+		it("extends a short mobile drag through a sentence ending on the next visual page", () => {
+			const p = document.createElement("p");
+			const currentPage = document.createElement("span");
+			currentPage.dataset.visualPage = "current";
+			const currentText = document.createTextNode(
+				"Previous sentence. This sentence starts on the current visual page "
+			);
+			currentPage.appendChild(currentText);
+			const nextPage = document.createElement("span");
+			nextPage.dataset.visualPage = "next";
+			const nextText = document.createTextNode(
+				"and reaches its ending on the next page. Following sentence."
+			);
+			nextPage.appendChild(nextText);
+			p.append(currentPage, nextPage);
+			document.body.appendChild(p);
+
+			const range = document.createRange();
+			const start = currentText.data.indexOf("starts");
+			range.setStart(currentText, start);
+			range.setEnd(currentText, start + 2);
+
+			const result = snapRangeToSentenceForMobileDrag(range, document);
+			expect(result?.text).toBe(
+				"This sentence starts on the current visual page and reaches its ending on the next page."
+			);
+			expect(result?.range.endContainer).toBe(nextText);
+			expect(result?.range.endOffset).toBe(nextText.data.indexOf(".") + 1);
+
+			document.body.removeChild(p);
+		});
+
+		it("expands both edges when a mobile drag crosses sentence boundaries", () => {
+			const p = document.createElement("p");
+			const text = document.createTextNode("First complete sentence. Second complete sentence. Third one.");
+			p.appendChild(text);
+			document.body.appendChild(p);
+			const range = document.createRange();
+			range.setStart(text, text.data.indexOf("complete"));
+			range.setEnd(text, text.data.indexOf("Third") - 1);
+
+			const result = snapRangeToSentenceForMobileDrag(range, document);
+			expect(result?.text).toBe("First complete sentence. Second complete sentence.");
 
 			document.body.removeChild(p);
 		});

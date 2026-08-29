@@ -127,6 +127,45 @@ describe('mobile-direct-selection', () => {
 			expect(range).not.toBeNull();
 			expect(range?.toString()).toBe('said Flowers for Algernon was');
 		});
+
+		it('finalizes even a short drag as the whole sentence across a visual page boundary', () => {
+			let completedSelection: any = null;
+			const controller = new MobileDirectSelectionController({
+				onSelectionComplete: (selection) => {
+					completedSelection = selection;
+				},
+			});
+			const p = doc.createElement('p');
+			const currentText = doc.createTextNode('Before. A sentence begins on this page ');
+			const nextPageText = doc.createTextNode('and ends on the following page. After.');
+			const nextPage = doc.createElement('span');
+			nextPage.dataset.visualPage = 'next';
+			nextPage.appendChild(nextPageText);
+			p.append(currentText, nextPage);
+			doc.body.appendChild(p);
+			const cfiFromRange = vi.fn().mockReturnValue('epubcfi(/6/2!/4/2/1:8,/4/2/3:31)');
+			controller.syncFrames([{ frameDocument: doc, window, cfiFromRange }]);
+
+			const dragRange = doc.createRange();
+			const start = currentText.data.indexOf('begins');
+			dragRange.setStart(currentText, start);
+			dragRange.setEnd(currentText, start + 2);
+			(controller as any).activeGestureKind = 'text-selection';
+			(controller as any).activeDoc = doc;
+			(controller as any).isDragging = true;
+			(controller as any).currentRange = dragRange;
+
+			const touchEnd = new Event('touchend', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchEnd, 'touches', { value: [] });
+			doc.dispatchEvent(touchEnd);
+
+			expect(completedSelection?.text).toBe(
+				'A sentence begins on this page and ends on the following page.'
+			);
+			expect(cfiFromRange).toHaveBeenCalledOnce();
+			expect(cfiFromRange.mock.calls[0][0].endContainer).toBe(nextPageText);
+			controller.dispose();
+		});
 	});
 
 	describe('6. Overlay rect generation', () => {
@@ -292,6 +331,8 @@ describe('mobile-direct-selection', () => {
 				clear: vi.fn(),
 			};
 			(controller as any).mode = 'selected';
+			const nativeSelection = { removeAllRanges: vi.fn() };
+			vi.spyOn(doc, 'getSelection').mockReturnValue(nativeSelection as any);
 
 			expect(controller.getSelection()).not.toBeNull();
 			expect(controller.getMode()).toBe('selected');
@@ -302,6 +343,7 @@ describe('mobile-direct-selection', () => {
 			expect(controller.getSelection()).toBeNull();
 			expect(controller.getMode()).toBe('idle');
 			expect(doc.querySelector('.zora-mobile-selection-overlay')).toBeNull();
+			expect(nativeSelection.removeAllRanges).toHaveBeenCalledOnce();
 
 			controller.dispose();
 		});
@@ -1373,7 +1415,7 @@ describe('mobile-direct-selection', () => {
 			doc.dispatchEvent(touchEnd);
 
 			expect(completedSelection).not.toBeNull();
-			expect(completedSelection?.text).toBe('Direct drag');
+			expect(completedSelection?.text).toBe('Direct drag text selection works smoothly.');
 			expect(paginatorDocTouch).not.toHaveBeenCalled();
 
 			doc.removeEventListener('touchstart', paginatorDocTouch);

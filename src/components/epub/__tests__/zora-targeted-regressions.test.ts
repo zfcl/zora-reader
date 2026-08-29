@@ -12,6 +12,7 @@ const comprehensionSource = readFileSync(
 );
 const highlightToolbarSource = readFileSync("src/components/epub/EpubHighlightToolbar.svelte", "utf8");
 const studyNoteSource = readFileSync("src/services/ai/zora/zora-study-note-service.ts", "utf8");
+const readerCssSource = readFileSync("src/styles/epub/epub-nav-sidebar.css", "utf8");
 
 describe("targeted reader regressions", () => {
   it("refreshes persisted Markdown highlights after a reading note is saved", () => {
@@ -72,6 +73,21 @@ describe("targeted reader regressions", () => {
 		expect(toolbarSource).toContain("let positionReady = $state(false)");
 		expect(toolbarSource).toContain("const generation = ++positionGeneration");
 		expect(toolbarSource).toContain("class:visible={isVisible && positionReady}");
+	});
+
+	it("dismisses the mobile selection toolbar without moving a fading copy to the top", () => {
+		const hideToolbar = toolbarSource.slice(
+			toolbarSource.indexOf("function hideToolbar"),
+			toolbarSource.indexOf("function clearAndHide")
+		);
+		const readerSelectionListener = toolbarSource.slice(
+			toolbarSource.indexOf("const offSelection"),
+			toolbarSource.indexOf("const offHighlightClick")
+		);
+		expect(hideToolbar).toContain("if (!isMobileToolbar)");
+		expect(readerSelectionListener).toContain("if (isMobileToolbar)");
+		expect(readerCssSource).toMatch(/\.epub-selection-toolbar\s*\{\s*visibility: hidden;/);
+		expect(readerCssSource).toMatch(/\.epub-selection-toolbar\.visible\s*\{\s*visibility: visible;/);
 	});
 
 	it("uses Git-synced Vault Markdown as the sole reading-note persistence source", () => {

@@ -836,11 +836,21 @@ body.is-mobile .epub-reader-root[data-paragraph-mode="active"] .epub-paragraph-o
 	transition: opacity var(--epub-transition-fast), transform var(--epub-transition-fast);
 }
 
+/* Selection dismissal must be immediate. Otherwise its opacity transition can
+   still paint while the toolbar's dismissal state is being committed. */
+.epub-selection-toolbar {
+	visibility: hidden;
+}
+
 .epub-selection-toolbar.visible,
 .epub-highlight-toolbar.visible {
 	opacity: 1;
 	pointer-events: auto;
 	transform: translateY(-10px);
+}
+
+.epub-selection-toolbar.visible {
+	visibility: visible;
 }
 
 .epub-selection-toolbar.visible.below-selection {

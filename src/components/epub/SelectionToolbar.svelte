@@ -353,7 +353,11 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 		clearPendingExternalSelectionHide();
 		isVisible = false;
 		isBelowSelection = false;
-		toolbarMode = 'floating';
+		// Keep a fading mobile toolbar docked. Resetting it to the default
+		// absolute top:0 position during dismissal causes a visible top flash.
+		if (!isMobileToolbar) {
+			toolbarMode = 'floating';
+		}
 		arrowOffset = 0;
 
 		if (options.preserveSelectionContext) {
@@ -1100,10 +1104,10 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 		});
 
 		const offSelection = currentReaderService.onSelectionChange(({ cfiRange, frame }) => {
-			if (
-				isMobileToolbar &&
-				(externalSelection || mobileSelectionDismissBlocked || Date.now() < mobileExternalSelectionCooldownUntil)
-			) {
+			// Mobile selection is owned by MobileDirectSelectionController (or the
+			// paragraph overlay). Native WebKit events can arrive after dismissal
+			// and must never resurrect a cleared toolbar.
+			if (isMobileToolbar) {
 				return;
 			}
 			void syncSelection(frame, cfiRange);

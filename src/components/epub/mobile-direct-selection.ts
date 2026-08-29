@@ -1,6 +1,6 @@
 import type { ReaderFrame } from '../../services/epub/reader-engine-types';
 import { logMobileEvent } from '../../utils/zora-mobile-logger';
-import { snapRangeToSentenceIfClose } from './sentence-selection';
+import { snapRangeToSentenceForMobileDrag } from './sentence-selection';
 
 /**
  * Realm-safe Text node check (avoids `node instanceof window.Text` failing across iframe boundaries).
@@ -1139,6 +1139,7 @@ export class MobileDirectSelectionController {
 	 */
 	clearSelection(): void {
 		this.cancelPendingRaf();
+		this.clearNativeSelections();
 		this.clearOverlays();
 		this.activeSelection = null;
 		this.mode = 'idle';
@@ -1227,6 +1228,7 @@ export class MobileDirectSelectionController {
 	 * Used when starting a new gesture to prevent UI flash before the new selection completes.
 	 */
 	private clearVisualSelectionForReplacement(): void {
+		this.clearNativeSelections();
 		this.clearOverlays();
 		this.currentRange = null;
 	}
@@ -1454,7 +1456,7 @@ export class MobileDirectSelectionController {
 
 				// Drag selection completion
 				if (this.isDragging && this.currentRange && !this.currentRange.collapsed) {
-					const snapped = snapRangeToSentenceIfClose(this.currentRange, doc);
+					const snapped = snapRangeToSentenceForMobileDrag(this.currentRange, doc);
 					const finalRange = snapped?.range ?? this.currentRange;
 					const text = (snapped?.text ?? finalRange.toString()).trim();
 					const cfiRange = frame.cfiFromRange ? frame.cfiFromRange(finalRange) : null;
@@ -1694,6 +1696,17 @@ export class MobileDirectSelectionController {
 	private clearOverlays(): void {
 		for (const tracking of this.trackedFrames.values()) {
 			tracking.overlay.clear();
+		}
+	}
+
+	private clearNativeSelections(): void {
+		for (const doc of this.trackedFrames.keys()) {
+			try {
+				const selection = doc.defaultView?.getSelection?.() ?? doc.getSelection?.();
+				selection?.removeAllRanges();
+			} catch {
+				// A detached WebKit frame can reject selection access during teardown.
+			}
 		}
 	}
 

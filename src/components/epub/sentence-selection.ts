@@ -384,6 +384,21 @@ export function snapRangeToSentenceIfClose(
 	}
 }
 
+/**
+ * Mobile direct selection is gesture based, so a drag always represents a
+ * sentence selection request. Expanding the DOM Range also reaches text in a
+ * later visual column/page when the sentence continues beyond the viewport.
+ */
+export function snapRangeToSentenceForMobileDrag(
+	range: Range,
+	doc: Document
+): { range: Range; text: string } | null {
+	if (!range || !doc || range.collapsed || !range.toString().trim()) {
+		return null;
+	}
+	return expandRangeToSentence(range, doc);
+}
+
 export function expandRangeToParagraph(
 	range: Range,
 	doc: Document
