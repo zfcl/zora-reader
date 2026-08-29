@@ -114,6 +114,34 @@ describe("sentence-selection", () => {
 			document.body.removeChild(p);
 		});
 
+		it("expands sentence ranges whose nodes belong to an EPUB iframe realm", () => {
+			const iframe = document.createElement("iframe");
+			document.body.appendChild(iframe);
+			const frameDoc = iframe.contentDocument;
+			expect(frameDoc).toBeTruthy();
+			if (!frameDoc) return;
+
+			const p = frameDoc.createElement("p");
+			const before = frameDoc.createTextNode("Before. The iframe sentence has ");
+			const emphasis = frameDoc.createElement("em");
+			const selected = frameDoc.createTextNode("cross-realm nodes");
+			emphasis.appendChild(selected);
+			const after = frameDoc.createTextNode(" and must expand completely. After.");
+			p.append(before, emphasis, after);
+			frameDoc.body.appendChild(p);
+
+			const range = frameDoc.createRange();
+			range.setStart(selected, 2);
+			range.setEnd(selected, 7);
+			const result = snapRangeToSentenceForMobileDrag(range, frameDoc);
+
+			expect(result?.text).toBe(
+				"The iframe sentence has cross-realm nodes and must expand completely."
+			);
+			expect(result?.range.startContainer.ownerDocument).toBe(frameDoc);
+			iframe.remove();
+		});
+
 		it("extends a short mobile drag through a sentence ending on the next visual page", () => {
 			const p = document.createElement("p");
 			const currentPage = document.createElement("span");
@@ -144,6 +172,37 @@ describe("sentence-selection", () => {
 			expect(result?.range.endOffset).toBe(nextText.data.indexOf(".") + 1);
 
 			document.body.removeChild(p);
+		});
+
+		it("does not treat generic EPUB layout divs as sentence boundaries", () => {
+			const blockquote = document.createElement("blockquote");
+			const currentPage = document.createElement("div");
+			currentPage.dataset.visualPage = "current";
+			const currentText = document.createTextNode(
+				"Previous sentence. This complete sentence starts in one layout block "
+			);
+			currentPage.appendChild(currentText);
+			const nextPage = document.createElement("div");
+			nextPage.dataset.visualPage = "next";
+			const nextText = document.createTextNode(
+				"and ends inside another layout block. Following sentence."
+			);
+			nextPage.appendChild(nextText);
+			blockquote.append(currentPage, nextPage);
+			document.body.appendChild(blockquote);
+
+			const range = document.createRange();
+			const start = currentText.data.indexOf("complete");
+			range.setStart(currentText, start);
+			range.setEnd(currentText, start + 3);
+
+			const result = snapRangeToSentenceForMobileDrag(range, document);
+			expect(result?.text).toBe(
+				"This complete sentence starts in one layout block and ends inside another layout block."
+			);
+			expect(result?.range.endContainer).toBe(nextText);
+
+			document.body.removeChild(blockquote);
 		});
 
 		it("expands both edges when a mobile drag crosses sentence boundaries", () => {

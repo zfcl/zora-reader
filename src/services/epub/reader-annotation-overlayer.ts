@@ -10,6 +10,7 @@ import {
 } from "./reader-highlight-geometry";
 import { setSvgInteractionAttributes } from "./svg-interaction";
 import { i18n } from "../../utils/i18n";
+import type { ReaderColorScheme } from "./reader-theme-tokens";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -27,6 +28,7 @@ export type ConcealmentPalette = {
 
 export interface ReaderAnnotationOverlayPorts {
 	resolveHighlightTint(color?: string): string;
+	getColorScheme?(): ReaderColorScheme;
 	getObsidianCSSVar(varName: string, fallback: string): string;
 	getConcealmentPalette(): ConcealmentPalette;
 	onCommentMarkerClick(
@@ -293,9 +295,10 @@ export class ReaderAnnotationOverlayRenderer {
 	createReadingNoteHintOverlay(rects: unknown[], color?: string): SVGElement {
 		const group = activeDocument.createElementNS(SVG_NS, "g");
 		group.setAttribute("data-zora-reading-note-hint", "group");
-		const noteColor = color === "blue"
-			? this.ports.resolveHighlightTint("blue")
-			: "#8b5cf6";
+		const noteColor = this.ports.resolveHighlightTint(color === "blue" ? "blue" : "purple");
+		const isDark = this.ports.getColorScheme?.() === "dark";
+		const fillOpacity = isDark ? "0.24" : "0.10";
+		const strokeOpacity = isDark ? "0.58" : "0.20";
 		for (const rect of rects as RawViewportRect[]) {
 			if (rect.width <= 0 || rect.height <= 0) {
 				continue;
@@ -309,7 +312,10 @@ export class ReaderAnnotationOverlayRenderer {
 			bg.setAttribute("rx", "2");
 			bg.setAttribute("ry", "2");
 			bg.setAttribute("fill", noteColor);
-			bg.setAttribute("fill-opacity", "0.08");
+			bg.setAttribute("fill-opacity", fillOpacity);
+			bg.setAttribute("stroke", noteColor);
+			bg.setAttribute("stroke-opacity", strokeOpacity);
+			bg.setAttribute("stroke-width", isDark ? "0.75" : "0.5");
 			setSvgInteractionAttributes(bg, { pointerEvents: "none" });
 			group.appendChild(bg);
 		}
@@ -420,12 +426,10 @@ export class ReaderAnnotationOverlayRenderer {
 		const markerX = position.x;
 		const markerY = position.y;
 
-		const markerColor = annotation.color === "blue"
-			? this.ports.resolveHighlightTint("blue")
-			: "#8b5cf6";
-		const markerBorder = annotation.color === "blue"
-			? markerColor
-			: "#7c3aed";
+		const markerColor = this.ports.resolveHighlightTint(
+			annotation.color === "blue" ? "blue" : "purple"
+		);
+		const markerBorder = markerColor;
 		const fillColor = "#ffffff";
 
 		const badge = activeDocument.createElementNS(SVG_NS, "rect");

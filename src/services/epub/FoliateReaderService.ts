@@ -421,6 +421,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		});
 		this.annotationOverlayRenderer = new ReaderAnnotationOverlayRenderer({
 			resolveHighlightTint: (color) => this.resolveHighlightTint(color),
+			getColorScheme: () => this.getCurrentColorScheme(),
 			getObsidianCSSVar: (varName, fallback) => this.getObsidianCSSVar(varName, fallback),
 			getConcealmentPalette: () => this.getConcealmentPalette(),
 			onCommentMarkerClick: (cfiRange, markerElement, anchorRect) =>

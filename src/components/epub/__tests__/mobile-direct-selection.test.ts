@@ -11,6 +11,7 @@ import {
 	isElementNode,
 	MobileDirectSelectionOverlay,
 	MobileDirectSelectionController,
+	resolveMobileSelectionColorScheme,
 } from '../mobile-direct-selection';
 import * as mobileLogger from '../../../utils/zora-mobile-logger';
 import type { ReaderFrame } from '../../../services/epub/reader-engine-types';
@@ -192,6 +193,99 @@ describe('mobile-direct-selection', () => {
 
 			overlay.clear();
 			expect(doc.querySelector('.zora-mobile-selection-overlay')).toBeNull();
+		});
+
+		it('uses a high-contrast screen palette in dark system color mode', () => {
+			doc.documentElement.setAttribute('data-weave-host-scheme', 'dark');
+			const overlay = new MobileDirectSelectionOverlay(doc);
+			const text = doc.createTextNode('Dark theme selection');
+			doc.body.appendChild(text);
+			const range = doc.createRange();
+			range.setStart(text, 0);
+			range.setEnd(text, 10);
+			(range as any).getClientRects = vi.fn().mockReturnValue([
+				{ top: 10, left: 10, width: 80, height: 18, bottom: 28, right: 90 },
+			]);
+
+			overlay.render(range);
+			const box = doc.querySelector('.zora-mobile-selection-box') as HTMLElement | null;
+			expect(resolveMobileSelectionColorScheme(doc)).toBe('dark');
+			expect(box?.dataset.colorScheme).toBe('dark');
+			expect(box?.style.mixBlendMode).toBe('screen');
+			expect(box?.style.backgroundColor).toBe('rgba(57, 156, 255, 0.38)');
+			expect(box?.style.boxShadow).toContain('rgba(147, 210, 255, 0.72)');
+		});
+
+		it('keeps the light palette independent from dark mode', () => {
+			doc.documentElement.setAttribute('data-weave-host-scheme', 'light');
+			const overlay = new MobileDirectSelectionOverlay(doc);
+			const text = doc.createTextNode('Light theme selection');
+			doc.body.appendChild(text);
+			const range = doc.createRange();
+			range.setStart(text, 0);
+			range.setEnd(text, 10);
+			(range as any).getClientRects = vi.fn().mockReturnValue([
+				{ top: 10, left: 10, width: 80, height: 18, bottom: 28, right: 90 },
+			]);
+
+			overlay.render(range);
+			const box = doc.querySelector('.zora-mobile-selection-box') as HTMLElement | null;
+			expect(resolveMobileSelectionColorScheme(doc)).toBe('light');
+			expect(box?.dataset.colorScheme).toBe('light');
+			expect(box?.style.mixBlendMode).toBe('multiply');
+			expect(box?.style.backgroundColor).toBe('rgba(64, 150, 255, 0.32)');
+		});
+	});
+
+	describe('6b. touchend final caret resolution', () => {
+		it('uses changedTouches so the last iOS finger position is not clipped', () => {
+			let completedSelection: any = null;
+			const controller = new MobileDirectSelectionController({
+				onSelectionComplete: (selection) => {
+					completedSelection = selection;
+				},
+			});
+			const p = doc.createElement('p');
+			const text = doc.createTextNode(
+				'Before. The selected sentence must include its final words. After.'
+			);
+			p.appendChild(text);
+			doc.body.appendChild(p);
+			const cfiFromRange = vi.fn().mockReturnValue('epubcfi(/6/2!/4/2/1:8,/4/2/1:57)');
+			controller.syncFrames([{ frameDocument: doc, window, cfiFromRange }]);
+
+			const sentenceStart = text.data.indexOf('The selected');
+			const finalWordEnd = text.data.indexOf('. After') + 1;
+			const staleRange = doc.createRange();
+			staleRange.setStart(text, sentenceStart);
+			staleRange.setEnd(text, sentenceStart + 3);
+			(controller as any).activeGestureKind = 'text-selection';
+			(controller as any).activeDoc = doc;
+			(controller as any).anchorPos = { node: text, offset: sentenceStart };
+			(controller as any).startPoint = { x: 10, y: 10 };
+			(controller as any).isDragging = true;
+			(controller as any).currentRange = staleRange;
+			(doc as any).caretPositionFromPoint = undefined;
+			(doc as any).caretRangeFromPoint = vi.fn((_x: number, _y: number) => {
+				const caret = doc.createRange();
+				caret.setStart(text, finalWordEnd - 2);
+				caret.collapse(true);
+				return caret;
+			});
+
+			const touchEnd = new Event('touchend', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchEnd, 'touches', { value: [] });
+			Object.defineProperty(touchEnd, 'changedTouches', {
+				value: [{ clientX: 180, clientY: 10 }],
+			});
+			doc.dispatchEvent(touchEnd);
+
+			expect(completedSelection?.text).toBe(
+				'The selected sentence must include its final words.'
+			);
+			expect(cfiFromRange).toHaveBeenCalledOnce();
+			expect(cfiFromRange.mock.calls[0][0].endOffset).toBe(finalWordEnd);
+			controller.dispose();
 		});
 	});
 

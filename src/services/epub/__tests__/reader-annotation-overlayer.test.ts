@@ -8,7 +8,10 @@ import type { ReaderFoliateAnnotation } from "../reader-annotation-model";
 
 describe("ReaderAnnotationOverlayRenderer", () => {
 	const mockPorts = {
-		resolveHighlightTint: vi.fn((color?: string) => color || "#fde047"),
+		resolveHighlightTint: vi.fn((color?: string) =>
+			color === "purple" ? "#8b5cf6" : color || "#fde047"
+		),
+		getColorScheme: vi.fn(() => "light" as const),
 		getObsidianCSSVar: vi.fn((_varName: string, fallback: string) => fallback),
 		getConcealmentPalette: vi.fn(() => ({
 			base: "#000000",
@@ -42,7 +45,8 @@ describe("ReaderAnnotationOverlayRenderer", () => {
 		const hintTint = hintGroup?.querySelector('[data-zora-reading-note-hint="tint"]');
 		expect(hintTint).toBeTruthy();
 		expect(hintTint?.getAttribute("fill")).toBe("#8b5cf6");
-		expect(Number(hintTint?.getAttribute("fill-opacity"))).toBeCloseTo(0.08, 2);
+		expect(Number(hintTint?.getAttribute("fill-opacity"))).toBeCloseTo(0.10, 2);
+		expect(Number(hintTint?.getAttribute("stroke-opacity"))).toBeCloseTo(0.20, 2);
 
 		// Note Marker check: visible size 8px × 8px
 		const markerGroup = overlay.querySelector('[data-zora-note-marker="group"]');
@@ -71,6 +75,28 @@ describe("ReaderAnnotationOverlayRenderer", () => {
 		// Does not create comment marker for reading-note
 		const commentMarker = overlay.querySelector('[data-weave-comment-marker]');
 		expect(commentMarker).toBeNull();
+	});
+
+	it("raises reading-note contrast independently in dark mode", () => {
+		const renderer = new ReaderAnnotationOverlayRenderer({
+			...mockPorts,
+			resolveHighlightTint: vi.fn(() => "rgb(196, 181, 253)"),
+			getColorScheme: vi.fn(() => "dark" as const),
+		});
+		const overlay = renderer.createCompositeAnnotationOverlay(
+			{
+				value: "epubcfi(/6/2!/4/2)",
+				cfiRange: "epubcfi(/6/2!/4/2)",
+				color: "purple",
+				style: "reading-note",
+			},
+			sampleRects
+		);
+		const hintTint = overlay.querySelector('[data-zora-reading-note-hint="tint"]');
+		expect(hintTint?.getAttribute("fill")).toBe("rgb(196, 181, 253)");
+		expect(Number(hintTint?.getAttribute("fill-opacity"))).toBeCloseTo(0.24, 2);
+		expect(Number(hintTint?.getAttribute("stroke-opacity"))).toBeCloseTo(0.58, 2);
+		expect(hintTint?.getAttribute("stroke-width")).toBe("0.75");
 	});
 
 	it("coexists with normal highlight color when baseHighlightColor is present", () => {

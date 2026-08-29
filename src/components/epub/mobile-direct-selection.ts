@@ -393,6 +393,18 @@ export class MobileDirectSelectionOverlay {
 		const win = this.doc.defaultView || window;
 		const scrollX = win.scrollX || win.pageXOffset || 0;
 		const scrollY = win.scrollY || win.pageYOffset || 0;
+		const colorScheme = resolveMobileSelectionColorScheme(this.doc);
+		const palette = colorScheme === 'dark'
+			? {
+				background: 'rgba(57, 156, 255, 0.38)',
+				blendMode: 'screen',
+				boxShadow: 'inset 0 0 0 1px rgba(147, 210, 255, 0.72)',
+			}
+			: {
+				background: 'rgba(64, 150, 255, 0.32)',
+				blendMode: 'multiply',
+				boxShadow: 'inset 0 0 0 1px rgba(30, 100, 210, 0.20)',
+			};
 
 		for (const rect of rects) {
 			if (rect.width <= 0 || rect.height <= 0) continue;
@@ -400,8 +412,8 @@ export class MobileDirectSelectionOverlay {
 			box.className = 'zora-mobile-selection-box zora-custom-selection-box';
 			const top = rect.top + scrollY;
 			const left = rect.left + scrollX;
-			// Translucent light blue matching native selection
-			box.style.cssText = `position: absolute; top: ${top}px; left: ${left}px; width: ${rect.width}px; height: ${rect.height}px; background-color: rgba(64, 150, 255, 0.32); border-radius: 2px; pointer-events: none; mix-blend-mode: multiply;`;
+			box.dataset.colorScheme = colorScheme;
+			box.style.cssText = `position: absolute; top: ${top}px; left: ${left}px; width: ${rect.width}px; height: ${rect.height}px; background-color: ${palette.background}; border-radius: 2px; pointer-events: none; mix-blend-mode: ${palette.blendMode}; box-shadow: ${palette.boxShadow};`;
 			container.appendChild(box);
 		}
 	}
@@ -417,6 +429,38 @@ export class MobileDirectSelectionOverlay {
 			this.container = null;
 		}
 	}
+}
+
+export function resolveMobileSelectionColorScheme(doc: Document): 'light' | 'dark' {
+	const hostScheme = doc.documentElement?.getAttribute('data-weave-host-scheme');
+	if (hostScheme === 'dark' || hostScheme === 'light') {
+		return hostScheme;
+	}
+
+	try {
+		const colorScheme = doc.defaultView
+			?.getComputedStyle(doc.documentElement)
+			.colorScheme
+			?.toLowerCase();
+		if (colorScheme?.includes('dark') && !colorScheme.includes('light')) {
+			return 'dark';
+		}
+		if (colorScheme?.includes('light')) {
+			return 'light';
+		}
+	} catch {
+		/* fall through to the system preference */
+	}
+
+	try {
+		if (doc.defaultView?.matchMedia?.('(prefers-color-scheme: dark)').matches) {
+			return 'dark';
+		}
+	} catch {
+		/* use the safe light default */
+	}
+
+	return 'light';
 }
 
 /**
@@ -1453,6 +1497,41 @@ export class MobileDirectSelectionController {
 				}
 				e.stopPropagation();
 				e.stopImmediatePropagation?.();
+
+				// WebKit can deliver the last finger position only on touchend. The
+				// pending touchmove RAF has just been cancelled, so resolve the final
+				// changedTouch synchronously or the selection is left one frame short.
+				const finalTouch = e.changedTouches?.[0];
+				if (finalTouch && this.startPoint && this.anchorPos) {
+					const finalDistance = Math.hypot(
+						finalTouch.clientX - this.startPoint.x,
+						finalTouch.clientY - this.startPoint.y
+					);
+					if (finalDistance >= 5) {
+						this.isDragging = true;
+					}
+					if (this.isDragging) {
+						const finalFocus = resolveSelectableTextCaret(
+							doc,
+							null,
+							finalTouch.clientX,
+							finalTouch.clientY
+						)?.caret;
+						if (finalFocus) {
+							const finalDragRange = buildNormalizedRange(
+								doc,
+								this.anchorPos.node,
+								this.anchorPos.offset,
+								finalFocus.node,
+								finalFocus.offset
+							);
+							if (finalDragRange && !finalDragRange.collapsed) {
+								this.currentRange = finalDragRange;
+								overlay.render(finalDragRange);
+							}
+						}
+					}
+				}
 
 				// Drag selection completion
 				if (this.isDragging && this.currentRange && !this.currentRange.collapsed) {

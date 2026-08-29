@@ -287,6 +287,7 @@ describe("reader-annotation-overlayer", () => {
 		const onCommentMarkerClick = vi.fn();
 		const renderer = new ReaderAnnotationOverlayRenderer({
 			resolveHighlightTint: () => "rgb(37, 99, 235)",
+			getColorScheme: () => "light",
 			getObsidianCSSVar: (_name, fallback) => fallback,
 			getConcealmentPalette: () => ({ base: "#111", stripe: "#222", border: "#333" }),
 			onCommentMarkerClick,

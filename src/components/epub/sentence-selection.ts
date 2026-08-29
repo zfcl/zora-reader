@@ -1,5 +1,3 @@
-import { domInstanceOf } from "../../utils/dom-instance-of";
-
 const ABBREV_SET = new Set([
 	"mr",
 	"mrs",
@@ -75,6 +73,33 @@ const BLOCK_TAGS = new Set([
 	"dt",
 ]);
 
+// Sentence selection must not stop at generic layout wrappers. EPUB content
+// frequently uses nested divs for columns, visual pages, or line groups, so
+// treating every block-level element as a sentence boundary clips the result.
+// These are the semantic containers that can safely bound a sentence; broader
+// section/article/body containers are only used when no semantic container
+// exists around the touched text.
+const SENTENCE_CONTAINER_TAGS = new Set([
+	"p",
+	"li",
+	"blockquote",
+	"pre",
+	"figcaption",
+	"caption",
+	"h1",
+	"h2",
+	"h3",
+	"h4",
+	"h5",
+	"h6",
+	"td",
+	"th",
+	"dd",
+	"dt",
+]);
+
+const SENTENCE_SCOPE_TAGS = new Set(["main", "article", "section", "aside"]);
+
 function getBlockContainer(node: Node): Element | null {
 	let el: Element | null =
 		node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
@@ -101,6 +126,31 @@ function getBlockContainer(node: Node): Element | null {
 	return el || (node.ownerDocument?.body ?? null);
 }
 
+function getSentenceContainer(node: Node): Element | null {
+	let el: Element | null =
+		node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
+	let broadScope: Element | null = null;
+
+	while (el) {
+		const tag = el.tagName.toLowerCase();
+		if (SENTENCE_CONTAINER_TAGS.has(tag)) {
+			return el;
+		}
+		if (!broadScope && SENTENCE_SCOPE_TAGS.has(tag)) {
+			broadScope = el;
+		}
+		if (tag === "body") {
+			return broadScope || el;
+		}
+		if (tag === "html") {
+			break;
+		}
+		el = el.parentElement;
+	}
+
+	return broadScope || node.ownerDocument?.body || getBlockContainer(node);
+}
+
 function collectTextNodeSpans(container: Element): { spans: TextNodeSpan[]; fullText: string } {
 	const doc = container.ownerDocument || document;
 	const walker = doc.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
@@ -109,12 +159,15 @@ function collectTextNodeSpans(container: Element): { spans: TextNodeSpan[]; full
 
 	let currentNode = walker.nextNode();
 	while (currentNode) {
-		if (domInstanceOf(currentNode, Text)) {
-			const text = currentNode.textContent || "";
+		// nodeType is intentionally used instead of instanceof Text. EPUB chapter
+		// nodes belong to the iframe realm and fail a host-window instanceof check.
+		if (currentNode.nodeType === 3) {
+			const textNode = currentNode as Text;
+			const text = textNode.textContent || "";
 			const startIdx = fullText.length;
 			const endIdx = startIdx + text.length;
 			spans.push({
-				node: currentNode,
+				node: textNode,
 				text,
 				startIdx,
 				endIdx,
@@ -133,7 +186,7 @@ function mapNodeOffsetToTextIndex(
 	spans: TextNodeSpan[],
 	isEnd: boolean
 ): number {
-	if (domInstanceOf(node, Text)) {
+	if (node.nodeType === 3) {
 		const span = spans.find((s) => s.node === node);
 		if (span) {
 			return Math.min(span.endIdx, Math.max(span.startIdx, span.startIdx + offset));
@@ -141,7 +194,7 @@ function mapNodeOffsetToTextIndex(
 	}
 
 	// Element node container: offset is child index
-	if (domInstanceOf(node, Element)) {
+	if (node.nodeType === 1) {
 		const childNodes = Array.from(node.childNodes);
 		if (offset >= childNodes.length) {
 			// At the end of element
@@ -284,7 +337,7 @@ export function expandRangeToSentence(
 		return null;
 	}
 
-	const blockContainer = getBlockContainer(range.commonAncestorContainer);
+	const blockContainer = getSentenceContainer(range.commonAncestorContainer);
 	if (!blockContainer) {
 		return null;
 	}
