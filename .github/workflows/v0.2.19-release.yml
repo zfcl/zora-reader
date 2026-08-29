@@ -1,0 +1,71 @@
+name: Release Zora v0.2.19
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/v0.2.19-release.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout v0.2.18 release source
+        uses: actions/checkout@v4
+        with:
+          ref: release/v0.2.18
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Apply verified v0.2.19 patch
+        run: |
+          git fetch origin main
+          git show origin/main:scripts/v0.2.19-patch.py > /tmp/v0.2.19-patch.py
+          python3 /tmp/v0.2.19-patch.py
+          git diff --check
+          git diff --stat
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run full test suite
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+      - name: Verify release assets
+        run: npm run verify:release
+
+      - name: Commit and push release branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add manifest.json package.json package-lock.json versions.json                   src/components/epub/EpubHighlightToolbar.svelte                   src/components/epub/EpubHighlightToolbar.test.ts                   src/components/epub/EpubReaderApp.svelte                   src/components/epub/SelectionToolbar.svelte                   src/components/epub/__tests__/mobile-direct-selection.test.ts                   src/components/epub/__tests__/zora-targeted-regressions.test.ts                   src/services/epub/__tests__/EpubBacklinkHighlightService.test.ts                   src/services/epub/__tests__/reader-annotation-overlayer.test.ts                   src/services/epub/__tests__/zora-study-note-service.test.ts
+          git commit -m 'fix: note deletion and selection toolbar flash for v0.2.19'
+          git push origin HEAD:release/v0.2.19
+
+      - name: Tag release
+        run: |
+          git tag -a v0.2.19 -m 'Zora Reader v0.2.19'
+          git push origin v0.2.19
+
+      - name: Prepare release files
+        run: |
+          cp dist/main.js dist/manifest.json dist/styles.css ./
+          zip zora-reader-v0.2.19.zip main.js manifest.json styles.css LICENSE NOTICE.md
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v0.2.19             main.js manifest.json styles.css zora-reader-v0.2.19.zip             --title 'Zora Reader v0.2.19'             --notes $'v0.2.19\n\n- 修复读书笔记记号悬浮窗中的“删除笔记”按钮无响应：删除操作改为不受悬浮窗点击冒泡拦截影响的直接事件绑定。\n- 点击“删除笔记”后悬浮窗立即关闭，笔记记号乐观移除；Markdown 持久化失败时会自动恢复记号并显示失败提示。\n- 验证并覆盖按 excerpt id 删除 Notes/读书笔记 中对应 EPUB callout 的实际持久化流程。\n- 修复点空白取消选区时悬浮窗在页面顶部闪现一帧：定位完成前保持隐藏，并用定位代次令牌丢弃过期异步定位结果。\n- 同步 v0.2.17-v0.2.18 已发布行为的旧测试断言；全量 1023 项测试通过。\n- 未主动改动仓库同步和其他阅读器功能。'
