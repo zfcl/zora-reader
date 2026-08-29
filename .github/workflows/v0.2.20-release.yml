@@ -1,0 +1,81 @@
+name: Release Zora v0.2.20
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/v0.2.20-release.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout v0.2.19 release source
+        uses: actions/checkout@v4
+        with:
+          ref: release/v0.2.19
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Apply verified v0.2.20 patch
+        run: |
+          git fetch origin main
+          git show origin/main:scripts/v0.2.20-patch.py > /tmp/v0.2.20-patch.py
+          python3 /tmp/v0.2.20-patch.py
+          git diff --check
+          git diff --stat
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run full test suite
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+      - name: Verify release assets
+        run: npm run verify:release
+
+      - name: Commit and push release branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add manifest.json package.json package-lock.json versions.json \
+            src/components/epub/SelectionToolbar.svelte \
+            src/components/epub/mobile-direct-selection.ts \
+            src/components/epub/sentence-selection.ts \
+            src/styles/epub/epub-nav-sidebar.css \
+            src/components/epub/__tests__/mobile-direct-selection.test.ts \
+            src/components/epub/__tests__/sentence-selection.test.ts \
+            src/components/epub/__tests__/zora-targeted-regressions.test.ts
+          git commit -m 'fix: stabilize mobile sentence selection dismissal for v0.2.20'
+          git push origin HEAD:release/v0.2.20
+
+      - name: Tag release
+        run: |
+          git tag -a v0.2.20 -m 'Zora Reader v0.2.20'
+          git push origin v0.2.20
+
+      - name: Prepare release files
+        run: |
+          cp dist/main.js dist/manifest.json dist/styles.css ./
+          zip zora-reader-v0.2.20.zip main.js manifest.json styles.css LICENSE NOTICE.md
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v0.2.20 \
+            main.js manifest.json styles.css zora-reader-v0.2.20.zip \
+            --title 'Zora Reader v0.2.20' \
+            --notes $'v0.2.20\n\n- 修复手机端点空白取消选区时，选区悬浮窗先跳到页面顶部再消失的问题：隐藏时保留底部停靠定位并立即停止绘制淡出残影。\n- 手机端选区完全由直接选择控制器管理，忽略清除后迟到的 WebKit 原生 selectionchange，避免旧选区重新唤起悬浮窗。\n- 清除选区时同步移除 WebKit 遗留的原生 Range，覆盖空白点击、替换选区和翻页清除路径。\n- 手机拖选改为智能吸附完整句子；即使只拖到少量字符，也会扩展句首和句尾。\n- 句尾位于同一章节的下一视觉页/分栏时，最终 Range、CFI、选中文本和覆盖层统一延伸到句末。\n- 新增顶部闪窗、迟到原生选区、短拖整句和跨视觉页句尾回归测试；全量 1027 项测试通过。'
