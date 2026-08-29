@@ -1,0 +1,115 @@
+name: Release Zora v0.2.21
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/v0.2.21-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: zora-v0.2.21-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout v0.2.20 release source
+        uses: actions/checkout@v4
+        with:
+          ref: release/v0.2.20
+          fetch-depth: 0
+
+      - name: Verify base and apply v0.2.21 patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "9ea0efcfa8afb43c42d5e16f66cefa578590827c"
+          if git ls-remote --exit-code --tags origin refs/tags/v0.2.21 >/dev/null 2>&1; then
+            echo "::error::Tag v0.2.21 already exists."
+            exit 1
+          fi
+          git fetch origin main
+          git show origin/main:scripts/v0.2.21-patch.py > /tmp/v0.2.21-patch.py
+          python3 /tmp/v0.2.21-patch.py
+          test "$(node -p "require('./manifest.json').version")" = "0.2.21"
+          test "$(node -p "require('./package.json').version")" = "0.2.21"
+          test "$(node -p "require('./package-lock.json').version")" = "0.2.21"
+          git diff --check
+          cat > /tmp/expected-files <<'EOF'
+          manifest.json
+          package-lock.json
+          package.json
+          src/components/epub/__tests__/mobile-direct-selection.test.ts
+          src/components/epub/__tests__/sentence-selection.test.ts
+          src/components/epub/mobile-direct-selection.ts
+          src/components/epub/sentence-selection.ts
+          src/services/epub/FoliateReaderService.ts
+          src/services/epub/__tests__/epub-integration-quality.test.ts
+          src/services/epub/__tests__/reader-annotation-overlayer.test.ts
+          src/services/epub/reader-annotation-overlayer.ts
+          versions.json
+          EOF
+          git diff --name-only | sort > /tmp/actual-files
+          sort -o /tmp/expected-files /tmp/expected-files
+          diff -u /tmp/expected-files /tmp/actual-files
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run full test suite
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+      - name: Verify release assets
+        run: npm run verify:release
+
+      - name: Commit and push release source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add manifest.json package.json package-lock.json versions.json             src/components/epub/mobile-direct-selection.ts             src/components/epub/sentence-selection.ts             src/components/epub/__tests__/mobile-direct-selection.test.ts             src/components/epub/__tests__/sentence-selection.test.ts             src/services/epub/FoliateReaderService.ts             src/services/epub/reader-annotation-overlayer.ts             src/services/epub/__tests__/reader-annotation-overlayer.test.ts             src/services/epub/__tests__/epub-integration-quality.test.ts
+          git commit -m 'fix: improve mobile sentence selection and dark highlights for v0.2.21'
+          git push origin HEAD:release/v0.2.21
+
+      - name: Tag release
+        shell: bash
+        run: |
+          set -euo pipefail
+          git tag -a v0.2.21 -m 'Zora Reader v0.2.21'
+          git push origin v0.2.21
+
+      - name: Prepare release files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp dist/main.js dist/manifest.json dist/styles.css ./
+          zip zora-reader-v0.2.21.zip main.js manifest.json styles.css LICENSE NOTICE.md
+
+      - name: Publish and verify GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create v0.2.21             main.js manifest.json styles.css zora-reader-v0.2.21.zip             --title 'Zora Reader v0.2.21'             --notes $'v0.2.21\n\n- 修复夜间/系统深色模式下选区和阅读笔记底纹接近黑色、难以辨认的问题：临时选区改用深色增亮混合与清晰描边，已保存笔记使用独立的深色高对比色板。\n- 修复 iOS 抬手时最后一个触点被取消的待处理帧吞掉，导致选区末尾停在上一帧的问题。\n- 修复 EPUB iframe 节点被主窗口 instanceof 误判、整句扩展在真机直接失效的问题，改为跨 realm 可靠的节点类型判断。\n- 修复普通 div、分页列和排版分组被误当作句子边界的问题，整句范围可跨相邻排版节点与同章节视觉页延伸到真实句末。\n- 手机拖选继续保留单击选词，但任何有效拖选都会自动扩展至完整句子，降低精确拖动要求。\n- 新增深浅主题、真实 iframe、iOS changedTouches、跨分页排版节点回归测试；全量 139 个测试文件、1033 项测试通过。'
+          mapfile -t ASSETS < <(gh release view v0.2.21 --json assets --jq '.assets[].name' | sort)
+          printf '%s\n' "${ASSETS[@]}" > /tmp/release-assets
+          printf '%s\n' main.js manifest.json styles.css zora-reader-v0.2.21.zip | sort > /tmp/expected-assets
+          diff -u /tmp/expected-assets /tmp/release-assets
+          gh release view v0.2.21 --json url --jq .url
