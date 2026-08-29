@@ -58,15 +58,15 @@ describe("ReaderAnnotationOverlayRenderer", () => {
 		// y = 100 - 8 - 3 = 89
 		expect(Number(badge?.getAttribute("y"))).toBe(89);
 
-		// Hit area check: size 18px, centered
+		// Hit area check: mobile-friendly 26px target, centered
 		const hitArea = markerGroup?.querySelector('[data-zora-note-marker="hit-area"]');
 		expect(hitArea).toBeTruthy();
-		expect(hitArea?.getAttribute("width")).toBe("18");
-		expect(hitArea?.getAttribute("height")).toBe("18");
-		// 246 - (18 - 8)/2 = 241
-		expect(Number(hitArea?.getAttribute("x"))).toBe(241);
-		// 89 - 5 = 84
-		expect(Number(hitArea?.getAttribute("y"))).toBe(84);
+		expect(hitArea?.getAttribute("width")).toBe("26");
+		expect(hitArea?.getAttribute("height")).toBe("26");
+		// 246 - (26 - 8)/2 = 237
+		expect(Number(hitArea?.getAttribute("x"))).toBe(237);
+		// 89 - 9 = 80
+		expect(Number(hitArea?.getAttribute("y"))).toBe(80);
 
 		// Does not create comment marker for reading-note
 		const commentMarker = overlay.querySelector('[data-weave-comment-marker]');

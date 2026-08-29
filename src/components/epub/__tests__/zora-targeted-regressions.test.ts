@@ -30,9 +30,9 @@ describe("targeted reader regressions", () => {
   });
 
   it("refreshes the same persisted Marker pipeline after a translation study note is saved", () => {
-    expect(dictionaryPopoverSource).toContain("await onStudyNoteSaved?.(sourcePath)");
+		expect(dictionaryPopoverSource).toContain("await onStudyNoteSaved?.(saved.filePath, saved.blockId)");
     expect(toolbarSource).toContain("onStudyNoteSaved={handleStudyNoteSaved}");
-    expect(toolbarSource).toContain("await onReadingNoteSaved?.(sourcePath)");
+		expect(toolbarSource).toContain("await onReadingNoteSaved?.(sourcePath, excerptId)");
   });
 
   it("never attaches the iOS direct-selection controller to desktop EPUB frames", () => {
@@ -57,6 +57,21 @@ describe("targeted reader regressions", () => {
 		expect(readerAppSource).toContain("excerptId: input.excerptId");
 		expect(highlightToolbarSource).toContain("event.stopPropagation()");
 		expect(highlightToolbarSource).toContain("class:mobile-centered={toolbarMode === 'centered'}");
+	});
+
+	it("dismisses note deletion immediately and removes the marker optimistically", () => {
+		expect(highlightToolbarSource).toContain("use:deleteAction={info}");
+		expect(highlightToolbarSource).toContain("onDismiss();");
+		expect(highlightToolbarSource).toContain("await onDelete(targetInfo)");
+		expect(readerAppSource).toContain("optimisticReadingNoteRemoval");
+		expect(readerAppSource).toContain("purgeOrphanHighlightFromReader(info)");
+		expect(readerAppSource).toContain("await reloadHighlights({ invalidateCache: true })");
+	});
+
+	it("keeps the selection toolbar hidden until its current position is committed", () => {
+		expect(toolbarSource).toContain("let positionReady = $state(false)");
+		expect(toolbarSource).toContain("const generation = ++positionGeneration");
+		expect(toolbarSource).toContain("class:visible={isVisible && positionReady}");
 	});
 
 	it("uses Git-synced Vault Markdown as the sole reading-note persistence source", () => {

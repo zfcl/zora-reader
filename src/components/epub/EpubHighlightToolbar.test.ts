@@ -37,6 +37,15 @@ function createReaderService(frameDocuments: Document[] = []): EpubReaderEngine 
   } as unknown as EpubReaderEngine;
 }
 
+function createViewport(width = 390, height = 844): HTMLDivElement {
+	const viewport = document.createElement('div');
+	viewport.className = 'epub-reader-viewport';
+	Object.defineProperty(viewport, 'clientWidth', { configurable: true, value: width });
+	Object.defineProperty(viewport, 'clientHeight', { configurable: true, value: height });
+	document.body.appendChild(viewport);
+	return viewport;
+}
+
 describe('EpubHighlightToolbar', () => {
 	beforeEach(() => {
 		Platform.isMobile = false;
@@ -56,8 +65,10 @@ describe('EpubHighlightToolbar', () => {
 
   it('dismisses when clicking outside in the host document', async () => {
     const onDismiss = vi.fn();
+		const viewport = createViewport();
 
     render(EpubHighlightToolbar, {
+		target: viewport,
       props: {
         info: createInfo(),
         readerService: createReaderService(),
@@ -87,8 +98,10 @@ describe('EpubHighlightToolbar', () => {
   it('dismisses when clicking outside in a visible reader frame document', async () => {
     const onDismiss = vi.fn();
     const frameDocument = document.implementation.createHTMLDocument('reader-frame');
+		const viewport = createViewport();
 
     render(EpubHighlightToolbar, {
+		target: viewport,
       props: {
         info: createInfo(),
         readerService: createReaderService([frameDocument]),
@@ -115,14 +128,10 @@ describe('EpubHighlightToolbar', () => {
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 
-	it('centers reading-note actions in the mobile safe viewport instead of docking at the bottom', async () => {
+	it('anchors reading-note actions near the marker on mobile instead of docking or centering', async () => {
 		Platform.isMobile = true;
 		Platform.isDesktop = false;
-		const viewport = document.createElement('div');
-		viewport.className = 'epub-reader-viewport';
-		Object.defineProperty(viewport, 'clientWidth', { configurable: true, value: 390 });
-		Object.defineProperty(viewport, 'clientHeight', { configurable: true, value: 844 });
-		document.body.appendChild(viewport);
+		const viewport = createViewport();
 		Object.defineProperty(window, 'visualViewport', {
 			configurable: true,
 			value: {
@@ -154,19 +163,58 @@ describe('EpubHighlightToolbar', () => {
 
 		await waitFor(() => {
 			const toolbar = viewport.querySelector<HTMLElement>('.epub-highlight-toolbar');
-			expect(toolbar).toHaveClass('mobile-centered');
+			expect(toolbar).toHaveClass('visible');
+			expect(toolbar).not.toHaveClass('mobile-centered');
 			expect(toolbar).not.toHaveClass('mobile-docked');
-			expect(Number.parseFloat(toolbar?.style.top || '0')).toBeGreaterThan(200);
-			expect(Number.parseFloat(toolbar?.style.top || '0')).toBeLessThan(600);
+			expect(Number.parseFloat(toolbar?.style.top || '0')).toBeGreaterThanOrEqual(12);
 		});
+	});
+
+	it('dismisses note actions immediately while deletion is still pending', async () => {
+		Platform.isMobile = true;
+		Platform.isDesktop = false;
+		const viewport = createViewport();
+		let finishDelete: (() => void) | undefined;
+		const onDelete = vi.fn(() => new Promise<void>((resolve) => {
+			finishDelete = resolve;
+		}));
+		const onDismiss = vi.fn();
+
+		render(EpubHighlightToolbar, {
+			target: viewport,
+			props: {
+				info: { ...createInfo(), style: 'reading-note', excerptId: 'note01' },
+				readerService: createReaderService(),
+				onDelete,
+				onTemporarilyReveal: vi.fn(),
+				onChangeColor: vi.fn(),
+				onChangeStyle: vi.fn(),
+				onEditComment: vi.fn(),
+				onBacklink: vi.fn(),
+				onExtractToCard: vi.fn(),
+				onCopyText: vi.fn(),
+				onDismiss,
+			},
+		});
+
+		const deleteButton = await waitFor(() => {
+			expect(viewport.querySelector('.epub-highlight-toolbar')).toHaveClass('visible');
+			const button = viewport.querySelector<HTMLButtonElement>('button[title="删除笔记"]');
+			expect(button).toBeInTheDocument();
+			return button!;
+		});
+		expect(deleteButton).not.toBeDisabled();
+		await fireEvent.click(deleteButton);
+
+		expect(onDismiss).toHaveBeenCalledTimes(1);
+		expect(onDelete).toHaveBeenCalledTimes(1);
+		finishDelete?.();
 	});
 
 	it('stops mobile note actions from bubbling into the reader page-turn surface', async () => {
 		Platform.isMobile = true;
 		Platform.isDesktop = false;
-		const viewport = document.createElement('div');
-		viewport.className = 'epub-reader-viewport';
-		document.body.appendChild(viewport);
+		const viewport = createViewport();
 		const pageTurn = vi.fn();
 		viewport.addEventListener('click', pageTurn);
 		viewport.addEventListener('touchstart', pageTurn);

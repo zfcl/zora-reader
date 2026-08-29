@@ -4563,6 +4563,34 @@
 		info: HighlightClickInfo,
 		options?: { quiet?: boolean }
 	): Promise<boolean> {
+		const optimisticReadingNoteRemoval = options?.quiet !== true
+			&& info.style === 'reading-note'
+			&& info.presentation !== 'conceal';
+		if (optimisticReadingNoteRemoval) {
+			purgeOrphanHighlightFromReader(info);
+		}
+		try {
+			const deleted = await performHighlightDelete(info, options);
+			if (!deleted && optimisticReadingNoteRemoval) {
+				await reloadHighlights({ invalidateCache: true });
+			}
+			return deleted;
+		} catch (error) {
+			logger.warn('[EpubReaderApp] Failed to delete highlight:', error);
+			if (optimisticReadingNoteRemoval) {
+				await reloadHighlights({ invalidateCache: true });
+			}
+			if (options?.quiet !== true) {
+				new Notice(t('epub.reader.highlightDeleteFailed'));
+			}
+			return false;
+		}
+	}
+
+	async function performHighlightDelete(
+		info: HighlightClickInfo,
+		options?: { quiet?: boolean }
+	): Promise<boolean> {
 		const quiet = options?.quiet === true;
 		if (info.presentation === 'conceal') {
 			readerService.removeHighlight(info.cfiRange);

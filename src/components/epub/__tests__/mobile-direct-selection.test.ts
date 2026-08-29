@@ -1145,7 +1145,7 @@ describe('mobile-direct-selection', () => {
 			doc.dispatchEvent(touchEnd);
 
 			expect(completedSelection).not.toBeNull();
-			expect(completedSelection?.text).toBe('Highlighted start and plain middle [1] final words');
+			expect(completedSelection?.text).toBe('Highlighted start and plain middle [1] final words here.');
 			expect(completedSelection?.source).toBe('mobile-direct');
 			expect(controller.getMode()).toBe('selected');
 
@@ -1515,7 +1515,7 @@ describe('mobile-direct-selection', () => {
 			doc.body.dispatchEvent(touchEnd2);
 
 			expect(completedSelection).not.toBeNull();
-			expect(completedSelection?.text).toBe('Unwrapped body');
+			expect(completedSelection?.text).toBe('Unwrapped body text for gesture testing');
 			expect(paginatorDocTouch).not.toHaveBeenCalled();
 
 			doc.removeEventListener('touchstart', paginatorDocTouch);

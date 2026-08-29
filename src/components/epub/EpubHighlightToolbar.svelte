@@ -20,7 +20,7 @@
 		canUseSourceLocation?: boolean;
 		showPremiumFeaturePreviewEnabled?: boolean;
 		onRequestPremiumFeaturePreview?: (featureId: string) => void;
-		onDelete: (info: HighlightClickInfo) => void;
+		onDelete: (info: HighlightClickInfo) => void | boolean | Promise<void | boolean>;
 		onTemporarilyReveal: (info: HighlightClickInfo) => void;
 		onChangeColor: (info: HighlightClickInfo, newColor: string) => void;
 		onChangeStyle: (info: HighlightClickInfo, newStyle?: HighlightClickInfo['style']) => void;
@@ -60,6 +60,7 @@
 	let teardownOutsidePointerTracking: (() => void) | null = null;
 	let teardownViewportTracking: (() => void) | null = null;
 	let positionReady = $state(false);
+	let deleteInProgress = $state(false);
 
 	const colors = ['yellow', 'blue', 'red', 'purple', 'green'] as const;
 	let colorLabels = $derived.by<Record<(typeof colors)[number], string>>(() => ({
@@ -117,6 +118,22 @@
 		let currentInfo = initialInfo;
 		const handleClick = (event: MouseEvent) => {
 			void handleBacklinkAction(event, currentInfo);
+		};
+		node.addEventListener('click', handleClick);
+		return {
+			update(nextInfo: HighlightClickInfo) {
+				currentInfo = nextInfo;
+			},
+			destroy() {
+				node.removeEventListener('click', handleClick);
+			},
+		};
+	}
+
+	function deleteAction(node: HTMLElement, initialInfo: HighlightClickInfo) {
+		let currentInfo = initialInfo;
+		const handleClick = () => {
+			void handleDeleteAction(currentInfo);
 		};
 		node.addEventListener('click', handleClick);
 		return {
@@ -325,6 +342,19 @@
 		await onBacklink(targetInfo);
 	}
 
+	async function handleDeleteAction(targetInfo: HighlightClickInfo) {
+		if (deleteInProgress) return;
+		deleteInProgress = true;
+		// A delete tap must always have immediate visual feedback. The reader owns
+		// persistence and restores the marker if that asynchronous mutation fails.
+		onDismiss();
+		try {
+			await onDelete(targetInfo);
+		} finally {
+			deleteInProgress = false;
+		}
+	}
+
 	$effect(() => {
 		const currentInfo = info;
 		const currentReaderService = readerService;
@@ -382,7 +412,7 @@
 						<span class="action-icon" use:icon={'clipboard-copy'}></span>
 						<span class="action-label">{t('epub.highlightToolbar.copy')}</span>
 					</button>
-					<button class="clickable-icon action-item accent concealment-reset" onclick={() => onDelete(info)} title={t('epub.highlightToolbar.resetHiddenTitle')}>
+					<button class="clickable-icon action-item accent concealment-reset" use:deleteAction={info} disabled={deleteInProgress} title={t('epub.highlightToolbar.resetHiddenTitle')}>
 						<span class="action-icon" use:icon={'eye'}></span>
 						<span class="action-label">{t('epub.highlightToolbar.resetHidden')}</span>
 					</button>
@@ -399,7 +429,7 @@
 						<span class="action-icon" use:icon={'edit'}></span>
 						<span class="action-label">编辑笔记</span>
 					</button>
-					<button class="clickable-icon action-item delete delete-action" onclick={() => onDelete(info)} title="删除笔记">
+					<button class="clickable-icon action-item delete delete-action" use:deleteAction={info} disabled={deleteInProgress} title="删除笔记">
 						<span class="action-icon" use:icon={'trash-2'}></span>
 						<span class="action-label">删除笔记</span>
 					</button>
@@ -453,7 +483,7 @@
 						<span class="action-label">{t('epub.highlightToolbar.copy')}</span>
 					</button>
 					<div class="row-divider"></div>
-					<button class="clickable-icon action-item delete delete-action" onclick={() => onDelete(info)} title={t('epub.highlightToolbar.deleteTitle')}>
+					<button class="clickable-icon action-item delete delete-action" use:deleteAction={info} disabled={deleteInProgress} title={t('epub.highlightToolbar.deleteTitle')}>
 						<span class="action-icon" use:icon={'trash-2'}></span>
 						<span class="action-label">{t('epub.highlightToolbar.delete')}</span>
 					</button>

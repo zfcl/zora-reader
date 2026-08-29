@@ -114,6 +114,8 @@ import type { ReaderAnchorPoint, ReaderViewportRect } from '../../services/epub/
 
 	let toolbarEl: HTMLDivElement | undefined = $state(undefined);
 	let isVisible = $state(false);
+	let positionReady = $state(false);
+	let positionGeneration = 0;
 	let posTop = $state(0);
 	let posLeft = $state(0);
 	let isBelowSelection = $state(false);
@@ -344,6 +346,8 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 	}
 
 	function hideToolbar(options: { preserveSelectionContext?: boolean } = {}) {
+		positionGeneration += 1;
+		positionReady = false;
 		clearPendingCollapsedHide();
 		dismissActiveToolbarMenu();
 		clearPendingExternalSelectionHide();
@@ -866,6 +870,8 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 		anchorRects: DOMRect[] = [],
 		anchorPoint?: ReaderAnchorPoint
 	) {
+		const generation = ++positionGeneration;
+		positionReady = false;
 		updateMobileBottomClearance();
 		if (isMobileToolbar) {
 			toolbarMode = 'docked';
@@ -875,11 +881,18 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 			arrowOffset = 0;
 			isVisible = true;
 			await tick();
+			if (generation !== positionGeneration || !isVisible || mobileSelectionDismissBlocked) {
+				return;
+			}
+			positionReady = true;
 			return;
 		}
 
 		isVisible = true;
 		await tick();
+		if (generation !== positionGeneration || !isVisible) {
+			return;
+		}
 
 		const containerRect = containerEl.getBoundingClientRect();
 		const toRelativeRect = (rect: DOMRect) => ({
@@ -912,6 +925,9 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 		toolbarMode = position.mode;
 		isBelowSelection = position.isBelowAnchor;
 		arrowOffset = position.arrowOffset;
+		if (generation === positionGeneration && isVisible) {
+			positionReady = true;
+		}
 	}
 
 	function startPositionTracking(frame: ReaderFrame) {
@@ -1224,7 +1240,7 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 
 <div
 	class="epub-selection-toolbar epub-glass-panel"
-	class:visible={isVisible}
+	class:visible={isVisible && positionReady}
 	class:below-selection={isBelowSelection}
 	class:mobile-docked={toolbarMode === 'docked'}
 	style={`top: ${toolbarMode === 'docked' ? 'auto' : posTop + 'px'}; left: ${toolbarMode === 'docked' ? 'auto' : posLeft + 'px'}; --toolbar-arrow-offset: ${arrowOffset}px; --toolbar-bottom-offset: ${Math.max(0, mobileDockBottomOffset)}px; --epub-mobile-bottom-clearance: ${mobileBottomClearance}px;`}

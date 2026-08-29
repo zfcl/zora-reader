@@ -68,7 +68,7 @@ describe("zora-study-note-service", () => {
     let foreignContent = mockApp._store.get(foreignNotePath);
     expect(foreignContent).toContain("# Flowers for Algernon · 外文笔记");
     expect(foreignContent).toContain("## 词义");
-    expect(foreignContent).toContain("> [!EPUB|purple+reading-note]- [[Books/Flowers.epub#weave-cfi=");
+		expect(foreignContent).toContain("> [!EPUB|blue+reading-note]- [[Books/Flowers.epub#weave-cfi=");
     expect(foreignContent).toContain("|📖 old · 形容词]]");
     expect(foreignContent).toContain("> old\n> <!-- div -->");
     expect(foreignContent).toContain("[↗ 回到原文]");

@@ -277,6 +277,42 @@ describe('EpubBacklinkHighlightService', () => {
 		]);
 	});
 
+	it('deletes a persisted reading-note callout by its excerpt id', async () => {
+		const notePath = 'Notes/读书笔记/demo.md';
+		const noteContent = [
+			'# Demo · 读书笔记',
+			'',
+			'## 读书笔记',
+			'',
+			'> [!EPUB|purple+reading-note] [[Books/demo.epub#weave-cfi=readium%3Areading-note&eid=note01|Demo]]',
+			'> A note-backed excerpt',
+			'> <!-- div -->',
+			'> [↗ 回到原文](obsidian://zora-reader?file=Books%2Fdemo.epub&cfi=readium%3Areading-note)',
+			'>',
+			'> My comment',
+			'^note01',
+			'',
+		].join('\n');
+		const { app, files } = createMockApp({
+			[notePath]: noteContent,
+			'Books/demo.epub': 'binary',
+		});
+		const service = new EpubBacklinkHighlightService(app);
+
+		const deleted = await service.deleteHighlight(
+			notePath,
+			'readium:reading-note',
+			'Books/demo.epub',
+			undefined,
+			'note01'
+		);
+
+		expect(deleted).toBe(true);
+		expect(files.get(notePath)).not.toContain('reading-note');
+		expect(files.get(notePath)).not.toContain('^note01');
+		expect(files.get(notePath)).toContain('# Demo · 读书笔记');
+	});
+
 	it('collects excerpts that use shortest wikilink paths from the source note context', async () => {
 		const notePath = 'Notes/short-link.md';
 		const noteContent = [
