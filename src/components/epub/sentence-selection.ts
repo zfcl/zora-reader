@@ -54,6 +54,13 @@ interface TextNodeSpan {
 	endIdx: number;
 }
 
+export interface TextSelectionPosition {
+	node: Node;
+	offset: number;
+}
+
+export const MOBILE_CLAUSE_MAX_EDGE_CHARS = 240;
+
 const BLOCK_TAGS = new Set([
 	"p",
 	"li",
@@ -180,12 +187,11 @@ function collectTextNodeSpans(container: Element): { spans: TextNodeSpan[]; full
 	return { spans, fullText };
 }
 
-function mapNodeOffsetToTextIndex(
+function tryMapNodeOffsetToTextIndex(
 	node: Node,
 	offset: number,
-	spans: TextNodeSpan[],
-	isEnd: boolean
-): number {
+	spans: TextNodeSpan[]
+): number | null {
 	if (node.nodeType === 3) {
 		const span = spans.find((s) => s.node === node);
 		if (span) {
@@ -213,6 +219,19 @@ function mapNodeOffsetToTextIndex(
 		}
 	}
 
+	return null;
+}
+
+function mapNodeOffsetToTextIndex(
+	node: Node,
+	offset: number,
+	spans: TextNodeSpan[],
+	isEnd: boolean
+): number {
+	const mapped = tryMapNodeOffsetToTextIndex(node, offset, spans);
+	if (mapped !== null) {
+		return mapped;
+	}
 	if (isEnd && spans.length > 0) {
 		return spans[spans.length - 1].endIdx;
 	}
@@ -329,6 +348,136 @@ export function findSentenceBoundariesInText(
 	return { start: sentenceStart, end: sentenceEnd };
 }
 
+function isMobileClauseBoundary(
+	text: string,
+	index: number
+): { isBoundary: boolean; endOffset: number } {
+	const sentenceTerminator = isSentenceTerminator(text, index);
+	if (sentenceTerminator.isTerminator) {
+		return {
+			isBoundary: true,
+			endOffset: sentenceTerminator.endOffset,
+		};
+	}
+
+	if (![",", ";", "，", "；"].includes(text[index])) {
+		return { isBoundary: false, endOffset: index };
+	}
+
+	let end = index + 1;
+	while (end < text.length && /[,;，；]/u.test(text[end])) {
+		end++;
+	}
+	while (end < text.length && /['"”’\)\]\}\u300D\u300F\uFF09\u3011]/u.test(text[end])) {
+		end++;
+	}
+
+	return { isBoundary: true, endOffset: end };
+}
+
+/**
+ * Finds the punctuation-delimited clause containing the initial touch point.
+ * Mobile readers do not need to drag handles precisely: comma, semicolon,
+ * period, question mark, and exclamation mark (including Chinese variants)
+ * are all treated as clause edges.
+ *
+ * Searches are capped so malformed or punctuation-free EPUB markup can never
+ * make a short drag consume a whole visual page. When an edge cannot be found
+ * within the cap, that edge stays at the user's bounded raw drag position.
+ */
+export function findMobileClauseBoundariesInText(
+	text: string,
+	targetIndex: number,
+	options?: {
+		fallbackStart?: number;
+		fallbackEnd?: number;
+		maxEdgeChars?: number;
+	}
+): { start: number; end: number } {
+	if (!text) {
+		return { start: 0, end: 0 };
+	}
+
+	const target = Math.max(0, Math.min(targetIndex, text.length));
+	const maxEdgeChars = Math.max(1, options?.maxEdgeChars ?? MOBILE_CLAUSE_MAX_EDGE_CHARS);
+	const backwardLimit = Math.max(0, target - maxEdgeChars);
+	const forwardLimit = Math.min(text.length, target + maxEdgeChars);
+	const fallbackStart = Math.max(
+		backwardLimit,
+		Math.min(options?.fallbackStart ?? target, target, text.length)
+	);
+	const fallbackEnd = Math.min(
+		forwardLimit,
+		Math.max(target, Math.min(options?.fallbackEnd ?? target, text.length))
+	);
+
+	let clauseStart = backwardLimit === 0 ? 0 : fallbackStart;
+	for (let i = target - 1; i >= backwardLimit; i--) {
+		const boundary = isMobileClauseBoundary(text, i);
+		if (boundary.isBoundary && boundary.endOffset <= target) {
+			clauseStart = boundary.endOffset;
+			break;
+		}
+	}
+	while (clauseStart < target && /\s/u.test(text[clauseStart])) {
+		clauseStart++;
+	}
+
+	let clauseEnd = forwardLimit === text.length ? text.length : fallbackEnd;
+	for (let i = target; i < forwardLimit; i++) {
+		const boundary = isMobileClauseBoundary(text, i);
+		if (boundary.isBoundary) {
+			clauseEnd = boundary.endOffset;
+			break;
+		}
+	}
+	while (clauseEnd > clauseStart && /\s/u.test(text[clauseEnd - 1])) {
+		clauseEnd--;
+	}
+
+	if (clauseStart >= clauseEnd) {
+		return { start: fallbackStart, end: fallbackEnd };
+	}
+
+	return { start: clauseStart, end: clauseEnd };
+}
+
+function createRangeFromTextIndexes(
+	spans: TextNodeSpan[],
+	startIndex: number,
+	endIndex: number,
+	doc: Document
+): { range: Range; text: string } | null {
+	if (startIndex >= endIndex) {
+		return null;
+	}
+
+	const startSpan = spans.find((span) => startIndex >= span.startIdx && startIndex <= span.endIdx);
+	const endSpan = spans.find((span) => endIndex >= span.startIdx && endIndex <= span.endIdx);
+	if (!startSpan || !endSpan) {
+		return null;
+	}
+
+	const startOffset = Math.max(
+		0,
+		Math.min(startIndex - startSpan.startIdx, startSpan.node.length)
+	);
+	const endOffset = Math.max(
+		0,
+		Math.min(endIndex - endSpan.startIdx, endSpan.node.length)
+	);
+
+	try {
+		const newRange = doc.createRange();
+		newRange.setStart(startSpan.node, startOffset);
+		newRange.setEnd(endSpan.node, endOffset);
+		const text = newRange.toString().trim();
+		return text ? { range: newRange, text } : null;
+	} catch {
+		return null;
+	}
+}
+
 export function expandRangeToSentence(
 	range: Range,
 	doc: Document
@@ -438,18 +587,59 @@ export function snapRangeToSentenceIfClose(
 }
 
 /**
- * Mobile direct selection is gesture based, so a drag always represents a
- * sentence selection request. Expanding the DOM Range also reaches text in a
- * later visual column/page when the sentence continues beyond the viewport.
+ * Mobile direct selection is gesture based, so a drag represents a clause
+ * selection request. The legacy function name is kept for existing callers.
+ * Selection may cross a visual page only until the next supported delimiter.
  */
 export function snapRangeToSentenceForMobileDrag(
 	range: Range,
-	doc: Document
+	doc: Document,
+	targetPosition?: TextSelectionPosition
 ): { range: Range; text: string } | null {
 	if (!range || !doc || range.collapsed || !range.toString().trim()) {
 		return null;
 	}
-	return expandRangeToSentence(range, doc);
+
+	const blockContainer = getSentenceContainer(
+		targetPosition?.node ?? range.startContainer
+	);
+	if (!blockContainer) {
+		return null;
+	}
+
+	const { spans, fullText } = collectTextNodeSpans(blockContainer);
+	if (spans.length === 0 || !fullText.trim()) {
+		return null;
+	}
+
+	const mappedStart = tryMapNodeOffsetToTextIndex(
+		range.startContainer,
+		range.startOffset,
+		spans
+	);
+	const mappedEnd = tryMapNodeOffsetToTextIndex(
+		range.endContainer,
+		range.endOffset,
+		spans
+	);
+	const target = targetPosition
+		? tryMapNodeOffsetToTextIndex(
+			targetPosition.node,
+			targetPosition.offset,
+			spans
+		)
+		: mappedStart;
+
+	if (target === null) {
+		return null;
+	}
+
+	const boundaries = findMobileClauseBoundariesInText(fullText, target, {
+		fallbackStart: mappedStart ?? target,
+		fallbackEnd: mappedEnd ?? target,
+	});
+
+	return createRangeFromTextIndexes(spans, boundaries.start, boundaries.end, doc);
 }
 
 export function expandRangeToParagraph(

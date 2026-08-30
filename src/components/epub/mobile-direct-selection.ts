@@ -1535,7 +1535,14 @@ export class MobileDirectSelectionController {
 
 				// Drag selection completion
 				if (this.isDragging && this.currentRange && !this.currentRange.collapsed) {
-					const snapped = snapRangeToSentenceForMobileDrag(this.currentRange, doc);
+					// A drag means clause selection, while a sub-threshold gesture below
+					// remains the single-word tap path. Anchor to the initial touch so an
+					// imprecise endpoint cannot spill into the next punctuation segment.
+					const snapped = snapRangeToSentenceForMobileDrag(
+						this.currentRange,
+						doc,
+						this.anchorPos ?? undefined
+					);
 					const finalRange = snapped?.range ?? this.currentRange;
 					const text = (snapped?.text ?? finalRange.toString()).trim();
 					const cfiRange = frame.cfiFromRange ? frame.cfiFromRange(finalRange) : null;

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
 	findSentenceBoundariesInText,
+	findMobileClauseBoundariesInText,
 	isSentenceTerminator,
 	expandRangeToSentence,
 	expandRangeToParagraph,
@@ -92,6 +93,46 @@ describe("sentence-selection", () => {
 		});
 	});
 
+	describe("findMobileClauseBoundariesInText", () => {
+		it("uses comma, semicolon, period, question mark, and exclamation mark as clause edges", () => {
+			const text = "First clause, second clause; third clause! Fourth clause?";
+			const target = text.indexOf("second");
+			const { start, end } = findMobileClauseBoundariesInText(text, target);
+
+			expect(text.slice(start, end)).toBe("second clause;");
+		});
+
+		it("supports the corresponding Chinese punctuation", () => {
+			const text = "第一小句，第二小句；第三小句？！第四小句。";
+			const target = text.indexOf("第二");
+			const { start, end } = findMobileClauseBoundariesInText(text, target);
+
+			expect(text.slice(start, end)).toBe("第二小句；");
+		});
+
+		it("keeps decimals and abbreviations inside the same clause", () => {
+			const text = "Before, Dr. Watson paid $3.50 for lunch; after.";
+			const target = text.indexOf("Watson");
+			const { start, end } = findMobileClauseBoundariesInText(text, target);
+
+			expect(text.slice(start, end)).toBe("Dr. Watson paid $3.50 for lunch;");
+		});
+
+		it("falls back to the bounded raw drag when no punctuation is nearby", () => {
+			const text = `${"a".repeat(300)} target ${"b".repeat(300)}.`;
+			const target = text.indexOf("target");
+			const { start, end } = findMobileClauseBoundariesInText(text, target, {
+				fallbackStart: 0,
+				fallbackEnd: text.length,
+				maxEdgeChars: 40,
+			});
+
+			expect(start).toBe(target - 40);
+			expect(end).toBe(target + 40);
+			expect(end - start).toBe(80);
+		});
+	});
+
 	describe("expandRangeToSentence DOM expansion", () => {
 		it("expands DOM Range spanning text nodes", () => {
 			const p = document.createElement("p");
@@ -174,6 +215,41 @@ describe("sentence-selection", () => {
 			document.body.removeChild(p);
 		});
 
+		it("stops at the first comma on the next visual page instead of selecting the page", () => {
+			const blockquote = document.createElement("blockquote");
+			const currentPage = document.createElement("div");
+			const currentText = document.createTextNode(
+				"out of the brighter life, and is unable to see because unaccustomed to the "
+			);
+			currentPage.appendChild(currentText);
+			const nextPage = document.createElement("div");
+			const nextText = document.createTextNode(
+				"dark, or having turned from darkness to the day is dazzled by excess of light. " +
+				"And he will count the one happy in his condition and state of being."
+			);
+			nextPage.appendChild(nextText);
+			blockquote.append(currentPage, nextPage);
+			document.body.appendChild(blockquote);
+
+			const anchor = currentText.data.indexOf("unable");
+			const range = document.createRange();
+			range.setStart(currentText, anchor);
+			range.setEnd(currentText, anchor + 3);
+
+			const result = snapRangeToSentenceForMobileDrag(range, document, {
+				node: currentText,
+				offset: anchor,
+			});
+
+			expect(result?.text).toBe(
+				"and is unable to see because unaccustomed to the dark,"
+			);
+			expect(result?.range.endContainer).toBe(nextText);
+			expect(result?.range.endOffset).toBe(nextText.data.indexOf(",") + 1);
+
+			document.body.removeChild(blockquote);
+		});
+
 		it("does not treat generic EPUB layout divs as sentence boundaries", () => {
 			const blockquote = document.createElement("blockquote");
 			const currentPage = document.createElement("div");
@@ -205,7 +281,7 @@ describe("sentence-selection", () => {
 			document.body.removeChild(blockquote);
 		});
 
-		it("expands both edges when a mobile drag crosses sentence boundaries", () => {
+		it("keeps only the initial-touch clause when a mobile drag crosses boundaries", () => {
 			const p = document.createElement("p");
 			const text = document.createTextNode("First complete sentence. Second complete sentence. Third one.");
 			p.appendChild(text);
@@ -214,8 +290,11 @@ describe("sentence-selection", () => {
 			range.setStart(text, text.data.indexOf("complete"));
 			range.setEnd(text, text.data.indexOf("Third") - 1);
 
-			const result = snapRangeToSentenceForMobileDrag(range, document);
-			expect(result?.text).toBe("First complete sentence. Second complete sentence.");
+			const result = snapRangeToSentenceForMobileDrag(range, document, {
+				node: text,
+				offset: text.data.indexOf("complete"),
+			});
+			expect(result?.text).toBe("First complete sentence.");
 
 			document.body.removeChild(p);
 		});

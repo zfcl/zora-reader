@@ -167,6 +167,41 @@ describe('mobile-direct-selection', () => {
 			expect(cfiFromRange.mock.calls[0][0].endContainer).toBe(nextPageText);
 			controller.dispose();
 		});
+
+		it('anchors a drag to one punctuation-delimited clause even when the endpoint overshoots', () => {
+			let completedSelection: any = null;
+			const controller = new MobileDirectSelectionController({
+				onSelectionComplete: (selection) => {
+					completedSelection = selection;
+				},
+			});
+			const p = doc.createElement('p');
+			const text = doc.createTextNode(
+				'Before, select only this clause, never include this clause. After.'
+			);
+			p.appendChild(text);
+			doc.body.appendChild(p);
+			const cfiFromRange = vi.fn().mockReturnValue('epubcfi(/6/2!/4/2/1:8,/4/2/1:32)');
+			controller.syncFrames([{ frameDocument: doc, window, cfiFromRange }]);
+
+			const anchor = text.data.indexOf('select');
+			const overshotRange = doc.createRange();
+			overshotRange.setStart(text, anchor);
+			overshotRange.setEnd(text, text.data.indexOf('this clause. After'));
+			(controller as any).activeGestureKind = 'text-selection';
+			(controller as any).activeDoc = doc;
+			(controller as any).anchorPos = { node: text, offset: anchor };
+			(controller as any).isDragging = true;
+			(controller as any).currentRange = overshotRange;
+
+			const touchEnd = new Event('touchend', { bubbles: true, cancelable: true });
+			Object.defineProperty(touchEnd, 'touches', { value: [] });
+			doc.dispatchEvent(touchEnd);
+
+			expect(completedSelection?.text).toBe('select only this clause,');
+			expect(cfiFromRange).toHaveBeenCalledOnce();
+			controller.dispose();
+		});
 	});
 
 	describe('6. Overlay rect generation', () => {
