@@ -1,4 +1,4 @@
-name: Zora v0.2.23 cross-device bookmark sync release
+name: Publish Zora v0.2.23 cross-device bookmark sync
 
 on:
   push:
@@ -12,49 +12,28 @@ permissions:
   contents: write
 
 concurrency:
-  group: zora-v0.2.23-release
+  group: publish-zora-v0.2.23
   cancel-in-progress: false
 
 jobs:
-  verify-and-tag:
+  publish:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - name: Checkout exact release head
+      - name: Checkout tested release tag
         uses: actions/checkout@v4
         with:
-          ref: release/v0.2.23
+          ref: v0.2.23
           fetch-depth: 0
-          persist-credentials: true
 
-      - name: Safety gate
+      - name: Verify tested release commit
         shell: bash
         run: |
           set -euo pipefail
+          test "$(git rev-parse HEAD)" = "551dc670e3b30333048bcffae9a862dfc30a6946"
           test "$(node -p "require('./manifest.json').version")" = "0.2.23"
           test "$(node -p "require('./package.json').version")" = "0.2.23"
           test "$(node -p "require('./package-lock.json').version")" = "0.2.23"
-
-          cat > /tmp/expected-files <<'EOF'
-          .github/workflows/zora-v0.2.23-release.yml
-          manifest.json
-          package-lock.json
-          package.json
-          src/components/epub/EpubReaderApp.svelte
-          src/services/epub/EpubBookmarkService.ts
-          src/services/sync/ZoraSyncService.ts
-          src/services/sync/ZoraSyncTypes.ts
-          src/services/sync/__tests__/ZoraSyncService.test.ts
-          versions.json
-          EOF
-          git diff --name-only v0.2.22...HEAD | sort > /tmp/actual-files
-          sort -o /tmp/expected-files /tmp/expected-files
-          diff -u /tmp/expected-files /tmp/actual-files
-
-          if git ls-remote --exit-code --tags origin refs/tags/v0.2.23 >/dev/null 2>&1; then
-            echo "::error::Tag v0.2.23 already exists."
-            exit 1
-          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -66,8 +45,7 @@ jobs:
         run: npm ci
 
       - name: Targeted bookmark sync tests
-        run: |
-          npx vitest run             src/services/sync/__tests__/ZoraSyncService.test.ts             src/services/epub/__tests__/EpubBookmarkService.test.ts
+        run: npx vitest run src/services/sync/__tests__/ZoraSyncService.test.ts src/services/epub/__tests__/EpubBookmarkService.test.ts
 
       - name: Full test suite
         run: npm test
@@ -78,11 +56,28 @@ jobs:
       - name: Verify release assets
         run: npm run verify:release
 
-      - name: Tag tested commit
+      - name: Package release
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name "Zora Release Action"
-          git config user.email "zora-release@users.noreply.github.com"
-          git tag -a v0.2.23 -m "Zora Reader v0.2.23"
-          git push origin refs/tags/v0.2.23
+          cp dist/main.js dist/manifest.json dist/styles.css ./
+          zip -q zora-reader-v0.2.23.zip main.js manifest.json styles.css LICENSE NOTICE.md
+
+      - name: Publish and verify GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view v0.2.23 > /dev/null 2>&1; then
+            gh release upload v0.2.23 main.js manifest.json styles.css zora-reader-v0.2.23.zip --clobber
+            gh release edit v0.2.23 --title "Zora Reader v0.2.23"
+          else
+            gh release create v0.2.23               main.js               manifest.json               styles.css               zora-reader-v0.2.23.zip               --target "551dc670e3b30333048bcffae9a862dfc30a6946"               --title "Zora Reader v0.2.23"               --notes "Fixes desktop/mobile bookmark synchronization with per-bookmark Vault records, stable EPUB identities, deletion tombstones, legacy bookmark migration, concurrent merge protection, and automatic reader refresh when synced bookmark files change."
+          fi
+
+          mapfile -t ASSETS < <(gh release view v0.2.23 --json assets --jq '.assets[].name' | sort)
+          printf '%s\n' "${ASSETS[@]}" > /tmp/release-assets
+          printf '%s\n' main.js manifest.json styles.css zora-reader-v0.2.23.zip | sort > /tmp/expected-assets
+          diff -u /tmp/expected-assets /tmp/release-assets
+          gh release view v0.2.23 --json url --jq .url
