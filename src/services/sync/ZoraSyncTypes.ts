@@ -20,6 +20,20 @@ export interface SyncProgress {
 	updatedAt: string;
 }
 
+export interface SyncBookmark {
+	id: string;
+	bookId: string;
+	cfi: string;
+	chapterIndex: number;
+	percentage: number;
+	chapterTitle: string;
+	pageNumber?: number;
+	totalPages?: number;
+	preview?: string;
+	createdAt: string;
+	updatedAt: string;
+}
+
 export interface SyncAnnotation {
 	id: string;
 	bookId: string;
@@ -51,7 +65,7 @@ export interface SyncNote {
 
 export interface SyncTombstone {
 	id: string;
-	entityType: "annotation" | "note";
+	entityType: "annotation" | "note" | "bookmark";
 	deletedAt: string;
 	deviceId: string;
 }
@@ -74,6 +88,7 @@ export interface SyncDiagnostics {
 	latestProgressDevice?: string;
 	latestProgressTime?: string;
 	annotationCount: number;
+	bookmarkCount: number;
 	readingNoteCount: number;
 	lastSyncScan?: string;
 	lastSyncError?: string;

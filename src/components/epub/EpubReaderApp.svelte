@@ -25,6 +25,7 @@
 	import { logMobileEvent } from '../../utils/zora-mobile-logger';
 	import { canUseEpubCanvasExcerpts, canUseEpubChapterExport, canUseEpubExcerptNotes, canUseEpubFootnotePreview, canUseEpubParagraphMode, canUseEpubReadingProgress, canUseEpubReadingReference, canUseEpubSourceLocation, canUseEpubStyledExcerpts, createEpubReaderEngine, DEFAULT_EPUB_EXCERPT_SETTINGS, ensureBookSourceLocationAccess, ensureEpubPremiumFeature, EPUB_RUNTIME, EpubAnnotationService, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubAnnotationIndexService, getEpubBacklinkHighlightService, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress, resolveEpubHost, resolveEpubWeaveOfficialAPI, warmEpubAnnotationIndexForPaths } from '../../services/epub';
 	import { EpubBookmarkService } from '../../services/epub/EpubBookmarkService';
+	import { isEpubBookmarkManagedVaultPath } from '../../services/epub/epub-bookmark-vault-path';
 	import { EpubReferenceStatsService } from '../../services/epub/EpubReferenceStatsService';
 	import {
 		getDefaultEpubReaderSettings,
@@ -232,6 +233,7 @@
 	let readerService: EpubReaderEngine = untrack(() => createEpubReaderEngine(app));
 	let storageService = untrack(() => getEpubStorageService(app));
 	let bookmarkService = untrack(() => new EpubBookmarkService(app));
+	let syncService = untrack(() => getZoraSyncService(app));
 	let annotationService = untrack(() => new EpubAnnotationService(storageService));
 	let highlightViewSnapshotService = untrack(() => getEpubHighlightViewSnapshotService(app));
 	let locationMigrationService = untrack(() => new EpubLocationMigrationService(app, storageService, readerService));
@@ -363,6 +365,8 @@
 	let highlightReloading = $state(false);
 	let annotationRevision = $state(0);
 	let bookmarkRevision = $state(0);
+	let activeSyncBookId = '';
+	let bookmarkReloadTimer: ReturnType<typeof setTimeout> | null = null;
 	let tocChapterMarks = $state<EpubTocChapterMarkMap>({});
 	let tocChapterMarkSettings = $state<EpubTocChapterMarkSettings>({});
 	let tocChapterMarkRevision = $state(0);
@@ -2235,6 +2239,8 @@
 	async function loadBook() {
 		syncBookSessionForPath(filePath);
 		const loadToken = ++activeBookLoadToken;
+		activeSyncBookId = '';
+		syncService.setActiveBook(null);
 		const targetFilePath = filePath;
 		const previousBook = book;
 		if (previousBook?.id) {
@@ -2336,6 +2342,13 @@
 				loadedBook.sourceId = reusableBook.sourceId;
 				loadedBook.sourceFingerprint = reusableBook.sourceFingerprint;
 			}
+
+			const resolvedSyncBookId = await bookmarkService.resolveSyncBookId(loadedBook);
+			if (isStaleBookLoad(loadToken)) {
+				return;
+			}
+			activeSyncBookId = resolvedSyncBookId;
+			syncService.setActiveBook(activeSyncBookId || null, loadedBook.filePath);
 
 			const restoredPosition = await resolveBookLoadRestoredPosition({
 				hasProgressCapability: hasReadingProgressCapability(),
@@ -5373,6 +5386,20 @@
 		}
 	}
 
+	function queueBookmarkReload(delayMs = 180): void {
+		if (bookmarkReloadTimer) {
+			window.clearTimeout(bookmarkReloadTimer);
+		}
+		bookmarkReloadTimer = window.setTimeout(() => {
+			bookmarkReloadTimer = null;
+			if (!book || componentDisposed) return;
+			bookmarkRevision += 1;
+			if (isActiveEpubReaderInstance()) {
+				epubActiveDocumentStore.setSharedState({ bookmarkRevision });
+			}
+		}, delayMs);
+	}
+
 	function trackHighlightSourceChanges() {
 		if (vaultEventRefs.length > 0) return;
 
@@ -5388,6 +5415,10 @@
 		const requestReload = (path: string, eventType: string, delayMs = 180) => {
 			const normalizedPath = normalizeTrackedVaultPath(path);
 			if (!normalizedPath || !book || componentDisposed) return;
+			if (isEpubBookmarkManagedVaultPath(app, normalizedPath)) {
+				queueBookmarkReload(delayMs);
+				return;
+			}
 			if (isEphemeralEditorHighlightSourcePath(app, normalizedPath)) {
 				return;
 			}
@@ -5468,6 +5499,10 @@
 			}
 		};
 		document.addEventListener('visibilitychange', handleVisibilityChange);
+		const unsubscribeBookmarkSync = syncService.onSyncStateChanged((changedBookId) => {
+			if (!activeSyncBookId || changedBookId !== activeSyncBookId) return;
+			queueBookmarkReload(120);
+		});
 		const cleanupExternalHighlightSyncReload = attachExternalHighlightSyncReload({
 			canReload: () => !componentDisposed && !!book && hasExcerptNotesCapability(),
 			onReload: (delayMs) => {
@@ -5684,6 +5719,12 @@
 			app.workspace.offref(canvasDirectionRef);
 			document.removeEventListener('fullscreenchange', handleFullscreenChange);
 			document.removeEventListener('visibilitychange', handleVisibilityChange);
+			unsubscribeBookmarkSync();
+			syncService.setActiveBook(null);
+			if (bookmarkReloadTimer) {
+				window.clearTimeout(bookmarkReloadTimer);
+				bookmarkReloadTimer = null;
+			}
 			cleanupExternalHighlightSyncReload();
 			cleanupCardHighlightSync();
 			setParagraphModeImmersiveClass(false);

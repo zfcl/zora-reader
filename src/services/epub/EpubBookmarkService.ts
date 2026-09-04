@@ -37,6 +37,8 @@ import { normalizeReadingPaceStats } from "./reading-pace";
 import type { ReaderHighlightInput } from "./reader-engine-types";
 import type { EpubBook, ReadingPosition, ReadingStats } from "./types";
 import { errorPlainText, unknownPlainText } from "../../utils/unknown-plain-text";
+import { getZoraSyncService, type ZoraSyncService } from "../sync/ZoraSyncService";
+import type { SyncBookmark } from "../sync/ZoraSyncTypes";
 
 export {
 	DEFAULT_EPUB_BOOKMARK_FOLDER,
@@ -258,11 +260,13 @@ function isFilesystemNotFoundError(error: unknown): boolean {
 export class EpubBookmarkService {
 	private app: App;
 	private linkService: EpubLinkService;
+	private syncService: ZoraSyncService;
 	private bookmarkFileLocks = new Map<string, Promise<void>>();
 
 	constructor(app: App) {
 		this.app = app;
 		this.linkService = new EpubLinkService(app);
+		this.syncService = getZoraSyncService(app);
 	}
 
 	private runSerializedBookmarkMutation<T>(book: EpubBook, operation: () => Promise<T>): Promise<T> {
@@ -285,11 +289,155 @@ export class EpubBookmarkService {
 	}
 
 	async loadBookmarksForBook(book: EpubBook): Promise<EpubBookmarkRecord[]> {
-		const fileData = await this.readBookmarkFileForBook(book);
-		if (!fileData) {
-			return [];
+		return await this.runSerializedBookmarkMutation(book, async () => {
+			const filePath = await this.findCompatibleBookmarkFilePath(book);
+			const fileData = filePath ? await this.readBookmarkFileByPath(filePath) : null;
+			const legacyBookmarks = fileData ? [...fileData.bookmarks] : [];
+			const stableKey = this.buildStableKey(book);
+
+			try {
+				const syncBookId = await this.resolveSyncBookId(book);
+				if (!syncBookId) {
+					return legacyBookmarks.sort(
+						(a, b) => (b.createdAt || 0) - (a.createdAt || 0)
+					);
+				}
+
+				const initialSnapshot = await this.syncService.loadBookmarkSnapshot(syncBookId);
+				const importableLegacy = legacyBookmarks.filter(
+					(bookmark) => !initialSnapshot.deletedIds.has(bookmark.id)
+				);
+				await Promise.all(
+					importableLegacy.map((bookmark) =>
+						this.syncService.importBookmark(
+							this.toSyncBookmark(syncBookId, bookmark)
+						)
+					)
+				);
+
+				const syncSnapshot = await this.syncService.loadBookmarkSnapshot(syncBookId);
+				const syncedBookmarks = syncSnapshot.bookmarks
+					.map((bookmark) => this.fromSyncBookmark(bookmark, stableKey))
+					.filter((bookmark): bookmark is EpubBookmarkRecord => Boolean(bookmark));
+				const activeLegacyBookmarks = importableLegacy.filter(
+					(bookmark) => !syncSnapshot.deletedIds.has(bookmark.id)
+				);
+				const merged = this.mergeBookmarkRecords(
+					syncedBookmarks,
+					activeLegacyBookmarks,
+					stableKey
+				);
+
+				await this.persistMergedBookmarksForBook(
+					book,
+					filePath,
+					fileData,
+					merged
+				);
+				return merged;
+			} catch (error) {
+				logger.warn(
+					"[EpubBookmarkService] Failed to reconcile cross-device bookmarks:",
+					error
+				);
+				return legacyBookmarks.sort(
+					(a, b) => (b.createdAt || 0) - (a.createdAt || 0)
+				);
+			}
+		});
+	}
+
+	async resolveSyncBookId(book: EpubBook): Promise<string> {
+		const sourceFingerprint = String(book.sourceFingerprint || "")
+			.trim()
+			.toLowerCase();
+		if (sourceFingerprint) {
+			return sourceFingerprint;
 		}
-		return [...fileData.bookmarks].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+		const filePath = normalizePath(String(book.filePath || "").trim());
+		if (filePath) {
+			const computed = await this.syncService.computeBookIdFromFile(filePath);
+			if (computed) {
+				return computed;
+			}
+		}
+
+		return String(book.sourceId || "").trim() || this.buildStableKey(book);
+	}
+
+	private toSyncBookmark(bookId: string, bookmark: EpubBookmarkRecord): SyncBookmark {
+		const createdAt = new Date(bookmark.createdAt || Date.now()).toISOString();
+		return {
+			id: bookmark.id,
+			bookId,
+			cfi: bookmark.cfi,
+			chapterIndex: bookmark.chapterIndex,
+			percentage: bookmark.percent,
+			chapterTitle: bookmark.chapterTitle,
+			pageNumber: bookmark.pageNumber,
+			totalPages: bookmark.totalPages,
+			preview: bookmark.preview,
+			createdAt,
+			updatedAt: createdAt,
+		};
+	}
+
+	private fromSyncBookmark(
+		bookmark: SyncBookmark,
+		stableKey: string
+	): EpubBookmarkRecord | null {
+		const parsedCreatedAt = new Date(bookmark.createdAt || bookmark.updatedAt).getTime();
+		return this.normalizeBookmarkRecord(
+			{
+				id: bookmark.id,
+				cfi: bookmark.cfi,
+				chapterIndex: bookmark.chapterIndex,
+				percent: bookmark.percentage,
+				chapterTitle: bookmark.chapterTitle,
+				pageNumber: bookmark.pageNumber,
+				totalPages: bookmark.totalPages,
+				preview: bookmark.preview,
+				createdAt: Number.isFinite(parsedCreatedAt) ? parsedCreatedAt : Date.now(),
+			},
+			stableKey
+		);
+	}
+
+	private async saveBookmarkToSync(
+		book: EpubBook,
+		bookmark: EpubBookmarkRecord
+	): Promise<void> {
+		const syncBookId = await this.resolveSyncBookId(book);
+		if (!syncBookId) return;
+		await this.syncService.saveBookmark(this.toSyncBookmark(syncBookId, bookmark));
+	}
+
+	private async persistMergedBookmarksForBook(
+		book: EpubBook,
+		filePath: string | null,
+		fileData: EpubBookmarkFileFrontmatter | null,
+		bookmarks: EpubBookmarkRecord[]
+	): Promise<void> {
+		const currentBookmarks = fileData?.bookmarks || [];
+		if (
+			fileData &&
+			JSON.stringify(currentBookmarks) === JSON.stringify(bookmarks)
+		) {
+			return;
+		}
+		if (!fileData && bookmarks.length === 0) {
+			return;
+		}
+
+		const targetPath = filePath || (await this.resolvePreferredBookmarkFilePath(book));
+		const nextFrontmatter = this.mergeBookIdentity(
+			fileData || this.createEmptyFileFrontmatter(book),
+			book
+		);
+		nextFrontmatter.bookmarks = bookmarks;
+		nextFrontmatter.updatedAt = Date.now();
+		await this.writeBookmarkFile(targetPath, nextFrontmatter);
 	}
 
 	async getBookmarkCountForBook(book: EpubBook): Promise<number> {
@@ -350,6 +498,7 @@ export class EpubBookmarkService {
 			.filter((item) => Boolean(item.cfi))
 			.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
+		await this.saveBookmarkToSync(book, bookmark);
 		await this.writeBookmarkFile(filePath, existing);
 		return {
 			bookmark,
@@ -365,24 +514,60 @@ export class EpubBookmarkService {
 		}
 
 		return await this.runSerializedBookmarkMutation(book, async () => {
+			const syncBookId = await this.resolveSyncBookId(book);
 			const filePath = await this.findCompatibleBookmarkFilePath(book);
 			if (!filePath) {
+				if (syncBookId) {
+					await this.syncService.deleteBookmark(syncBookId, normalizedBookmarkId);
+					return true;
+				}
 				return false;
 			}
 
 			const existing = await this.readBookmarkFileByPath(filePath);
 			if (!existing) {
+				if (syncBookId) {
+					await this.syncService.deleteBookmark(syncBookId, normalizedBookmarkId);
+					return true;
+				}
 				return false;
 			}
 
-			const nextBookmarks = existing.bookmarks.filter(
-				(bookmark) => String(bookmark.id || "").trim() !== normalizedBookmarkId
+			const targetBookmark = existing.bookmarks.find(
+				(bookmark) => String(bookmark.id || "").trim() === normalizedBookmarkId
 			);
-			if (nextBookmarks.length === existing.bookmarks.length) {
+			if (!targetBookmark) {
+				if (syncBookId) {
+					await this.syncService.deleteBookmark(syncBookId, normalizedBookmarkId);
+					return true;
+				}
 				return false;
 			}
 
-			existing.bookmarks = nextBookmarks.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+			if (syncBookId) {
+				const normalizedTargetCfi = EpubLinkService.normalizeCfi(targetBookmark.cfi);
+				const snapshot = await this.syncService.loadBookmarkSnapshot(syncBookId);
+				const syncedIds = snapshot.bookmarks
+					.filter(
+						(bookmark) =>
+							EpubLinkService.normalizeCfi(bookmark.cfi) === normalizedTargetCfi
+					)
+					.map((bookmark) => bookmark.id);
+				await Promise.all(
+					Array.from(new Set([normalizedBookmarkId, ...syncedIds])).map(
+						(bookmarkId) =>
+							this.syncService.deleteBookmark(syncBookId, bookmarkId)
+					)
+				);
+			}
+
+			existing.bookmarks = existing.bookmarks
+				.filter(
+					(bookmark) =>
+						EpubLinkService.normalizeCfi(bookmark.cfi) !==
+						EpubLinkService.normalizeCfi(targetBookmark.cfi)
+				)
+				.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 			existing.updatedAt = Date.now();
 			await this.writeBookmarkFile(filePath, existing);
 			return true;
@@ -922,8 +1107,9 @@ export class EpubBookmarkService {
 		};
 	}
 
-	private createBookmarkId(stableKey: string, cfi: string, createdAt: number): string {
-		const seed = `${stableKey}::${createdAt}::${cfi}`;
+	private createBookmarkId(stableKey: string, cfi: string, _createdAt: number): string {
+		const normalizedCfi = EpubLinkService.normalizeCfi(cfi);
+		const seed = `${stableKey}::${normalizedCfi}`;
 		return `epub-bm-${this.hashString(seed).toString(36)}`;
 	}
 

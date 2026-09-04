@@ -6,6 +6,7 @@ import { logMobileEvent, logMobileSyncDebug } from "../../utils/zora-mobile-logg
 import type {
 	SyncAnnotation,
 	SyncBookMeta,
+	SyncBookmark,
 	SyncDiagnostics,
 	SyncMigrationV2Record,
 	SyncNote,
@@ -168,6 +169,10 @@ export class ZoraSyncService {
 
 	getAnnotationsDir(bookId: string): string {
 		return normalizePath(`${this.getBookDir(bookId)}/annotations`);
+	}
+
+	getBookmarksDir(bookId: string): string {
+		return normalizePath(`${this.getBookDir(bookId)}/bookmarks`);
 	}
 
 	getNotesDir(bookId: string): string {
@@ -447,6 +452,178 @@ export class ZoraSyncService {
 	}
 
 	// ------------------------------------------------------------------------
+	// Bookmarks (one file per bookmark, with deletion tombstones)
+	// ------------------------------------------------------------------------
+
+	async saveBookmark(
+		bookmark: Omit<SyncBookmark, "createdAt" | "updatedAt"> & {
+			createdAt?: string;
+			updatedAt?: string;
+		}
+	): Promise<SyncBookmark> {
+		const now = new Date().toISOString();
+		const fullBookmark: SyncBookmark = {
+			...bookmark,
+			createdAt: bookmark.createdAt || now,
+			updatedAt: bookmark.updatedAt || now,
+		};
+		const filePath = normalizePath(
+			`${this.getBookmarksDir(fullBookmark.bookId)}/${fullBookmark.id}.json`
+		);
+		await this.safeAtomicWriteJson(filePath, fullBookmark);
+		logMobileEvent("Sync", "BookmarkSaved", {
+			id: fullBookmark.id,
+			bookId: fullBookmark.bookId,
+			cfi: fullBookmark.cfi,
+		});
+		return fullBookmark;
+	}
+
+	/**
+	 * Imports a legacy bookmark without reviving an item that another device
+	 * already deleted. Existing newer sync records also win.
+	 */
+	async importBookmark(bookmark: SyncBookmark): Promise<SyncBookmark | null> {
+		if (!bookmark.bookId || !bookmark.id || !bookmark.cfi) {
+			return null;
+		}
+		const tombstonePath = normalizePath(
+			`${this.getTombstonesDir(bookmark.bookId)}/${bookmark.id}.json`
+		);
+		const tombstone = await this.safeReadJson<SyncTombstone>(tombstonePath);
+		const incomingTime = new Date(bookmark.updatedAt || bookmark.createdAt || 0).getTime();
+		if (
+			tombstone?.entityType === "bookmark" &&
+			new Date(tombstone.deletedAt || 0).getTime() >= incomingTime
+		) {
+			return null;
+		}
+
+		const bookmarkPath = normalizePath(
+			`${this.getBookmarksDir(bookmark.bookId)}/${bookmark.id}.json`
+		);
+		const existing = await this.safeReadJson<SyncBookmark>(bookmarkPath);
+		const existingTime = existing
+			? new Date(existing.updatedAt || existing.createdAt || 0).getTime()
+			: -1;
+		if (existing?.cfi && existingTime >= incomingTime) {
+			return existing;
+		}
+
+		await this.safeAtomicWriteJson(bookmarkPath, bookmark);
+		return bookmark;
+	}
+
+	async deleteBookmark(bookId: string, bookmarkId: string): Promise<void> {
+		if (!bookId || !bookmarkId) return;
+
+		const tombstone: SyncTombstone = {
+			id: bookmarkId,
+			entityType: "bookmark",
+			deletedAt: new Date().toISOString(),
+			deviceId: this.deviceId,
+		};
+		const tombstonePath = normalizePath(
+			`${this.getTombstonesDir(bookId)}/${bookmarkId}.json`
+		);
+		await this.safeAtomicWriteJson(tombstonePath, tombstone);
+
+		const bookmarkPath = normalizePath(
+			`${this.getBookmarksDir(bookId)}/${bookmarkId}.json`
+		);
+		const adapter = this.app.vault.adapter;
+		if (await adapter.exists(bookmarkPath)) {
+			try {
+				await adapter.remove(bookmarkPath);
+			} catch {}
+		}
+
+		logMobileEvent("Sync", "BookmarkDeleted", { bookId, bookmarkId });
+	}
+
+	async loadBookmarkSnapshot(
+		bookId: string
+	): Promise<{ bookmarks: SyncBookmark[]; deletedIds: Set<string> }> {
+		if (!bookId) {
+			return { bookmarks: [], deletedIds: new Set<string>() };
+		}
+
+		const adapter = this.app.vault.adapter;
+		const tombstonesDir = this.getTombstonesDir(bookId);
+		const bookmarksDir = this.getBookmarksDir(bookId);
+		const tombstonesMap = new Map<string, number>();
+
+		if (await adapter.exists(tombstonesDir)) {
+			try {
+				const files = (await adapter.list(tombstonesDir))?.files || [];
+				for (const file of files) {
+					if (!file.endsWith(".json")) continue;
+					const tombstone = await this.safeReadJson<SyncTombstone>(file);
+					if (
+						tombstone?.entityType === "bookmark" &&
+						tombstone.id &&
+						tombstone.deletedAt
+					) {
+						tombstonesMap.set(
+							tombstone.id,
+							new Date(tombstone.deletedAt).getTime()
+						);
+					}
+				}
+			} catch (error) {
+				logger.warn(
+					`[ZoraSyncService] Error reading bookmark tombstones for ${bookId}:`,
+					error
+				);
+			}
+		}
+
+		if (!(await adapter.exists(bookmarksDir))) {
+			return {
+				bookmarks: [],
+				deletedIds: new Set(tombstonesMap.keys()),
+			};
+		}
+
+		try {
+			const files = (await adapter.list(bookmarksDir))?.files || [];
+			const bookmarks: SyncBookmark[] = [];
+			const deletedIds = new Set(tombstonesMap.keys());
+
+			for (const file of files) {
+				if (!file.endsWith(".json")) continue;
+				const bookmark = await this.safeReadJson<SyncBookmark>(file);
+				if (!bookmark?.id || !bookmark.cfi) continue;
+
+				const deletedAt = tombstonesMap.get(bookmark.id);
+				const updatedAt = new Date(
+					bookmark.updatedAt || bookmark.createdAt || 0
+				).getTime();
+				if (deletedAt !== undefined && deletedAt >= updatedAt) {
+					continue;
+				}
+				deletedIds.delete(bookmark.id);
+				bookmarks.push(bookmark);
+			}
+
+			return { bookmarks, deletedIds };
+		} catch (error) {
+			logger.warn(
+				`[ZoraSyncService] Failed to load bookmarks for book ${bookId}:`,
+				error
+			);
+			return {
+				bookmarks: [],
+				deletedIds: new Set(tombstonesMap.keys()),
+			};
+		}
+	}
+
+	async loadBookmarks(bookId: string): Promise<SyncBookmark[]> {
+		return (await this.loadBookmarkSnapshot(bookId)).bookmarks;
+	}
+
+	// ------------------------------------------------------------------------
 	// Notes (One file per note)
 	// ------------------------------------------------------------------------
 
@@ -664,8 +841,31 @@ export class ZoraSyncService {
 			if (!(await adapter.exists(dir))) {
 				return false;
 			}
-			const list = await adapter.list(dir);
-			const fingerprint = `${(list?.files || []).sort().join(";")}:${(list?.folders || []).sort().join(";")}`;
+			const watchedDirs = [
+				dir,
+				this.getProgressDir(bookId),
+				this.getAnnotationsDir(bookId),
+				this.getBookmarksDir(bookId),
+				this.getNotesDir(bookId),
+				this.getTombstonesDir(bookId),
+			];
+			const fingerprintParts: string[] = [];
+			for (const watchedDir of watchedDirs) {
+				if (!(await adapter.exists(watchedDir))) continue;
+				const list = await adapter.list(watchedDir);
+				for (const filePath of [...(list?.files || [])].sort()) {
+					let stamp = "";
+					try {
+						const stat = await adapter.stat?.(filePath);
+						stamp = `:${stat?.mtime || 0}:${stat?.size || 0}`;
+					} catch {}
+					fingerprintParts.push(`${filePath}${stamp}`);
+				}
+				for (const folderPath of [...(list?.folders || [])].sort()) {
+					fingerprintParts.push(`${folderPath}/`);
+				}
+			}
+			const fingerprint = fingerprintParts.join(";");
 
 			if (this.knownDirFingerprint !== null && this.knownDirFingerprint !== fingerprint) {
 				this.knownDirFingerprint = fingerprint;
@@ -690,6 +890,7 @@ export class ZoraSyncService {
 		let latestProgressDevice: string | undefined;
 		let latestProgressTime: string | undefined;
 		let annotationCount = 0;
+		let bookmarkCount = 0;
 		let readingNoteCount = 0;
 
 		if (targetBookId) {
@@ -700,6 +901,8 @@ export class ZoraSyncService {
 			}
 			const annotations = await this.loadAnnotations(targetBookId);
 			annotationCount = annotations.length;
+			const bookmarks = await this.loadBookmarks(targetBookId);
+			bookmarkCount = bookmarks.length;
 			const notes = await this.loadNotes(targetBookId);
 			readingNoteCount = notes.length;
 		}
@@ -710,6 +913,7 @@ export class ZoraSyncService {
 			latestProgressDevice,
 			latestProgressTime,
 			annotationCount,
+			bookmarkCount,
 			readingNoteCount,
 			lastSyncScan: this.lastScanTime ? new Date(this.lastScanTime).toISOString() : undefined,
 			lastSyncError: this.lastScanError || undefined,

@@ -129,6 +129,48 @@ describe("ZoraSyncService", () => {
 		expect(memoryFs[`Zora Reader/Sync/books/${bookId}/tombstones/ann-001.json`]).toBeDefined();
 	});
 
+	it("merges cross-device bookmarks and keeps deletions tombstoned", async () => {
+		const bookId = "test-book-bookmark-789";
+		const desktopBookmark = await syncService.saveBookmark({
+			id: "epub-bm-desktop",
+			bookId,
+			cfi: "epubcfi(/6/2!/4/2/1:0)",
+			chapterIndex: 1,
+			percentage: 0.15,
+			chapterTitle: "Chapter 1",
+		});
+		const phoneBookmark = {
+			id: "epub-bm-phone",
+			bookId,
+			cfi: "epubcfi(/6/4!/4/2/1:0)",
+			chapterIndex: 2,
+			percentage: 0.35,
+			chapterTitle: "Chapter 2",
+			createdAt: new Date(Date.now() + 1000).toISOString(),
+			updatedAt: new Date(Date.now() + 1000).toISOString(),
+		};
+		memoryFs[
+			`Zora Reader/Sync/books/${bookId}/bookmarks/${phoneBookmark.id}.json`
+		] = JSON.stringify(phoneBookmark);
+
+		let bookmarks = await syncService.loadBookmarks(bookId);
+		expect(bookmarks.map((bookmark) => bookmark.id).sort()).toEqual([
+			"epub-bm-desktop",
+			"epub-bm-phone",
+		]);
+
+		await syncService.deleteBookmark(bookId, desktopBookmark.id);
+		memoryFs[
+			`Zora Reader/Sync/books/${bookId}/bookmarks/${desktopBookmark.id}.json`
+		] = JSON.stringify(desktopBookmark);
+
+		bookmarks = await syncService.loadBookmarks(bookId);
+		expect(bookmarks.map((bookmark) => bookmark.id)).toEqual(["epub-bm-phone"]);
+		expect(
+			await syncService.importBookmark(desktopBookmark)
+		).toBeNull();
+	});
+
 	it("saves, loads, and deletes notes with tombstones", async () => {
 		const bookId = "test-book-note-456";
 
