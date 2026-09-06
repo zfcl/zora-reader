@@ -96,13 +96,11 @@ jobs:
       - name: Verify release assets
         run: npm run verify:release
 
-      - name: Commit tested release source
+      - name: Create and push tested release source
         id: release_commit
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add \
             manifest.json \
             package-lock.json \
@@ -114,17 +112,26 @@ jobs:
             src/components/epub/toolbar-positioning.test.ts \
             src/services/sync/reading-progress-merge.ts \
             src/services/sync/__tests__/reading-progress-merge.test.ts
-          git commit -m 'fix(epub): sync reading progress and repair Android tablet toolbar'
-          RELEASE_SHA="$(git rev-parse HEAD)"
+          TREE_SHA="$(git write-tree)"
+          PARENT_SHA="$(git rev-parse HEAD)"
+          export GIT_AUTHOR_NAME='github-actions[bot]'
+          export GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com'
+          export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+          export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+          RELEASE_SHA="$(printf '%s\n' 'fix(epub): sync reading progress and repair Android tablet toolbar' | git commit-tree "$TREE_SHA" -p "$PARENT_SHA")"
           echo "sha=${RELEASE_SHA}" >> "$GITHUB_OUTPUT"
-          git push origin HEAD:release/v0.2.24
+          git push origin "${RELEASE_SHA}:refs/heads/release/v0.2.24"
 
       - name: Tag release
+        env:
+          RELEASE_SHA: ${{ steps.release_commit.outputs.sha }}
         shell: bash
         run: |
           set -euo pipefail
-          git tag -a v0.2.24 -m 'Zora Reader v0.2.24'
-          git push origin v0.2.24
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a v0.2.24 "${RELEASE_SHA}" -m 'Zora Reader v0.2.24'
+          git push origin refs/tags/v0.2.24
 
       - name: Package release
         shell: bash
