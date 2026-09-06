@@ -53,6 +53,14 @@ export const TOOLBAR_ARROW_PADDING = 18;
 export const NATIVE_SELECTION_MENU_HEIGHT = 48;
 export const MOBILE_FLOATING_BOTTOM_BASE_INSET = 16;
 
+export function shouldDockSelectionToolbar(
+	mobile: boolean,
+	android: boolean,
+	tablet: boolean
+): boolean {
+	return mobile && !(android && tablet);
+}
+
 export type NativeSelectionMenuSide = "above" | "below";
 
 export function resolveMobileFloatingInsetBottom(mobileDockBottomOffset = 0): number {

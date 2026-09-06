@@ -21,6 +21,7 @@
 	import EpubPremiumFeaturePopover from './EpubPremiumFeaturePopover.svelte';
 	import { MobileDirectSelectionController, type MobileDirectSelectionContext } from './mobile-direct-selection';
 	import { getZoraSyncService } from '../../services/sync/ZoraSyncService';
+	import { resolveLatestReadingPosition, syncedProgressTimestamp } from '../../services/sync/reading-progress-merge';
 	import { runZoraSyncV2Migration } from '../../services/sync/zora-sync-migration';
 	import { logMobileEvent } from '../../utils/zora-mobile-logger';
 	import { canUseEpubCanvasExcerpts, canUseEpubChapterExport, canUseEpubExcerptNotes, canUseEpubFootnotePreview, canUseEpubParagraphMode, canUseEpubReadingProgress, canUseEpubReadingReference, canUseEpubSourceLocation, canUseEpubStyledExcerpts, createEpubReaderEngine, DEFAULT_EPUB_EXCERPT_SETTINGS, ensureBookSourceLocationAccess, ensureEpubPremiumFeature, EPUB_RUNTIME, EpubAnnotationService, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubAnnotationIndexService, getEpubBacklinkHighlightService, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress, resolveEpubHost, resolveEpubWeaveOfficialAPI, warmEpubAnnotationIndexForPaths } from '../../services/epub';
@@ -367,6 +368,85 @@
 	let bookmarkRevision = $state(0);
 	let activeSyncBookId = '';
 	let bookmarkReloadTimer: ReturnType<typeof setTimeout> | null = null;
+
+	async function saveSyncedReadingProgress(
+		targetBook: EpubBook | null,
+		position: ReadingPosition | null | undefined,
+		syncBookId: string = activeSyncBookId,
+		updatedAtMs: number = Date.now()
+	): Promise<void> {
+		if (!hasReadingProgressCapability() || !targetBook?.id || !syncBookId || !position?.cfi) {
+			return;
+		}
+		const safeUpdatedAt = Number.isFinite(updatedAtMs) && updatedAtMs > 0
+			? updatedAtMs
+			: Date.now();
+		try {
+			await syncService.saveProgress(syncBookId, {
+				cfi: position.cfi,
+				percentage: position.percent,
+				chapterIndex: position.chapterIndex,
+				updatedAt: new Date(safeUpdatedAt).toISOString(),
+			});
+		} catch (error) {
+			logger.warn('[EpubReaderApp] Failed to persist cross-device reading progress:', error);
+		}
+	}
+
+	async function resolveCrossDeviceReadingPosition(
+		targetBook: EpubBook,
+		localPosition: ReadingPosition | null
+	): Promise<ReadingPosition | null> {
+		const syncBookId = activeSyncBookId;
+		if (!hasReadingProgressCapability() || !syncBookId) {
+			return localPosition;
+		}
+
+		try {
+			const latestSyncedProgress = await syncService.loadLatestProgress(syncBookId);
+			const localUpdatedAt = typeof targetBook.readingStats?.lastReadTime === 'number'
+				&& Number.isFinite(targetBook.readingStats.lastReadTime)
+				? targetBook.readingStats.lastReadTime
+				: 0;
+			const resolution = resolveLatestReadingPosition(
+				localPosition,
+				localUpdatedAt,
+				latestSyncedProgress
+			);
+
+			if (resolution.source === 'sync' && resolution.position) {
+				const remoteUpdatedAt = syncedProgressTimestamp(latestSyncedProgress);
+				if (remoteUpdatedAt > 0) {
+					targetBook.readingStats.lastReadTime = Math.max(localUpdatedAt, remoteUpdatedAt);
+				}
+				logMobileEvent('Sync', 'ProgressRestoredFromLatestDevice', {
+					bookId: syncBookId,
+					deviceId: latestSyncedProgress?.deviceId || '',
+					percentage: resolution.position.percent,
+				});
+			} else if (resolution.source === 'local' && resolution.position) {
+				const remoteUpdatedAt = syncedProgressTimestamp(latestSyncedProgress);
+				if (
+					!latestSyncedProgress ||
+					latestSyncedProgress.cfi !== resolution.position.cfi ||
+					remoteUpdatedAt < localUpdatedAt
+				) {
+					await saveSyncedReadingProgress(
+						targetBook,
+						resolution.position,
+						syncBookId,
+						localUpdatedAt || Date.now()
+					);
+				}
+			}
+
+			return resolution.position;
+		} catch (error) {
+			logger.warn('[EpubReaderApp] Failed to resolve latest cross-device reading progress:', error);
+			return localPosition;
+		}
+	}
+
 	let tocChapterMarks = $state<EpubTocChapterMarkMap>({});
 	let tocChapterMarkSettings = $state<EpubTocChapterMarkSettings>({});
 	let tocChapterMarkRevision = $state(0);
@@ -673,6 +753,7 @@
 		currentBook.currentPosition = currentPosition;
 		await storageService.saveProgress(currentBook.id, currentPosition, readingStats);
 		await flushEpubPendingProgress(storageService);
+		await saveSyncedReadingProgress(currentBook, currentPosition);
 		await syncReadingReferencePointFromAutoSave(currentPosition);
 		notifyBookshelfProgressChanged(currentBook.filePath);
 	}
@@ -1640,6 +1721,7 @@
 	async function persistCurrentReadingProgress(
 		targetBook: EpubBook | null = book
 	): Promise<boolean> {
+		const syncBookIdForSave = activeSyncBookId;
 		if (!hasReadingProgressCapability()) {
 			await flushEpubPendingProgress(storageService);
 			return false;
@@ -1682,6 +1764,7 @@
 		targetBook.currentPosition = position;
 		await storageService.saveProgress(targetBook.id, position, readingStats);
 		await flushEpubPendingProgress(storageService);
+		await saveSyncedReadingProgress(targetBook, position, syncBookIdForSave);
 		notifyBookshelfProgressChanged(targetBook.filePath);
 		return true;
 	}
@@ -2239,13 +2322,13 @@
 	async function loadBook() {
 		syncBookSessionForPath(filePath);
 		const loadToken = ++activeBookLoadToken;
+		const previousBook = book;
+		if (previousBook?.id) {
+			await persistCurrentReadingProgress(previousBook);
+		}
 		activeSyncBookId = '';
 		syncService.setActiveBook(null);
 		const targetFilePath = filePath;
-		const previousBook = book;
-		if (previousBook?.id) {
-			void persistCurrentReadingProgress(previousBook);
-		}
 		loading = true;
 		bookLoadSlowWarning = false;
 		errorMsg = '';
@@ -2350,12 +2433,13 @@
 			activeSyncBookId = resolvedSyncBookId;
 			syncService.setActiveBook(activeSyncBookId || null, loadedBook.filePath);
 
-			const restoredPosition = await resolveBookLoadRestoredPosition({
+			let restoredPosition = await resolveBookLoadRestoredPosition({
 				hasProgressCapability: hasReadingProgressCapability(),
 				reusableBook,
 				loadedBook,
 				loadProgress: (bookId, book) => storageService.loadProgress(bookId, book),
 			});
+			restoredPosition = await resolveCrossDeviceReadingPosition(loadedBook, restoredPosition);
 			if (isStaleBookLoad(loadToken)) {
 				return;
 			}
@@ -2684,6 +2768,7 @@
 	async function handleAutoReadingPositionSaved(position: ReadingPosition): Promise<void> {
 		await syncReadingReferencePointFromAutoSave(position);
 		await flushEpubPendingProgress(storageService);
+		await saveSyncedReadingProgress(book, position);
 		notifyBookshelfProgressChanged(book?.filePath);
 	}
 

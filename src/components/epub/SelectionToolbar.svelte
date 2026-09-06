@@ -31,6 +31,7 @@ import type { ReaderAnchorPoint, ReaderViewportRect } from '../../services/epub/
 		isEventInsideObsidianFloatingUi,
 		shouldDismissToolbarOnPointerDown,
 		resolveMobileFloatingInsetBottom,
+		shouldDockSelectionToolbar,
 	} from './toolbar-positioning';
 	import { expandRangeToSentence, expandRangeToParagraph, snapRangeToSentenceIfClose } from './sentence-selection';
 	import { extractWordRangeFromTextNode } from './mobile-tap-selection';
@@ -131,6 +132,7 @@ import type { ReaderAnchorPoint, ReaderViewportRect } from '../../services/epub/
 	let activeClearSelection: (() => void) | null = null;
 	let pendingExternalSelectionHideFrame: number | null = null;
 	let activeToolbarMenu: Menu | null = null;
+	let suppressTrustedAndroidToolbarClickUntil = 0;
 	let pendingCollapsedHideTimer: ReturnType<typeof setTimeout> | null = null;
 	let mobileSelectionDismissBlocked = false;
 	let mobileSelectionDismissTimer: ReturnType<typeof setTimeout> | null = null;
@@ -815,6 +817,49 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 		}
 	}
 
+	function handleToolbarPointerDown(event: PointerEvent) {
+		event.stopPropagation();
+		if (
+			!Platform.isAndroidApp ||
+			(event.pointerType !== 'touch' && event.pointerType !== 'pen')
+		) {
+			return;
+		}
+
+		const targetEl = getEventTargetElement(event.target);
+		const button = targetEl?.closest('button') as HTMLButtonElement | null;
+		if (!button || !toolbarEl?.contains(button) || button.disabled) {
+			return;
+		}
+
+		suppressTrustedAndroidToolbarClickUntil = Date.now() + 700;
+		if (event.cancelable) {
+			event.preventDefault();
+		}
+		button.dispatchEvent(new MouseEvent('click', {
+			bubbles: true,
+			cancelable: true,
+			view: window,
+			clientX: event.clientX,
+			clientY: event.clientY,
+			screenX: event.screenX,
+			screenY: event.screenY,
+		}));
+	}
+
+	function handleToolbarRootClick(event: MouseEvent) {
+		if (
+			Platform.isAndroidApp &&
+			event.isTrusted &&
+			Date.now() < suppressTrustedAndroidToolbarClickUntil
+		) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			return;
+		}
+		event.stopPropagation();
+	}
+
 	function handlePointerDownOutside(event: Event) {
 		if (!shouldDismissToolbarOnPointerDown(toolbarEl, event)) {
 			const target = getEventTargetNode(event.target);
@@ -877,7 +922,7 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 		const generation = ++positionGeneration;
 		positionReady = false;
 		updateMobileBottomClearance();
-		if (isMobileToolbar) {
+		if (shouldDockSelectionToolbar(isMobileToolbar, Platform.isAndroidApp, Platform.isTablet)) {
 			toolbarMode = 'docked';
 			posTop = 0;
 			posLeft = 0;
@@ -1251,7 +1296,10 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 	ontouchstart={(e) => e.stopPropagation()}
 	ontouchmove={(e) => e.stopPropagation()}
 	ontouchend={(e) => e.stopPropagation()}
-	onpointerdown={(e) => e.stopPropagation()}
+	onpointerdown={handleToolbarPointerDown}
+	onpointerup={(e) => e.stopPropagation()}
+	onpointercancel={(e) => e.stopPropagation()}
+	onclick={handleToolbarRootClick}
 	bind:this={toolbarEl}
 >
 	<div class="selection-main-row">

@@ -7,9 +7,17 @@ import {
 	mirrorFloatingSide,
 	resolveMobileFloatingInsetBottom,
 	shouldDismissToolbarOnPointerDown,
+	shouldDockSelectionToolbar,
 } from './toolbar-positioning';
 
 describe('toolbar-positioning', () => {
+	it('keeps Android tablets floating while phones and iOS keep the existing dock behavior', () => {
+		expect(shouldDockSelectionToolbar(true, true, true)).toBe(false);
+		expect(shouldDockSelectionToolbar(true, true, false)).toBe(true);
+		expect(shouldDockSelectionToolbar(true, false, true)).toBe(true);
+		expect(shouldDockSelectionToolbar(false, false, false)).toBe(false);
+	});
+
 	it('always docks mobile toolbars at the bottom decoupled from selection', () => {
 		const anchorRect = { top: 80, left: 40, bottom: 96, right: 96, width: 56, height: 16 };
 		const result = computeToolbarPosition({
