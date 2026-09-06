@@ -1,0 +1,154 @@
+name: Publish Zora Reader v0.2.24 tablet and progress sync
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "scripts/v0.2.24-patch.py"
+      - ".github/workflows/v0.2.24-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-zora-v0.2.24
+  cancel-in-progress: false
+
+jobs:
+  verify-build-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout v0.2.23 tested source
+        uses: actions/checkout@v4
+        with:
+          ref: v0.2.23
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Load v0.2.24 patch from main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git show origin/main:scripts/v0.2.24-patch.py > /tmp/v0.2.24-patch.py
+          python /tmp/v0.2.24-patch.py
+          git diff --check
+
+      - name: Safety gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node -p "require('./manifest.json').version")" = "0.2.24"
+          test "$(node -p "require('./package.json').version")" = "0.2.24"
+          test "$(node -p "require('./package-lock.json').version")" = "0.2.24"
+
+          cat > /tmp/expected-files <<'EOF'
+          manifest.json
+          package-lock.json
+          package.json
+          src/components/epub/EpubReaderApp.svelte
+          src/components/epub/SelectionToolbar.svelte
+          src/components/epub/toolbar-positioning.test.ts
+          src/components/epub/toolbar-positioning.ts
+          src/services/sync/__tests__/reading-progress-merge.test.ts
+          src/services/sync/reading-progress-merge.ts
+          versions.json
+          EOF
+          git status --short | awk '{$1=""; sub(/^ /, ""); print}' | sort > /tmp/actual-files
+          sort -o /tmp/expected-files /tmp/expected-files
+          diff -u /tmp/expected-files /tmp/actual-files
+
+          if git ls-remote --exit-code --heads origin refs/heads/release/v0.2.24 >/dev/null 2>&1; then
+            echo "::error::release/v0.2.24 already exists."
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin refs/tags/v0.2.24 >/dev/null 2>&1; then
+            echo "::error::Tag v0.2.24 already exists."
+            exit 1
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Focused tablet and sync regression tests
+        run: |
+          npx vitest run \
+            src/components/epub/toolbar-positioning.test.ts \
+            src/services/sync/__tests__/reading-progress-merge.test.ts \
+            src/services/sync/__tests__/ZoraSyncService.test.ts \
+            src/services/epub/__tests__/EpubBookmarkService.test.ts
+
+      - name: Full test suite
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+      - name: Verify release assets
+        run: npm run verify:release
+
+      - name: Commit tested release branch and tag
+        id: release_commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Zora Release Action"
+          git config user.email "zora-release@users.noreply.github.com"
+          git checkout -b release/v0.2.24
+          git add \
+            manifest.json \
+            package-lock.json \
+            package.json \
+            versions.json \
+            src/components/epub/EpubReaderApp.svelte \
+            src/components/epub/SelectionToolbar.svelte \
+            src/components/epub/toolbar-positioning.ts \
+            src/components/epub/toolbar-positioning.test.ts \
+            src/services/sync/reading-progress-merge.ts \
+            src/services/sync/__tests__/reading-progress-merge.test.ts
+          git commit -m "fix(epub): sync reading progress and repair Android tablet toolbar"
+          RELEASE_SHA="$(git rev-parse HEAD)"
+          echo "sha=${RELEASE_SHA}" >> "$GITHUB_OUTPUT"
+          git push origin refs/heads/release/v0.2.24
+          git tag -a v0.2.24 -m "Zora Reader v0.2.24"
+          git push origin refs/tags/v0.2.24
+
+      - name: Package release
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp dist/main.js ./main.js
+          cp dist/manifest.json ./manifest.json
+          cp dist/styles.css ./styles.css
+          zip -q zora-reader-v0.2.24.zip main.js manifest.json styles.css LICENSE NOTICE.md
+
+      - name: Publish and verify GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ steps.release_commit.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create v0.2.24 \
+            main.js \
+            manifest.json \
+            styles.css \
+            zora-reader-v0.2.24.zip \
+            --target "${RELEASE_SHA}" \
+            --title "Zora Reader v0.2.24" \
+            --notes "Android tablet + cross-device progress release. Fixes Xiaomi/Android tablet selection-toolbar taps by activating touch/pen buttons at pointer-down before WebView selection collapse; Android tablets now use a floating selection toolbar near the selected text while Android phones and iOS retain their existing behavior. Reading progress now uses Zora Reader's per-device Vault sync records: every normal/paragraph auto-save publishes progress, opening a book resolves the newest timestamp across Windows/iOS/Android, and a newer local position is republished so all OneDrive-synced devices converge. Includes the v0.2.23 stable cross-device bookmark identity/sync changes."
+
+          mapfile -t ASSETS < <(gh release view v0.2.24 --json assets --jq '.assets[].name' | sort)
+          printf '%s\n' "${ASSETS[@]}" > /tmp/release-assets
+          printf '%s\n' main.js manifest.json styles.css zora-reader-v0.2.24.zip | sort > /tmp/expected-assets
+          diff -u /tmp/expected-assets /tmp/release-assets
+          gh release view v0.2.24 --json url --jq .url
