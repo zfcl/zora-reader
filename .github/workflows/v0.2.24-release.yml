@@ -96,14 +96,13 @@ jobs:
       - name: Verify release assets
         run: npm run verify:release
 
-      - name: Commit tested release branch and tag
+      - name: Commit tested release source
         id: release_commit
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name "Zora Release Action"
-          git config user.email "zora-release@users.noreply.github.com"
-          git checkout -b release/v0.2.24
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add \
             manifest.json \
             package-lock.json \
@@ -115,12 +114,17 @@ jobs:
             src/components/epub/toolbar-positioning.test.ts \
             src/services/sync/reading-progress-merge.ts \
             src/services/sync/__tests__/reading-progress-merge.test.ts
-          git commit -m "fix(epub): sync reading progress and repair Android tablet toolbar"
+          git commit -m 'fix(epub): sync reading progress and repair Android tablet toolbar'
           RELEASE_SHA="$(git rev-parse HEAD)"
           echo "sha=${RELEASE_SHA}" >> "$GITHUB_OUTPUT"
-          git push origin refs/heads/release/v0.2.24
-          git tag -a v0.2.24 -m "Zora Reader v0.2.24"
-          git push origin refs/tags/v0.2.24
+          git push origin HEAD:release/v0.2.24
+
+      - name: Tag release
+        shell: bash
+        run: |
+          set -euo pipefail
+          git tag -a v0.2.24 -m 'Zora Reader v0.2.24'
+          git push origin v0.2.24
 
       - name: Package release
         shell: bash
