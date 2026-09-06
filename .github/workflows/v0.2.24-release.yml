@@ -32,7 +32,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git fetch origin main
+          git fetch origin main release/v0.2.24
           git show origin/main:scripts/v0.2.24-patch.py > /tmp/v0.2.24-patch.py
           python /tmp/v0.2.24-patch.py
           git diff --check
@@ -61,10 +61,9 @@ jobs:
           sort -o /tmp/expected-files /tmp/expected-files
           diff -u /tmp/expected-files /tmp/actual-files
 
-          if git ls-remote --exit-code --heads origin refs/heads/release/v0.2.24 >/dev/null 2>&1; then
-            echo "::error::release/v0.2.24 already exists."
-            exit 1
-          fi
+          BASE_SHA="$(git rev-parse v0.2.23)"
+          REMOTE_RELEASE_SHA="$(git rev-parse origin/release/v0.2.24)"
+          test "$REMOTE_RELEASE_SHA" = "$BASE_SHA"
           if git ls-remote --exit-code --tags origin refs/tags/v0.2.24 >/dev/null 2>&1; then
             echo "::error::Tag v0.2.24 already exists."
             exit 1
@@ -121,17 +120,6 @@ jobs:
           RELEASE_SHA="$(printf '%s\n' 'fix(epub): sync reading progress and repair Android tablet toolbar' | git commit-tree "$TREE_SHA" -p "$PARENT_SHA")"
           echo "sha=${RELEASE_SHA}" >> "$GITHUB_OUTPUT"
           git push origin "${RELEASE_SHA}:refs/heads/release/v0.2.24"
-
-      - name: Tag release
-        env:
-          RELEASE_SHA: ${{ steps.release_commit.outputs.sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git tag -a v0.2.24 "${RELEASE_SHA}" -m 'Zora Reader v0.2.24'
-          git push origin refs/tags/v0.2.24
 
       - name: Package release
         shell: bash
