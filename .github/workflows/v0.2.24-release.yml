@@ -61,7 +61,7 @@ jobs:
           sort -o /tmp/expected-files /tmp/expected-files
           diff -u /tmp/expected-files /tmp/actual-files
 
-          BASE_SHA="$(git rev-parse v0.2.23)"
+          BASE_SHA="$(git rev-parse 'v0.2.23^{}')"
           REMOTE_RELEASE_SHA="$(git rev-parse origin/release/v0.2.24)"
           test "$REMOTE_RELEASE_SHA" = "$BASE_SHA"
           if git ls-remote --exit-code --tags origin refs/tags/v0.2.24 >/dev/null 2>&1; then
