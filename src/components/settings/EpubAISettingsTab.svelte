@@ -126,8 +126,24 @@
 			});
 
 		new Setting(host)
+			.setName("API 协议")
+			.setDesc("选择服务商支持的协议；所有 AI 功能共用此设置。")
+			.addDropdown((dropdown) => {
+				dropdown
+					.addOption("chat-completions", "Chat Completions")
+					.addOption("responses", "Responses")
+					.setValue(settings.apiProtocol || "chat-completions")
+					.onChange(async (value) => {
+						const protocol = value === "responses" ? "responses" : "chat-completions";
+						settings.apiProtocol = protocol;
+						plugin.settings.aiAssistant.apiProtocol = protocol;
+						await save();
+					});
+			});
+
+		new Setting(host)
 			.setName("API Endpoint (Base URL)")
-			.setDesc("API 请求地址（支持 DeepSeek 官方或兼容 OpenAI 格式的端点）。")
+			.setDesc("填写 Base URL（如 https://api.openai.com/v1）或完整接口地址。插件按所选协议补全接口路径。")
 			.addText((text) => {
 				text
 					.setPlaceholder(DEFAULT_INTEGRATED_AI_SETTINGS.endpoint)
@@ -157,10 +173,10 @@
 
 		new Setting(host)
 			.setName("Thinking 深度思考")
-			.setDesc("翻译与查词请求默认显式发送 thinking: { type: \"disabled\" }，以保证极速响应。")
+			.setDesc("翻译与查词仅对支持的 DeepSeek 接口关闭思考；其他模型使用服务商默认配置，Responses 不发送 thinking 字段。")
 			.addDropdown((dropdown) => {
 				dropdown
-					.addOption("disabled", "彻底关闭 (推荐，极速响应)")
+					.addOption("disabled", "按协议与模型自动适配")
 					.setValue("disabled")
 					.setDisabled(true);
 			});

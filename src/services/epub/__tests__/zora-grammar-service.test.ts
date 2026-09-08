@@ -512,7 +512,7 @@ describe("zora-grammar-service", () => {
   it("throws empty content error when content is empty and finish_reason is not length", () => {
     expect(() => {
       parseGrammarResponse("", "A sentence...", { isTruncated: false });
-    }).toThrow("DeepSeek 返回的数据中没有可显示的内容");
+    }).toThrow("AI 服务返回的数据中没有可显示的内容");
   });
 
   it("correctly parses markdown fenced JSON with unclosed fence or extra text around it", () => {
@@ -658,7 +658,7 @@ describe("zora-grammar-service", () => {
           settings: baseSettings,
           text: "Some sentence.",
         })
-      ).rejects.toThrow("DeepSeek 返回的数据中没有可显示的内容");
+      ).rejects.toThrow("AI 服务返回的数据中没有可显示的内容");
     });
 
     it("handles reasoning hitting token limit resulting in empty content and length finish_reason", async () => {

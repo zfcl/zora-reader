@@ -1,10 +1,12 @@
 import type { App } from "obsidian";
+import { resolveAIProtocol, type AIProtocol } from "../services/ai/api-protocol";
 
 export interface IntegratedAISettings {
 	enabled: boolean;
 	apiKeySecretId: string;
 	apiKeyFallback?: string;
 	endpoint: string;
+	apiProtocol?: AIProtocol;
 	model: string;
 	maxTokens: number;
 	customPrompt: string;
@@ -15,6 +17,7 @@ export const DEFAULT_INTEGRATED_AI_SECRET_ID =
 
 export const DEFAULT_INTEGRATED_AI_SETTINGS: IntegratedAISettings = {
 	enabled: true,
+	apiProtocol: "chat-completions",
 	apiKeySecretId: DEFAULT_INTEGRATED_AI_SECRET_ID,
 	endpoint: "https://api.deepseek.com/chat/completions",
 	model: "deepseek-v4-flash",
@@ -45,6 +48,7 @@ export function normalizeIntegratedAISettings(
 
 	return {
 		enabled: raw.enabled !== false,
+		apiProtocol: resolveAIProtocol(raw.apiProtocol, raw.endpoint),
 		apiKeySecretId:
 			String(raw.apiKeySecretId || "").trim() ||
 			DEFAULT_INTEGRATED_AI_SECRET_ID,

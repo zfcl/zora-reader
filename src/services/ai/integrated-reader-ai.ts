@@ -1,10 +1,10 @@
+import { aiEndpoint, buildAIRequestBody, readAIText } from "./api-protocol";
 import { Menu, Modal, Notice, requestUrl } from "obsidian";
 import type { App } from "obsidian";
 import type { IntegratedAISettings } from "../../config/integrated-ai-settings";
 import {
 	DEFAULT_INTEGRATED_AI_SETTINGS,
 	readIntegratedAIApiKey,
-	supportsIntegratedAISecretStorage,
 } from "../../config/integrated-ai-settings";
 import { domInstanceOf } from "../../utils/dom-instance-of";
 
@@ -74,7 +74,7 @@ class IntegratedAIResultModal extends Modal {
 		});
 		this.statusEl = this.contentEl.createDiv({
 			cls: "weave-epub-ai-status",
-			text: "正在请求 DeepSeek…",
+			text: "正在请求 AI…",
 		});
 		this.resultEl = this.contentEl.createDiv({ cls: "weave-epub-ai-result" });
 
@@ -157,19 +157,6 @@ function resolveAction(actionId: string): IntegratedAIAction | null {
 	return INTEGRATED_AI_ACTIONS.find((action) => action.id === actionId) ?? null;
 }
 
-function assertSecureEndpoint(endpoint: string): string {
-	let parsed: URL;
-	try {
-		parsed = new URL(endpoint);
-	} catch {
-		throw new Error("API Endpoint 不是有效网址，请在 AI 设置中检查");
-	}
-	if (parsed.protocol !== "https:") {
-		throw new Error("为保护 API Key，API Endpoint 必须使用 HTTPS");
-	}
-	return parsed.toString();
-}
-
 export async function runIntegratedAIAction(options: {
 	app: App;
 	settings: IntegratedAISettings;
@@ -192,13 +179,9 @@ export async function runIntegratedAIAction(options: {
 		options.openSettings();
 		return;
 	}
-	if (!supportsIntegratedAISecretStorage(options.app)) {
-		new Notice("当前 Obsidian 版本不支持安全密钥存储，请先更新 Obsidian");
-		return;
-	}
 	const apiKey = readIntegratedAIApiKey(options.app, options.settings);
 	if (!apiKey) {
-		new Notice("请先在阅读器设置 → AI 助手中保存 DeepSeek API 密钥");
+		new Notice("请先在阅读器设置 → AI 助手中保存 API 密钥");
 		options.openSettings();
 		return;
 	}
@@ -213,21 +196,21 @@ export async function runIntegratedAIAction(options: {
 	try {
 		const prompt = action.getPrompt?.(options.settings) ?? action.prompt ?? "";
 		const response = await requestUrl({
-			url: assertSecureEndpoint(options.settings.endpoint),
+			url: aiEndpoint(options.settings.endpoint, options.settings.apiProtocol),
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
 				Authorization: `Bearer ${apiKey}`,
 			},
-			body: JSON.stringify({
+			body: JSON.stringify(buildAIRequestBody(options.settings.endpoint, options.settings.apiProtocol, {
 				model: options.settings.model || DEFAULT_INTEGRATED_AI_SETTINGS.model,
 				messages: [
 					{ role: "system", content: prompt },
 					{ role: "user", content: `请处理以下选中文本：\n\n${selectedText}` },
 				],
-				thinking: { type: "disabled" },
-				max_tokens: options.settings.maxTokens,
-			}),
+				thinking: "disabled",
+				maxTokens: options.settings.maxTokens,
+			})),
 			throw: false,
 		});
 		const body = response.json as DeepSeekResponse | undefined;
@@ -236,10 +219,7 @@ export async function runIntegratedAIAction(options: {
 				typeof body?.error?.message === "string" ? body.error.message : "";
 			throw new Error(apiMessage || response.text || `HTTP ${response.status}`);
 		}
-		const content = body?.choices?.[0]?.message?.content;
-		if (typeof content !== "string" || !content.trim()) {
-			throw new Error("DeepSeek 返回的数据中没有可显示的内容");
-		}
+		const content = readAIText(body, options.settings.apiProtocol, options.settings.endpoint);
 		modal.setResult(content.trim());
 	} catch (error) {
 		modal.setError(error instanceof Error ? error.message : String(error));

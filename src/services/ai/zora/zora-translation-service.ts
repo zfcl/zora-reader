@@ -12,6 +12,6 @@ export async function runZoraSelectionTranslation(input: { app: App; settings: I
   const apiKey = readIntegratedAIApiKey(input.app, input.settings);
   if (!input.settings.enabled) throw new Error("AI 翻译已在设置中关闭");
   if (!apiKey) throw new Error("请先在“设置 → Zora Reader → AI 助手”中配置 API Key");
-  const config: TranslationConfig = { apiKey, baseUrl: input.settings.endpoint, model: input.settings.model, sourceLanguage: "自动识别", targetLanguage: "简体中文", disableThinking: true };
+  const config: TranslationConfig = { apiKey, baseUrl: input.settings.endpoint, apiProtocol: input.settings.apiProtocol, maxTokens: Math.max(input.settings.maxTokens || 0, 4096), model: input.settings.model, sourceLanguage: "自动识别", targetLanguage: "简体中文", disableThinking: true };
   return translateSelection(config, buildZoraTranslationCapture(input.selection));
 }

@@ -1,3 +1,4 @@
+import { aiEndpoint, buildAIRequestBody, readAIText, type AIProtocol } from "../api-protocol";
 import type { RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import { lemmatize } from './lemmatizer';
 import { normalizeSenseLabel } from './senseRank';
@@ -111,6 +112,8 @@ export interface TranslationResult {
 
 export interface TranslationConfig {
   baseUrl: string;
+  apiProtocol?: AIProtocol;
+  maxTokens?: number;
   model: string;
   apiKey: string;
   sourceLanguage: string;
@@ -528,27 +531,26 @@ async function requestJson(
   send: Request,
 ): Promise<string> {
   const request: RequestUrlParam = {
-    url: chatCompletionsUrl(config.baseUrl),
+    url: aiEndpoint(config.baseUrl, config.apiProtocol),
     method: 'POST',
     contentType: 'application/json',
     headers: { Authorization: `Bearer ${config.apiKey}` },
     throw: false,
-    body: JSON.stringify({
+    body: JSON.stringify(buildAIRequestBody(config.baseUrl, config.apiProtocol, {
       model: config.model,
       messages,
-      response_format: { type: 'json_object' },
-      stream: false,
+      json: true,
       temperature: 0.2,
-      max_tokens: 4096,
-      ...(config.disableThinking !== false && supportsThinkingControl(config.baseUrl, config.model) ? { thinking: { type: 'disabled' } } : {}),
-    }),
+      maxTokens: config.maxTokens ?? 4096,
+      thinking: config.disableThinking !== false ? 'disabled' : undefined,
+    })),
   };
   const response = await withTimeout(send(request), 45_000);
   if (response.status < 200 || response.status >= 300) {
     throw new Error(readApiError(response.text, response.status));
   }
   try {
-    return readContent(JSON.parse(response.text));
+    return readAIText(JSON.parse(response.text), config.apiProtocol, config.baseUrl);
   } catch (error) {
     if (error instanceof SyntaxError) throw new Error('翻译服务返回了无法解析的响应。');
     throw error;
@@ -556,9 +558,7 @@ async function requestJson(
 }
 
 export function chatCompletionsUrl(baseUrl: string): string {
-  const normalized = baseUrl.trim().replace(/\/+$/, '');
-  if (/\/chat\/completions$/i.test(normalized)) return normalized;
-  return `${normalized}/chat/completions`;
+  return aiEndpoint(baseUrl, 'chat-completions');
 }
 
 function parseJsonObject(content: string, label: string): Record<string, unknown> {
@@ -577,13 +577,6 @@ function dedupeSenses(senses: TranslationSense[]): TranslationSense[] {
     seen.add(key);
     return true;
   });
-}
-
-function readContent(envelope: unknown): string {
-  if (!isRecord(envelope) || !Array.isArray(envelope.choices) || !isRecord(envelope.choices[0])) throw new Error('翻译服务未返回结果。');
-  const message = envelope.choices[0].message;
-  if (!isRecord(message) || typeof message.content !== 'string' || !message.content.trim()) throw new Error('翻译服务返回了空结果。');
-  return message.content;
 }
 
 function readApiError(text: string, status: number): string {
@@ -624,14 +617,6 @@ function normalizeText(value: string): string {
 
 function xml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[character]!));
-}
-
-function supportsThinkingControl(baseUrl: string, model: string): boolean {
-  let host = '';
-  try { host = new URL(baseUrl).hostname; } catch { return false; }
-  if (host === 'deepseek.com' || host.endsWith('.deepseek.com')) return true;
-  if (host === 'opencode.ai' || host.endsWith('.opencode.ai')) return /deepseek/i.test(model);
-  return false;
 }
 
 function string(value: unknown): string { return typeof value === 'string' ? value.trim() : ''; }

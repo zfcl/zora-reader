@@ -1,10 +1,10 @@
+import { aiEndpoint, buildAIRequestBody, normalizeAIResponse } from "../api-protocol";
 import { requestUrl } from "obsidian";
 import type { App } from "obsidian";
 import type { IntegratedAISettings } from "../../../config/integrated-ai-settings";
 import {
   DEFAULT_INTEGRATED_AI_SETTINGS,
   readIntegratedAIApiKey,
-  supportsIntegratedAISecretStorage,
 } from "../../../config/integrated-ai-settings";
 
 export type ZoraComprehensionComplexity = "simple" | "complex";
@@ -90,23 +90,6 @@ const COMPREHENSION_SYSTEM_PROMPT =
   `  }\n` +
   `}`;
 
-function normalizeChatCompletionsEndpoint(rawEndpoint: string): string {
-  const base = String(rawEndpoint || "").trim() || DEFAULT_INTEGRATED_AI_SETTINGS.endpoint;
-  let parsed: URL;
-  try {
-    parsed = new URL(base);
-  } catch {
-    throw new Error("API Endpoint 不是有效网址，请在 AI 设置中检查");
-  }
-  if (parsed.protocol !== "https:") {
-    throw new Error("为保护 API Key，API Endpoint 必须使用 HTTPS");
-  }
-  const cleanUrl = base.replace(/\/+$/, "");
-  if (!cleanUrl.endsWith("/chat/completions")) {
-    return `${cleanUrl}/chat/completions`;
-  }
-  return cleanUrl;
-}
 
 export const COMPREHENSION_DEFAULT_MAX_TOKENS = 8192;
 
@@ -185,7 +168,7 @@ export function parseComprehensionResponse(
     if (options?.isTruncated) {
       throw new Error("输出被截断（超出最大 Token 限制）");
     }
-    throw new Error("DeepSeek 返回的数据中没有可显示的内容");
+    throw new Error("AI 服务返回的数据中没有可显示的内容");
   }
 
   let jsonStr = trimmed;
@@ -383,26 +366,16 @@ export function buildComprehensionRequestBody(
   settings: IntegratedAISettings,
   prompt: string,
   userContent: string
-): {
-  model: string;
-  messages: Array<{ role: string; content: string }>;
-  thinking: { type: string };
-  reasoning_effort: string;
-  max_tokens: number;
-} {
-  const configuredMaxTokens = settings.maxTokens || DEFAULT_INTEGRATED_AI_SETTINGS.maxTokens;
-  const comprehensionMaxTokens = Math.max(configuredMaxTokens, COMPREHENSION_DEFAULT_MAX_TOKENS);
-
-  return {
+): Record<string, unknown> {
+  return buildAIRequestBody(settings.endpoint || DEFAULT_INTEGRATED_AI_SETTINGS.endpoint, settings.apiProtocol, {
     model: settings.model || DEFAULT_INTEGRATED_AI_SETTINGS.model,
     messages: [
       { role: "system", content: prompt },
       { role: "user", content: userContent },
     ],
-    thinking: { type: "enabled" },
-    reasoning_effort: "medium",
-    max_tokens: comprehensionMaxTokens,
-  };
+    thinking: "enabled",
+    maxTokens: Math.max(settings.maxTokens || DEFAULT_INTEGRATED_AI_SETTINGS.maxTokens, COMPREHENSION_DEFAULT_MAX_TOKENS),
+  });
 }
 
 export async function runZoraComprehensionAnalysis(options: {
@@ -418,15 +391,12 @@ export async function runZoraComprehensionAnalysis(options: {
   if (!options.settings.enabled) {
     throw new Error("AI 助手已在设置中关闭");
   }
-  if (!supportsIntegratedAISecretStorage(options.app)) {
-    throw new Error("当前 Obsidian 版本不支持安全密钥存储");
-  }
   const apiKey = readIntegratedAIApiKey(options.app, options.settings);
   if (!apiKey) {
-    throw new Error("请先在阅读器设置 → AI 助手中保存 DeepSeek API 密钥");
+    throw new Error("请先在阅读器设置 → AI 助手中保存 API 密钥");
   }
 
-  const endpoint = normalizeChatCompletionsEndpoint(options.settings.endpoint);
+  const endpoint = aiEndpoint(options.settings.endpoint || DEFAULT_INTEGRATED_AI_SETTINGS.endpoint, options.settings.apiProtocol);
   const prompt = COMPREHENSION_SYSTEM_PROMPT;
   const userContent =
     options.context && options.context.trim() && options.context !== selectedText
@@ -444,28 +414,9 @@ export async function runZoraComprehensionAnalysis(options: {
     throw: false,
   });
 
-  const body = response.json as
-    | {
-        choices?: Array<{
-          message?: {
-            content?: unknown;
-            reasoning_content?: unknown;
-          };
-          finish_reason?: string;
-        }>;
-        usage?: {
-          prompt_tokens?: number;
-          completion_tokens?: number;
-          total_tokens?: number;
-          completion_tokens_details?: {
-            reasoning_tokens?: number;
-          };
-        };
-        error?: { message?: string };
-      }
-    | undefined;
+  const body = normalizeAIResponse(response.json, options.settings.apiProtocol, options.settings.endpoint);
 
-  if (response.status < 200 || response.status >= 300) {
+  if (response.status < 200 || response.status >= 300 || body?.error) {
     const apiMessage = typeof body?.error?.message === "string" ? body.error.message : "";
     const diagnostic = extractComprehensionResponseDiagnostic(body, apiMessage || `HTTP ${response.status}`);
     logComprehensionResponseShape(diagnostic);
@@ -488,7 +439,7 @@ export async function runZoraComprehensionAnalysis(options: {
     if (isTruncated) {
       throw new Error("输出被截断（超出最大 Token 限制）");
     }
-    throw new Error("DeepSeek 返回的数据中没有可显示的内容");
+    throw new Error("AI 服务返回的数据中没有可显示的内容");
   }
 
   try {

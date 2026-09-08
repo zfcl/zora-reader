@@ -1,0 +1,62 @@
+name: Publish Zora Reader v0.2.25 Responses support
+
+on:
+  push:
+    branches:
+      - release/v0.2.25
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-zora-v0.2.25
+  cancel-in-progress: false
+
+jobs:
+  verify-build-publish:
+    if: github.ref == 'refs/heads/release/v0.2.25'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Check release version
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          import assert from 'node:assert/strict';
+          for (const name of ['package.json', 'package-lock.json', 'manifest.json']) {
+            assert.equal(JSON.parse(fs.readFileSync(name)).version, '0.2.25');
+          }
+          assert.equal(JSON.parse(fs.readFileSync('versions.json'))['0.2.25'], JSON.parse(fs.readFileSync('manifest.json')).minAppVersion);
+          JS
+      - name: Install dependencies
+        run: npm ci
+      - name: Full regression suite
+        run: npm test
+      - name: Build and verify release assets
+        run: npm run build && npm run verify:release
+      - name: Package release
+        run: |
+          cp dist/main.js dist/manifest.json dist/styles.css ./
+          zip -q zora-reader-v0.2.25.zip main.js manifest.json styles.css LICENSE NOTICE.md
+      - name: Publish tested commit and verify assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create v0.2.25 \
+            main.js manifest.json styles.css zora-reader-v0.2.25.zip \
+            --target "$GITHUB_SHA" --title "Zora Reader v0.2.25" --latest \
+            --notes-file .github/release-notes/0.2.25.md
+          gh release view v0.2.25 --json assets --jq '.assets[].name' | sort > /tmp/actual-assets
+          printf '%s\n' main.js manifest.json styles.css zora-reader-v0.2.25.zip | sort > /tmp/expected-assets
+          diff -u /tmp/expected-assets /tmp/actual-assets
+          gh release view v0.2.25 --json url --jq .url

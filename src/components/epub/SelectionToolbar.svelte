@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { suppressDuplicateAndroidToolbarClick } from "./android-toolbar-click";
 	import { setIcon, Platform, Menu } from 'obsidian';
 	import type { App } from 'obsidian';
 	import { onMount, tick, untrack } from 'svelte';
@@ -847,17 +848,8 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 		}));
 	}
 
-	function handleToolbarRootClick(event: MouseEvent) {
-		if (
-			Platform.isAndroidApp &&
-			event.isTrusted &&
-			Date.now() < suppressTrustedAndroidToolbarClickUntil
-		) {
-			event.preventDefault();
-			event.stopImmediatePropagation();
-			return;
-		}
-		event.stopPropagation();
+	function handleToolbarClickCapture(event: MouseEvent) {
+		suppressDuplicateAndroidToolbarClick(event, Platform.isAndroidApp, suppressTrustedAndroidToolbarClickUntil);
 	}
 
 	function handlePointerDownOutside(event: Event) {
@@ -1299,7 +1291,8 @@ let activePopoverType = $state<'dict' | 'comprehension' | 'grammar' | 'note' | n
 	onpointerdown={handleToolbarPointerDown}
 	onpointerup={(e) => e.stopPropagation()}
 	onpointercancel={(e) => e.stopPropagation()}
-	onclick={handleToolbarRootClick}
+	onclickcapture={handleToolbarClickCapture}
+	onclick={(event) => event.stopPropagation()}
 	bind:this={toolbarEl}
 >
 	<div class="selection-main-row">

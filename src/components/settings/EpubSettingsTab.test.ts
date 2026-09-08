@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { App } from "obsidian";
+import { Setting, type App } from "obsidian";
 import { EpubSettingsTab } from "./EpubSettingsTab";
 import type StandaloneEpubPlugin from "../../main";
 import {
@@ -150,6 +150,44 @@ describe("EpubSettingsTab", () => {
     expect(container.innerHTML).toContain("自定义助手提示词");
 
     unmount(root);
+  });
+
+  it("saves the selected API protocol and restores it when reopening settings", async () => {
+    const { plugin } = createMockPlugin();
+    const { mount, unmount, tick } = await import("svelte");
+    const { default: EpubAISettingsTab } = await import("./EpubAISettingsTab.svelte");
+    const dropdownMock = vi.spyOn(Setting.prototype, "addDropdown").mockImplementation(function (callback) {
+      const select = document.createElement("select");
+      this.controlEl.append(select);
+      const dropdown = {
+        addOption(value: string, label: string) { select.add(new Option(label, value)); return dropdown; },
+        setValue(value: string) { select.value = value; return dropdown; },
+        setDisabled(value: boolean) { select.disabled = value; return dropdown; },
+        onChange(fn: (value: string) => void) { select.addEventListener("change", () => fn(select.value)); return dropdown; },
+      };
+      callback?.(dropdown);
+      return this;
+    });
+    const container = document.createElement("div");
+    let root = mount(EpubAISettingsTab, { target: container, props: { plugin } });
+    try {
+      await tick();
+      const select = container.querySelector("select")!;
+      expect(select.value).toBe("chat-completions");
+      select.value = "responses";
+      select.dispatchEvent(new Event("change"));
+      await tick();
+      expect(plugin.settings.aiAssistant.apiProtocol).toBe("responses");
+      expect(plugin.saveSettings).toHaveBeenCalled();
+      await unmount(root);
+      root = mount(EpubAISettingsTab, { target: container, props: { plugin } });
+      await tick();
+      expect(container.querySelector("select")?.value).toBe("responses");
+      expect(plugin.settings.aiAssistant.endpoint).toBe("https://api.deepseek.com/chat/completions");
+    } finally {
+      await unmount(root);
+      dropdownMock.mockRestore();
+    }
   });
 
   it("renders EpubSettingsAboutTab with version and format info", async () => {

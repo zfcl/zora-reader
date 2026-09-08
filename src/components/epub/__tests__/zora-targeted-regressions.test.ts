@@ -118,7 +118,7 @@ describe("targeted reader regressions", () => {
   it("does not ask AI to generate the removed comprehension section", () => {
     const prompt = comprehensionSource.slice(
       comprehensionSource.indexOf("const COMPREHENSION_SYSTEM_PROMPT"),
-      comprehensionSource.indexOf("function normalizeChatCompletionsEndpoint")
+      comprehensionSource.indexOf("export const COMPREHENSION_DEFAULT_MAX_TOKENS")
     );
 
     expect(prompt).not.toContain("specialNotes");
